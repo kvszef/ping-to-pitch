@@ -105,6 +105,7 @@ function normalise(item: unknown): Client | null {
     ref: item.ref, name: text(item.name, item.ref), clientType: text(item.clientType), profile: text(item.profile), portfolioNr: text(item.portfolioNr),
     service: text(item.service), strategy: text(item.strategy), aum: text(item.aum), context: text(item.context), birthday: text(item.birthday),
     lastProfiling: text(item.lastProfiling), lastConsultation: text(item.lastConsultation), errors: count(item.errors), warnings: count(item.warnings),
+    facts: isObj(item.facts) ? (item.facts as Client['facts']) : undefined,
     briefing: Array.isArray(item.briefing) ? (item.briefing as Card[]) : [],
   }
 }

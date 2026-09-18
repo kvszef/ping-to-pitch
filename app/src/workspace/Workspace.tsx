@@ -4,9 +4,9 @@ import { SeverityIcon } from '../cards/ui'
 import { Pill } from '../components/Chrome'
 import { CardView } from '../cards/registry'
 import { newsFeed } from '../data/mock'
-import { topics as topicData, transcripts } from '../data/workspace'
+import { transcripts } from '../data/workspace'
 import type { Client, Signal } from '../types'
-import { activeProvider, answer, fetchStatus, openingHints, question, think, type Segment, type Status } from './brain'
+import { activeProvider, answer, fetchStatus, openingHints, question, think, topicsFor, type Segment, type Status } from './brain'
 import { LiveIsland } from './CallIsland'
 import { ModuleView } from './modules'
 import { NewsFeed } from './NewsFeed'
@@ -106,9 +106,10 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
 
   const select = (r: string) => { setRef(r); setInCall(false) }
   const topSignal = (r: string) => signals.flatMap((s) => s.affected.filter((a) => a.ref === r).map((a) => ({ ...a, title: s.title }))).sort((a, b) => rank[a.severity] - rank[b.severity])[0]
-  const open = useMemo(() => (topicData[client.ref] ?? []).filter((t) => !chat.some((e) => e.role === 'ki' && e.text === t.insight[settings.detail])), [client.ref, chat, settings.detail])
+  const open = useMemo(() => topicsFor(client).filter((t) => !chat.some((e) => e.role === 'ki' && e.text === t.insight[settings.detail])), [client, chat, settings.detail])
 
-  const proposal = client.briefing.find((c) => c.type === 'proposal')
+  // Real client files have no proposal yet (engine track): their rule violations fill the panel instead.
+  const proposal = client.briefing.find((c) => c.type === 'proposal') ?? client.briefing.find((c) => c.type === 'flags')
   const shown = hints.find((h) => h.id === activeHint) ?? hints[0]
 
   const base = { assistent: 1 + (100 - settings.focus) / 50, chat: 1 + settings.focus / 50 }
@@ -146,7 +147,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
               return (
                 <li key={c.ref}>
                   <button onClick={() => select(c.ref)} title={s?.title} className={`flex w-full items-center gap-2 border-l-[3px] px-3 py-2.5 text-left transition-colors duration-200 ${c.ref === ref ? 'border-brand bg-brand-soft/30' : `border-transparent hover:bg-brand-soft/20 ${i % 2 ? 'bg-stripe' : ''}`}`}>
-                    {s ? <SeverityIcon severity={s.severity} size={12} /> : <span className="block w-3" />}
+                    {s ? <SeverityIcon severity={s.severity} size={12} /> : c.errors + c.warnings > 0 ? <SeverityIcon severity={c.errors ? 'risk' : 'warn'} size={12} /> : <span className="block w-3" />}
                     <span className="min-w-0 flex-1 truncate">{c.name}</span>
                     <span className="shrink-0 text-[11px] text-muted">{c.profile}</span>
                   </button>
@@ -270,7 +271,7 @@ function ChatLog({ chat, busy, detail, onShow }: { chat: ChatEntry[]; busy: bool
               {e.origin === 'gespraech' && <span className="mr-1.5 text-[10px] uppercase tracking-wide text-brand-dark">Gespräch</span>}
               {long ? e.text.slice(0, cutAt) : e.text}
               {long && <button onClick={() => setExpanded((x) => new Set(x).add(e.id))} className="ml-1 text-brand hover:underline">mehr</button>}
-              {e.sources.length > 0 && <span title={e.sources.join(' · ')} className="ml-1.5 cursor-help whitespace-nowrap text-[11px] text-muted">· {e.sources.length} Quellen</span>}
+              {e.sources.length > 0 && <span title={e.sources.join(' · ')} className="ml-1.5 cursor-help whitespace-nowrap text-[11px] text-muted">· {e.sources.length} {e.sources.length === 1 ? 'Quelle' : 'Quellen'}</span>}
             </p>
             {e.module && <ModuleView spec={e.module} detail={detail} />}
             {e.offered && <button onClick={() => onShow(e.id)} className="mt-2 inline-flex items-center gap-1.5 rounded-sm bg-pill px-2 py-1 text-[11px] hover:bg-brand hover:text-white"><BarChart3 size={12} /> Grafik · {e.offered.confidence}%</button>}

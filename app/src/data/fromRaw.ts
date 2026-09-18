@@ -1,3 +1,5 @@
+import { factsFromRaw } from './facts'
+import { ruleText } from './ruleText'
 import type { Card, Client, Severity } from '../types'
 
 // Maps one raw client (shape of core-case/portfolio-data/clients.json) to the UI's `Client` with a
@@ -58,7 +60,7 @@ function violations(raw: Raw): { severity: Severity; text: string; source: strin
   const seen = new Map<string, { severity: Severity; text: string; count: number }>()
   for (const v of list(raw.SuitabilityViolations)) {
     const severity: Severity = v.Severity === 'Error' ? 'risk' : v.Severity === 'Warning' ? 'warn' : 'info'
-    const text = str(v.RuleCode) || str(v.RuleDescription) || 'Regel ohne Bezeichnung'
+    const text = ruleText(str(v.RuleCode)) || str(v.RuleDescription) || 'Regel ohne Bezeichnung'
     const key = `${severity}|${text}`
     const hit = seen.get(key)
     if (hit) hit.count++
@@ -144,6 +146,7 @@ export function fromRaw(input: unknown, now: Date): Client {
     lastConsultation: formatDate(lastProposal),
     errors,
     warnings,
+    facts: factsFromRaw(raw),
     briefing,
   }
 }

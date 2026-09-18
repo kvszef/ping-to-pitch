@@ -1,4 +1,6 @@
+import { readFile } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { resolve } from 'node:path'
 import type { Plugin } from 'vite'
 
 // Kleine API im Vite-Server. Die Schlüssel bleiben hier und erreichen den Browser nie.
@@ -52,7 +54,7 @@ Trenne Fakten von Einschätzungen. Gib keine Anlageempfehlung ab, die das Mandat
 Sei KONKRET: Jeder Satz nennt mindestens eine Zahl, eine Position, eine Bandbreite oder ein Datum aus dem Kontext. Nenne Positionen beim Namen und Abweichungen in Prozentpunkten.
 Verboten sind Floskeln ohne Inhalt, etwa «es ist wichtig», «wir sollten besprechen», «ich verstehe Ihre Sorge», «gerne schauen wir uns das an», «langfristig denken».
 Schlecht: «Ihr Portfolio ist etwas unter Druck, wir sollten die Strategie anschauen.» Gut: «Von den 4.2% Verlust stammen 3.1 Punkte aus drei US-Technologietiteln; mit einem Verkauf von CHF 67'000 liegt der USD-Anteil wieder im Band.» (Die Zahlen im Beispiel NICHT übernehmen.)
-Sätze, die der Berater zum Kunden sagt: höchstens 25 Wörter, Sie-Form, eine Kernzahl, und wenn der Kontext einen Vorschlag oder eine Massnahme enthält, genau diese nennen.
+Sätze, die der Berater zum Kunden sagt: höchstens 25 Wörter, Sie-Form, eine Kernzahl, und wenn der Kontext einen Vorschlag oder eine Massnahme enthält, genau diese nennen. Enthält der Kontext KEINEN Betrag für eine Massnahme, nenne keinen: jede Zahl in deiner Antwort muss wörtlich im Kontext stehen, du rechnest nicht selbst. Ordne jede Zahl dem richtigen Gegenstand zu.
 Nächste Schritte beginnen mit einem Verb und nennen Gegenstand und Grösse («Verkauf von … über CHF … vorschlagen»).
 Antworte als ein einziges JSON-Objekt ohne weiteren Text.`
 
@@ -90,6 +92,19 @@ Bei Begrüssungen und Belanglosem sind "customer", "advisor" und "insight" null.
   ]
 }
 
+// Stopgap until the engine serves /api/clients: the case file as it is, minus every account field
+// that can hold an IBAN or an account name. Same path and shape, so the engine replaces it silently.
+const CLIENT_FILE = resolve(process.cwd(), '../core-case/portfolio-data/clients.json')
+async function caseClients(): Promise<unknown[]> {
+  const data: unknown = JSON.parse(await readFile(CLIENT_FILE, 'utf8'))
+  const strip = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(strip)
+    if (typeof v !== 'object' || v === null) return v
+    return Object.fromEntries(Object.entries(v).filter(([k]) => !/^(iban|accountname|accountnumber)$/i.test(k)).map(([k, x]) => [k, strip(x)]))
+  }
+  return Array.isArray(data) ? data.map(strip) : []
+}
+
 type Word = { text: string; type?: string; speaker_id?: string }
 
 async function transcribe(env: Env, audio: Buffer, contentType: string) {
@@ -121,6 +136,7 @@ export function api(env: Env): Plugin {
         if (!req.url?.startsWith('/api/')) return next()
         try {
           if (req.url === '/api/status') return send(res, 200, { openai: ready(env, 'openai'), apertus: ready(env, 'apertus'), elevenlabs: !!env.ELEVENLABS_API_KEY })
+          if (req.url === '/api/clients' && req.method === 'GET') return send(res, 200, await caseClients())
           if (req.method !== 'POST') return send(res, 405, { error: 'Nur POST' })
           const raw = await body(req)
           if (req.url === '/api/transcribe') return send(res, 200, { segments: await transcribe(env, raw, req.headers['content-type'] || 'audio/webm') })

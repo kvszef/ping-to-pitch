@@ -76,7 +76,7 @@ export default function App() {
         ]} />
         {page === 'kunden'
           ? <Dashboard clients={clients} onOpen={open} onUploaded={refresh} />
-          : <Workspace key={session.n} clients={samples()} signals={signals} initialRef={session.ref} initialCall={session.call} onSimulateCall={() => setCall(sampleCall)} onOpenBriefing={open} />}
+          : <Workspace key={session.n} clients={clients} signals={signals} initialRef={session.ref} initialCall={session.call} onSimulateCall={() => setCall(sampleCall)} onOpenBriefing={open} />}
         {banner}
       </div>
     )

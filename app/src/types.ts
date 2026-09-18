@@ -1,3 +1,4 @@
+import type { ClientFacts } from './data/facts'
 export type Kind = 'fact' | 'interpretation' | 'action'
 export type Severity = 'risk' | 'warn' | 'ok' | 'info'
 
@@ -54,6 +55,7 @@ export type Client = {
   lastConsultation: string
   errors: number
   warnings: number
+  facts?: ClientFacts // key figures computed from a real client file; sample clients have none
   briefing: Card[]
 }
 

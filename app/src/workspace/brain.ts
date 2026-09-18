@@ -1,6 +1,8 @@
 import { topics } from '../data/workspace'
 import { signals } from '../data/mock'
 import type { Client } from '../types'
+import { deriveTopics } from './derive'
+import { grounded } from './grounding'
 import type { ChatEntry, Hint, ModuleSpec, Origin, Settings, Slot, Topic, TranscriptLine } from './types'
 
 // Einzige Anschlussstelle für die KI. Gesprächsassistent und Berater-Chat fragen dieselbe Instanz mit
@@ -11,6 +13,14 @@ export type Status = { openai: boolean; apertus: boolean; elevenlabs: boolean }
 export type Segment = { speaker: string; text: string }
 export type Thought = { lines: TranscriptLine[]; customer?: Slot; advisor?: Slot; hints: Hint[]; insight?: ChatEntry }
 export type Reply = { entry: ChatEntry; hints: Hint[]; next?: Slot }
+
+// Hand-written topics for the sample clients, derived ones for every real client file.
+const derived = new WeakMap<Client, Topic[]>()
+export function topicsFor(client: Client): Topic[] {
+  if (topics[client.ref]) return topics[client.ref]
+  if (!derived.has(client)) derived.set(client, deriveTopics(client))
+  return derived.get(client)!
+}
 
 let counter = 0
 const nextId = () => `e${++counter}`
@@ -38,23 +48,24 @@ function contextFor(client: Client) {
   return {
     kunde: { kennung: client.ref, kundenprofil: client.profile, strategie: client.strategy, anlagedienstleistung: client.service, vermoegen: client.aum, anlass: client.context, letzteBeratung: client.lastConsultation },
     briefing: client.briefing,
-    themen: (topics[client.ref] ?? []).map((t) => ({ thema: t.label, fakten: t.insight.detailliert, begruendung: t.why, quellen: t.sources })),
+    kennzahlen: client.facts ? { ...client.facts, performance: client.facts.performance && { ...client.facts.performance, series: undefined } } : undefined,
+    themen: topicsFor(client).map((t) => ({ thema: t.label, fakten: t.insight.detailliert, begruendung: t.why, quellen: t.sources })),
     marktsignale: signals.filter((s) => s.affected.some((a) => a.ref === client.ref)).map((s) => ({ titel: s.title, detail: s.detail, reichweite: s.reach, quelle: s.source, betroffenheit: s.affected.find((a) => a.ref === client.ref)?.exposure })),
   }
 }
 
-const catalogue = (client: Client) => (topics[client.ref] ?? []).filter((t) => t.module).map((t) => ({ id: t.id, titel: t.module!.spec.title, zeigt: t.module!.spec.note }))
+const catalogue = (client: Client) => topicsFor(client).filter((t) => t.module).map((t) => ({ id: t.id, titel: t.module!.spec.title, zeigt: t.module!.spec.note }))
 
 function pickModule(client: Client, settings: Settings, chosen?: { id: string; confidence: number } | null): Pick<Extract<ChatEntry, { role: 'ki' }>, 'module' | 'offered'> {
-  const spec: ModuleSpec | undefined = (topics[client.ref] ?? []).find((t) => t.id === chosen?.id)?.module?.spec
+  const spec: ModuleSpec | undefined = topicsFor(client).find((t) => t.id === chosen?.id)?.module?.spec
   if (!spec || !chosen) return {}
   const confidence = Math.round(Math.max(0, Math.min(100, chosen.confidence)))
   return settings.autoModules && confidence >= settings.confidence ? { module: spec } : { offered: { spec, confidence } }
 }
 
-export function detectTopics(ref: string, text: string): Topic[] {
+export function detectTopics(who: string | Client, text: string): Topic[] {
   const w = words(text)
-  return (topics[ref] ?? []).filter((t) => t.keywords.some((k) => w.some((x) => x.startsWith(k))))
+  return (typeof who === 'string' ? topics[who] ?? [] : topicsFor(who)).filter((t) => t.keywords.some((k) => w.some((x) => x.startsWith(k))))
 }
 
 const hint = (topicId: string, label: string, text: string, why: string, severity: Hint['severity'], origin: Origin, trigger: string): Hint => ({ id: nextId(), topicId, label, text, why, severity, origin, trigger })
@@ -62,19 +73,21 @@ const hint = (topicId: string, label: string, text: string, why: string, severit
 // Ausgangslage ohne Gespräch: Gesprächseinstieg aus den Marktsignalen und die dringendsten Themen aus den Kundendaten.
 export function openingHints(client: Client): Hint[] {
   const opener = signals.flatMap((s) => s.affected.filter((a) => a.ref === client.ref).map((a) => ({ a, s })))[0]
-  const fromData = (topics[client.ref] ?? []).filter((t) => t.severity === 'risk' || t.severity === 'warn').slice(0, 2).map((t) => hint(t.id, t.label, t.say, t.why, t.severity, 'kundendaten', 'Aus den Kundendaten'))
+  const all = topicsFor(client)
+  const urgent = all.filter((t) => t.severity === 'risk' || t.severity === 'warn')
+  const fromData = (urgent.length ? urgent : all).slice(0, opener ? 2 : 3).map((t) => hint(t.id, t.label, t.say, t.why, t.severity, 'kundendaten', 'Aus den Kundendaten'))
   return opener ? [hint('einstieg', 'Gesprächseinstieg', opener.a.opener, opener.s.title, opener.a.severity, 'kundendaten', 'Gesprächseinstieg aus Marktsignal'), ...fromData] : fromData
 }
 
 // Short chip label: the known topic name, otherwise the model's own keyword.
-const labelOf = (client: Client, topic: string) => (topics[client.ref] ?? []).find((t) => t.id === topic)?.label ?? topic.charAt(0).toUpperCase() + topic.slice(1)
+const labelOf = (client: Client, topic: string) => topicsFor(client).find((t) => t.id === topic)?.label ?? topic.charAt(0).toUpperCase() + topic.slice(1)
 
 export const question = (text: string): ChatEntry => ({ id: nextId(), role: 'berater', text })
 
 const notice = (text: string): ChatEntry => ({ id: nextId(), role: 'ki', origin: 'chat', sources: [], text })
 
 function localAnswer(client: Client, text: string, settings: Settings, origin: Origin): Reply {
-  const found = detectTopics(client.ref, text)
+  const found = detectTopics(client, text)
   if (!found.length) return { hints: [], entry: notice('Dazu liegen für diesen Kunden keine Daten vor. Ich stelle keine Vermutung an.') }
   const t = found[0]
   return {
@@ -90,8 +103,20 @@ export async function answer(client: Client, text: string, settings: Settings, s
   const provider = activeProvider(settings, status)
   if (!provider) { await new Promise((r) => setTimeout(r, 400)); return localAnswer(client, text, settings, 'chat') }
   try {
-    const r = await post<ChatResult>('/api/chat', { provider, detail: settings.detail, context: contextFor(client), modules: catalogue(client), question: text, history: history.slice(-6).map((e) => ({ rolle: e.role, text: e.text })) })
+    const context = contextFor(client)
+    const r = await post<ChatResult>('/api/chat', { provider, detail: settings.detail, context, modules: catalogue(client), question: text, history: history.slice(-6).map((e) => ({ rolle: e.role, text: e.text })) })
+    // Grounding guard: a sentence with a number that is not in the data never reaches the screen.
+    const evidence = JSON.stringify(context) + text
+    if (!grounded(r.text, evidence)) {
+      const local = localAnswer(client, text, settings, 'chat')
+      return local.hints.length ? local : { hints: [], entry: notice('Die Antwort des Modells enthielt eine Zahl, die nicht in den Kundendaten steht. Sie wurde verworfen.') }
+    }
+    if (r.hint && !grounded(r.hint.text, evidence)) r.hint = null
+    if (r.next && !grounded(r.next, evidence)) r.next = null
     const topicId = r.module?.id ?? words(text).slice(0, 2).join('-')
+    // For a known topic the sentence to the client is the computed one: the model tends to pin figures on the wrong subject.
+    const known = r.supported ? topicsFor(client).find((t) => t.id === topicId) : undefined
+    if (known) r.hint = { text: known.say, why: known.why }
     return {
       entry: { id: nextId(), role: 'ki', origin: 'chat', sources: r.sources ?? [], text: r.text, ...(r.supported ? pickModule(client, settings, r.module) : {}) },
       hints: r.supported && r.hint ? [hint(topicId, labelOf(client, topicId), r.hint.text, r.hint.why, 'info', 'chat', `Frage des Beraters: «${text}»`)] : [],
@@ -107,7 +132,7 @@ function localThink(client: Client, segments: Segment[], settings: Settings): Th
   const lines: TranscriptLine[] = segments.map((s) => ({ speaker: s.speaker === 'Berater' ? 'Berater' : 'Kunde', text: s.text }))
   const thought: Thought = { lines, hints: [] }
   for (const line of lines) {
-    const found = detectTopics(client.ref, line.text)
+    const found = detectTopics(client, line.text)
     if (!found.length) continue
     const t = found[0]
     if (line.speaker === 'Berater') { thought.advisor = { heard: line.text, text: t.next, topic: t.id }; continue }
@@ -130,7 +155,14 @@ export async function think(client: Client, transcript: TranscriptLine[], segmen
   const provider = activeProvider(settings, status)
   if (!provider) return localThink(client, segments, settings)
   try {
-    const r = await post<AnalyseResult>('/api/analyse', { provider, detail: settings.detail, context: contextFor(client), modules: catalogue(client), transcript: transcript.slice(-8), segments })
+    const context = contextFor(client)
+    const r = await post<AnalyseResult>('/api/analyse', { provider, detail: settings.detail, context, modules: catalogue(client), transcript: transcript.slice(-8), segments })
+    // Grounding guard, as in `answer`: ungrounded parts fall back to the deterministic topic or are dropped.
+    const evidence = JSON.stringify(context) + segments.map((s) => s.text).join(' ')
+    const local = localThink(client, segments, settings)
+    if (r.customer && !grounded(r.customer.text, evidence)) r.customer = local.customer ? { ...local.customer, why: '' } : null
+    if (r.advisor && !grounded(r.advisor.text, evidence)) r.advisor = local.advisor ?? null
+    if (r.insight && !grounded(r.insight.text, evidence)) r.insight = null
     // The model only assigns roles to anonymous speaker ids. It must not add lines: it sometimes echoes context back.
     const known = segments.every((x) => x.speaker === 'Kunde' || x.speaker === 'Berater')
     const lines: TranscriptLine[] = (known || !r.segments?.length ? segments : r.segments.slice(-segments.length)).map((s) => ({ speaker: s.speaker === 'Berater' ? 'Berater' : 'Kunde', text: s.text }))
