@@ -1,6 +1,6 @@
-import { Activity, ArrowRight, BarChart3, ChevronDown, Headset, MessageSquare, Mic, MicOff, Phone, PhoneCall, PhoneOff, Settings as SettingsIcon, Users } from 'lucide-react'
+import { ArrowRight, BarChart3, Headset, MessageSquare, Mic, MicOff, Phone, PhoneCall, PhoneOff, Settings as SettingsIcon, Users } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { SeverityIcon, Source } from '../cards/ui'
+import { SeverityIcon } from '../cards/ui'
 import { Pill } from '../components/Chrome'
 import { CardView } from '../cards/registry'
 import { newsFeed } from '../data/mock'
@@ -27,10 +27,6 @@ type Props = {
 const originLabel: Record<Origin, string> = { gespraech: 'Aus dem Gespräch', chat: 'Aus dem Berater-Chat', kundendaten: 'Aus den Kundendaten' }
 const rank = { risk: 0, warn: 1, info: 2, ok: 3 }
 const MID_WIDTH = 340
-// Reihenfolge der Tafeln in der mittleren Spalte: vom Vorschlag über die Schritte zur Begründung.
-const midOrder = ['proposal', 'actions', 'drivers', 'context'] as const
-const WORDS_PER_SECOND = 3.3
-const strings = (o: unknown): string[] => (typeof o === 'string' ? [o] : o && typeof o === 'object' ? Object.values(o).flatMap(strings) : [])
 const providerLabel = { openai: 'OpenAI', apertus: 'Apertus', beispiel: 'Beispielmodus' }
 
 export function Workspace({ clients, signals, initialRef, initialCall, onSimulateCall, onOpenBriefing }: Props) {
@@ -108,13 +104,8 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
   const topSignal = (r: string) => signals.flatMap((s) => s.affected.filter((a) => a.ref === r).map((a) => ({ ...a, title: s.title }))).sort((a, b) => rank[a.severity] - rank[b.severity])[0]
   const open = useMemo(() => (topicData[client.ref] ?? []).filter((t) => !chat.some((e) => e.role === 'ki' && e.text === t.insight[settings.detail])), [client.ref, chat, settings.detail])
 
-  const midCards = midOrder.flatMap((type) => client.briefing.filter((c) => c.type === type))
-  const [closed, setClosed] = useState<Set<string>>(new Set(['drivers', 'context']))
-  const toggle = (type: string) => setClosed((c) => { const n = new Set(c); if (!n.delete(type)) n.add(type); return n })
-  const readSeconds = useMemo(() => {
-    const text = [...newsFeed.filter((n) => n.affects[client.ref]).map((n) => `${n.title} ${n.affects[client.ref].meaning}`), ...midCards.filter((c) => !closed.has(c.type)).flatMap(strings)].join(' ')
-    return Math.round(text.split(/[^\p{L}\p{N}%.]+/u).filter((w) => w.length > 1).length / WORDS_PER_SECOND / 5) * 5
-  }, [client.ref, closed]) // eslint-disable-line react-hooks/exhaustive-deps
+  const proposal = client.briefing.find((c) => c.type === 'proposal')
+  const promote = (id: string) => setHints((h) => [...h.filter((x) => x.id === id), ...h.filter((x) => x.id !== id)])
 
   const base = { assistent: 1 + (100 - settings.focus) / 50, chat: 1 + settings.focus / 50 }
 
@@ -134,7 +125,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
       <div className="flex shrink-0 items-center justify-between bg-band px-3 py-3">
         <div>
           <div className="text-[17px]">Anrufe &amp; Signale</div>
-          <div className="mt-1 text-[11px]">Marktsignale: {signals.length} <span className="mx-1 text-muted">|</span> Kontaktvorschläge: {signals.reduce((n, s) => n + s.affected.length, 0)} <span className="mx-1 text-muted">|</span> Aufzeichnung: {settings.record ? 'ein' : 'aus'} <span className="mx-1 text-muted">|</span> Detailgrad: {settings.detail} <span className="mx-1 text-muted">|</span> KI: {providerLabel[activeProvider(settings, status) ?? 'beispiel']} <span className="mx-1 text-muted">|</span> Transkription: {status.elevenlabs ? 'ElevenLabs' : 'Browser'}</div>
+          <div className="mt-1 text-[11px]">KI: {providerLabel[activeProvider(settings, status) ?? 'beispiel']} <span className="mx-1 text-muted">|</span> Aufzeichnung: {settings.record ? 'ein' : 'aus'}</div>
         </div>
         <div className="flex gap-2">
           <Pill icon={PhoneCall} onClick={onSimulateCall}>Anruf simulieren</Pill>
@@ -143,77 +134,56 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
       </div>
 
       <div className="flex min-h-0 flex-1 gap-2.5 p-2">
-        <aside className="flex w-[280px] shrink-0 flex-col gap-2.5">
-          <section className="flex min-h-0 flex-1 flex-col bg-white shadow-card">
-            <PaneTitle icon={Users} title="Kunden" />
-            <ul className="min-h-0 flex-1 overflow-y-auto">
-              {clients.map((c, i) => {
-                const s = topSignal(c.ref)
-                return (
-                  <li key={c.ref}>
-                    <button onClick={() => select(c.ref)} className={`flex w-full items-start gap-2 border-l-[3px] px-3 py-2 text-left transition-colors duration-200 ${c.ref === ref ? 'border-brand bg-brand-soft/30' : `border-transparent hover:bg-brand-soft/20 ${i % 2 ? 'bg-stripe' : ''}`}`}>
-                      <span className="mt-0.5">{s ? <SeverityIcon severity={s.severity} size={12} /> : <span className="block w-3" />}</span>
-                      <span className="min-w-0"><span className="block">{c.name} <span className="text-[11px] text-muted">· {c.profile}</span></span><span className="block truncate text-[11px] text-muted">{s?.title ?? 'Kein offenes Signal'}</span></span>
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-          </section>
-          <section className="flex min-h-0 flex-1 flex-col bg-white shadow-card">
-            <PaneTitle icon={Activity} title="Marktsignale" />
-            <ul className="min-h-0 flex-1 overflow-y-auto">
-              {signals.map((s, i) => {
-                const hit = s.affected.some((a) => a.ref === ref)
-                return (
-                  <li key={s.id} className={`border-l-[3px] px-3 py-2 transition-all duration-300 ${hit ? 'border-brand' : 'border-transparent opacity-50'} ${i % 2 ? 'bg-stripe' : ''}`}>
-                    <div className="flex items-start justify-between gap-2"><span className="text-xs leading-snug">{s.title}</span><span className="shrink-0 rounded-sm bg-pill px-1.5 py-px text-[10px]">{s.reach}</span></div>
-                    <div className="mt-0.5 text-[11px] text-muted">{s.time} <Source>{s.source}</Source></div>
-                  </li>
-                )
-              })}
-            </ul>
-          </section>
+        <aside className="flex w-[230px] shrink-0 flex-col bg-white shadow-card">
+          <PaneTitle icon={Users} title="Kunden" />
+          <ul className="min-h-0 flex-1 overflow-y-auto">
+            {clients.map((c, i) => {
+              const s = topSignal(c.ref)
+              return (
+                <li key={c.ref}>
+                  <button onClick={() => select(c.ref)} title={s?.title} className={`flex w-full items-center gap-2 border-l-[3px] px-3 py-2.5 text-left transition-colors duration-200 ${c.ref === ref ? 'border-brand bg-brand-soft/30' : `border-transparent hover:bg-brand-soft/20 ${i % 2 ? 'bg-stripe' : ''}`}`}>
+                    {s ? <SeverityIcon severity={s.severity} size={12} /> : <span className="block w-3" />}
+                    <span className="min-w-0 flex-1 truncate">{c.name}</span>
+                    <span className="shrink-0 text-[11px] text-muted">{c.profile}</span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
         </aside>
 
         <div ref={split} className={`flex min-w-0 flex-1 ${settings.dragSplit ? '' : 'gap-2.5'} ${dragging ? 'select-none' : ''}`}>
-        <Pane grow={base.assistent} still={dragging} icon={Headset} title="Gesprächsassistent" sub="Was Sie dem Kunden sagen können"
+        <Pane grow={base.assistent} still={dragging} icon={Headset} title="Gesprächsassistent"
           actions={<>
             {inCall && settings.record && canListen(status.elevenlabs) && <button onClick={() => setMic((m) => !m)} className={`flex items-center gap-1 rounded-sm px-2 py-1 text-[11px] ${mic ? 'bg-risk text-white' : 'bg-pill hover:bg-track'}`}>{mic ? <Mic size={12} /> : <MicOff size={12} />} Mikrofon</button>}
             <button onClick={() => setInCall((v) => !v)} className={`flex items-center gap-1 rounded-sm px-2 py-1 text-[11px] text-white ${inCall ? 'bg-risk' : 'bg-brand hover:bg-brand-dark'}`}>{inCall ? <><PhoneOff size={12} /> Gespräch beenden</> : <><Phone size={12} /> Gespräch starten</>}</button>
           </>}>
           <div className="mb-3 flex items-center gap-2 text-[11px] text-muted">
             <span className={`h-2 w-2 rounded-full ${inCall ? 'animate-pulse bg-risk' : 'bg-track'}`} />
-            {inCall ? `Gespräch mit ${client.name} läuft · ${settings.record ? (mic ? 'Mikrofon wird transkribiert' : 'Transkription aktiv') : 'keine Aufzeichnung'}` : `Vorbereitung für ${client.name}`}
+            {inCall ? 'Gespräch läuft' : 'Vorbereitung'}
             <button onClick={() => onOpenBriefing(client.ref)} className="ml-auto inline-flex items-center gap-1 text-brand hover:underline">Briefing <ArrowRight size={11} /></button>
           </div>
 
           {hints[0] && (
-            <div key={hints[0].id} className="anim-rise border-l-4 border-brand bg-brand-soft/25 p-4">
-              <div className="mb-1 flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted"><SeverityIcon severity={hints[0].severity} size={11} /> Jetzt ansprechen · {originLabel[hints[0].origin]}</div>
-              <p className="text-[17px] leading-snug">{hints[0].text}</p>
-              <p className="mt-2 text-[11px] text-muted">{hints[0].why}</p>
-              <p className="mt-1 truncate text-[11px] italic text-muted">{hints[0].trigger}</p>
+            <div key={hints[0].id} title={`${hints[0].why}\n${originLabel[hints[0].origin]} · ${hints[0].trigger}`} className="anim-rise border-l-4 border-brand bg-brand-soft/25 p-4">
+              <div className="mb-1.5 flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted"><SeverityIcon severity={hints[0].severity} size={11} /> {hints[0].label}</div>
+              <p className="text-[19px] leading-snug">{hints[0].text}</p>
             </div>
           )}
-          <ul className="mt-2">
-            {hints.slice(1).map((h, i) => (
-              <li key={h.id} className={`anim-rise flex items-start gap-2 px-2 py-2 ${i % 2 ? '' : 'bg-stripe'}`}>
-                <span className="mt-0.5"><SeverityIcon severity={h.severity} size={12} /></span>
-                <span className="min-w-0 leading-snug">{h.text}<span className="block text-[11px] text-muted">{originLabel[h.origin]} · {h.why}</span></span>
-              </li>
+          <div className="mt-2.5 flex flex-wrap gap-1.5">
+            {hints.slice(1).map((h) => (
+              <button key={h.id} onClick={() => promote(h.id)} title={h.text} className="anim-rise flex items-center gap-1.5 rounded-sm bg-pill px-2 py-1 text-xs transition-colors hover:bg-brand hover:text-white">
+                <SeverityIcon severity={h.severity} size={11} /> {h.label}
+              </button>
             ))}
-          </ul>
-
-          <div className="mt-4 border-t border-line pt-3">
-            {note && <p className="mb-2 flex items-start gap-1.5 text-[11px] leading-snug text-risk"><SeverityIcon severity="risk" size={11} /> {note}</p>}
-            <div className="mb-1 text-[10px] uppercase tracking-wide text-muted">Transkript</div>
-            {!settings.record
-              ? <p className="text-[11px] leading-snug text-muted">Aufzeichnung ausgeschaltet. Es wird nichts transkribiert – die Hinweise stützen sich auf den Berater-Chat und die Kundendaten.</p>
-              : lines.length === 0
-                ? <p className="text-[11px] text-muted">{inCall ? 'Warte auf das Gespräch …' : 'Noch kein Gespräch. Das Transkript erscheint hier, sobald ein Gespräch läuft.'}</p>
-                : <ul className="space-y-1 text-xs">{lines.slice(-5).map((l, i) => <li key={i} className="anim-rise leading-snug"><span className={`mr-1.5 text-[10px] uppercase ${l.speaker === 'Kunde' ? 'text-brand-dark' : 'text-muted'}`}>{l.speaker}</span>{l.text}</li>)}</ul>}
           </div>
+
+          {(note || (settings.record && lines.length > 0)) && (
+            <div className="mt-4 border-t border-line pt-3">
+              {note && <p className="mb-2 flex items-start gap-1.5 text-[11px] leading-snug text-risk"><SeverityIcon severity="risk" size={11} /> {note}</p>}
+              <ul className="space-y-1 text-xs">{lines.slice(-3).map((l, i) => <li key={lines.length - i} title={l.text} className="anim-rise truncate text-muted"><span className={`mr-1.5 text-[10px] uppercase ${l.speaker === 'Kunde' ? 'text-brand-dark' : ''}`}>{l.speaker}</span>{l.text}</li>)}</ul>
+            </div>
+          )}
         </Pane>
 
         {settings.dragSplit && (
@@ -229,23 +199,11 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
         )}
 
         <div className={`compact flex shrink-0 flex-col gap-2.5 ${settings.dragSplit ? 'mr-2.5' : ''}`} style={{ width: MID_WIDTH }}>
-          <div className="flex shrink-0 items-center justify-between px-1 text-[11px] text-muted"><span className="uppercase tracking-wide">Lage auf einen Blick</span><span>Lesezeit ≈ {readSeconds} Sek.</span></div>
-          <div className="flex max-h-[40%] shrink-0 flex-col"><NewsFeed key={client.ref} feed={newsFeed} clientRef={client.ref} /></div>
-          <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto pb-0.5">
-            {midCards.map((card, i) => (closed.has(card.type) ? (
-              <button key={`${client.ref}-m${i}`} onClick={() => toggle(card.type)} className="flex w-full items-center justify-between bg-white px-3.5 py-2.5 text-left text-[13px] shadow-card hover:text-brand">
-                {'title' in card ? card.title : ''} <ChevronDown size={14} className="text-muted" />
-              </button>
-            ) : (
-              <div key={`${client.ref}-m${i}`} className="relative">
-                <CardView card={card} />
-                <button onClick={() => toggle(card.type)} aria-label="Einklappen" className="absolute right-2.5 top-3 text-muted hover:text-brand"><ChevronDown size={14} className="rotate-180" /></button>
-              </div>
-            )))}
-          </div>
+          <div className="flex min-h-0 flex-[45] flex-col overflow-hidden"><NewsFeed key={client.ref} feed={newsFeed} clientRef={client.ref} /></div>
+          <div className="min-h-0 flex-[55] overflow-hidden bg-white shadow-card [&>section]:shadow-none">{proposal && <CardView card={proposal} />}</div>
         </div>
 
-        <Pane grow={base.chat} still={dragging} icon={MessageSquare} title="Berater-Chat" sub="Einblicke für Sie, mit Zugriff auf die Kundendaten"
+        <Pane grow={base.chat} still={dragging} icon={MessageSquare} title="Berater-Chat"
           footer={
             <form onSubmit={(e) => { e.preventDefault(); const f = e.currentTarget.elements.namedItem('q') as HTMLInputElement; ask(f.value); f.value = '' }} className="flex border-t border-line text-xs">
               <input name="q" autoComplete="off" placeholder={`Frage zu ${client.name} stellen …`} className="min-w-0 flex-1 px-3 py-2.5 outline-none" />
@@ -268,21 +226,21 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
   )
 }
 
-function PaneTitle({ icon: Icon, title, sub, actions }: { icon: typeof Users; title: string; sub?: string; actions?: ReactNode }) {
+function PaneTitle({ icon: Icon, title, actions }: { icon: typeof Users; title: string; actions?: ReactNode }) {
   return (
     <div className="flex shrink-0 items-center justify-between gap-3 px-4 pb-2 pt-4">
-      <h3 className="flex min-w-0 items-baseline gap-2 text-[15px]"><Icon size={16} strokeWidth={1.5} className="shrink-0 self-center" /><span className="whitespace-nowrap">{title}</span>{sub && <span className="truncate text-[11px] text-muted">{sub}</span>}</h3>
+      <h3 className="flex min-w-0 items-baseline gap-2 text-[15px]"><Icon size={16} strokeWidth={1.5} className="shrink-0 self-center" /><span className="whitespace-nowrap">{title}</span></h3>
       {actions && <div className="flex shrink-0 gap-1.5">{actions}</div>}
     </div>
   )
 }
 
-function Pane({ grow, still, icon, title, sub, actions, footer, children }: { grow: number; still: boolean; icon: typeof Users; title: string; sub: string; actions?: ReactNode; footer?: ReactNode; children: ReactNode }) {
+function Pane({ grow, still, icon, title, actions, footer, children }: { grow: number; still: boolean; icon: typeof Users; title: string; actions?: ReactNode; footer?: ReactNode; children: ReactNode }) {
   return (
     <section
       style={{ flexGrow: grow }}
       className={`flex min-w-0 basis-0 flex-col bg-white shadow-card motion-reduce:transition-none ${still ? '' : 'transition-[flex-grow] duration-[650ms] ease-[cubic-bezier(.22,1,.36,1)]'}`}>
-      <PaneTitle icon={icon} title={title} sub={sub} actions={actions} />
+      <PaneTitle icon={icon} title={title} actions={actions} />
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">{children}</div>
       {footer}
     </section>
@@ -291,22 +249,28 @@ function Pane({ grow, still, icon, title, sub, actions, footer, children }: { gr
 
 function ChatLog({ chat, busy, detail, onShow }: { chat: ChatEntry[]; busy: boolean; detail: 'kurz' | 'standard' | 'detailliert'; onShow: (id: string) => void }) {
   const end = useRef<HTMLDivElement>(null)
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
   useEffect(() => { end.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }) }, [chat, busy])
-  if (!chat.length && !busy) return <p className="text-[11px] leading-snug text-muted">Stellen Sie eine Frage oder wählen Sie ein Thema. Themen, die im Gespräch fallen, erscheinen hier automatisch als Einblick.</p>
   return (
     <div className="space-y-2.5 text-xs">
-      {chat.map((e) => e.role === 'berater'
-        ? <div key={e.id} className="anim-rise ml-auto w-fit max-w-[85%] bg-brand px-2.5 py-1.5 leading-snug text-white">{e.text}</div>
-        : (
+      {chat.map((e) => {
+        if (e.role === 'berater') return <div key={e.id} className="anim-rise ml-auto w-fit max-w-[85%] bg-brand px-2.5 py-1.5 leading-snug text-white">{e.text}</div>
+        const cutAt = e.text.search(/[.!?](\s|$)/) + 1
+        const long = cutAt > 0 && cutAt < e.text.length - 1 && !expanded.has(e.id)
+        return (
           <div key={e.id} className="anim-rise bg-stripe px-3 py-2.5">
-            {e.origin === 'gespraech' && <div className="mb-1 text-[10px] uppercase tracking-wide text-brand-dark">Im Gespräch erkannt</div>}
-            <p className="leading-relaxed">{e.text}</p>
-            {e.sources.length > 0 && <p className="mt-1.5 text-[11px] text-muted">Quellen: {e.sources.join(' · ')}</p>}
+            <p className="leading-relaxed">
+              {e.origin === 'gespraech' && <span className="mr-1.5 text-[10px] uppercase tracking-wide text-brand-dark">Gespräch</span>}
+              {long ? e.text.slice(0, cutAt) : e.text}
+              {long && <button onClick={() => setExpanded((x) => new Set(x).add(e.id))} className="ml-1 text-brand hover:underline">mehr</button>}
+              {e.sources.length > 0 && <span title={e.sources.join(' · ')} className="ml-1.5 cursor-help whitespace-nowrap text-[11px] text-muted">· {e.sources.length} Quellen</span>}
+            </p>
             {e.module && <ModuleView spec={e.module} detail={detail} />}
-            {e.offered && <button onClick={() => onShow(e.id)} className="mt-2 inline-flex items-center gap-1.5 rounded-sm bg-pill px-2 py-1 text-[11px] hover:bg-brand hover:text-white"><BarChart3 size={12} /> Grafik anzeigen · Konfidenz {e.offered.confidence}%</button>}
+            {e.offered && <button onClick={() => onShow(e.id)} className="mt-2 inline-flex items-center gap-1.5 rounded-sm bg-pill px-2 py-1 text-[11px] hover:bg-brand hover:text-white"><BarChart3 size={12} /> Grafik · {e.offered.confidence}%</button>}
           </div>
-        ))}
-      {busy && <div className="text-muted">Die KI prüft die Kundendaten …</div>}
+        )
+      })}
+      {busy && <div className="text-muted">…</div>}
       <div ref={end} />
     </div>
   )

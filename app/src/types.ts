@@ -56,7 +56,7 @@ export type NewsItem = {
   title: string
   source: string
   reach: Reach
-  affects: Record<string, { position: string; meaning: string; severity: Severity }>
+  affects: Record<string, { tag: string; position: string; meaning: string; severity: Severity }>
 }
 
 export type IncomingCall = { ref: string; number: string; reason: string }

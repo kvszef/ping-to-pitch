@@ -2,12 +2,13 @@ import { AlertTriangle, CircleCheck, Info, XCircle, type LucideIcon } from 'luci
 import type { ReactNode } from 'react'
 import type { Kind, Severity } from '../types'
 
-export function Panel({ title, icon: Icon, children, className = '' }: { title?: string; icon?: LucideIcon; children: ReactNode; className?: string }) {
+export function Panel({ title, icon: Icon, aside, children, className = '' }: { title?: string; icon?: LucideIcon; aside?: ReactNode; children: ReactNode; className?: string }) {
   return (
     <section className={`bg-white p-5 shadow-card [.compact_&]:p-3.5 ${className}`}>
       {title && (
         <h3 className="mb-3 flex items-center gap-1.5 text-[15px] [.compact_&]:mb-2 [.compact_&]:text-[13px]">
           {Icon && <Icon size={16} strokeWidth={1.5} />} {title}
+          {aside && <span className="ml-auto">{aside}</span>}
         </h3>
       )}
       {children}

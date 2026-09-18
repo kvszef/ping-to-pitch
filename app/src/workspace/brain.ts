@@ -57,14 +57,17 @@ export function detectTopics(ref: string, text: string): Topic[] {
   return (topics[ref] ?? []).filter((t) => t.keywords.some((k) => w.some((x) => x.startsWith(k))))
 }
 
-const hint = (topicId: string, text: string, why: string, severity: Hint['severity'], origin: Origin, trigger: string): Hint => ({ id: nextId(), topicId, text, why, severity, origin, trigger })
+const hint = (topicId: string, label: string, text: string, why: string, severity: Hint['severity'], origin: Origin, trigger: string): Hint => ({ id: nextId(), topicId, label, text, why, severity, origin, trigger })
 
 // Ausgangslage ohne Gespräch: Gesprächseinstieg aus den Marktsignalen und die dringendsten Themen aus den Kundendaten.
 export function openingHints(client: Client): Hint[] {
   const opener = signals.flatMap((s) => s.affected.filter((a) => a.ref === client.ref).map((a) => ({ a, s })))[0]
-  const fromData = (topics[client.ref] ?? []).filter((t) => t.severity === 'risk' || t.severity === 'warn').slice(0, 2).map((t) => hint(t.id, t.say, t.why, t.severity, 'kundendaten', 'Aus den Kundendaten'))
-  return opener ? [hint('einstieg', opener.a.opener, opener.s.title, opener.a.severity, 'kundendaten', 'Gesprächseinstieg aus Marktsignal'), ...fromData] : fromData
+  const fromData = (topics[client.ref] ?? []).filter((t) => t.severity === 'risk' || t.severity === 'warn').slice(0, 2).map((t) => hint(t.id, t.label, t.say, t.why, t.severity, 'kundendaten', 'Aus den Kundendaten'))
+  return opener ? [hint('einstieg', 'Gesprächseinstieg', opener.a.opener, opener.s.title, opener.a.severity, 'kundendaten', 'Gesprächseinstieg aus Marktsignal'), ...fromData] : fromData
 }
+
+// Short chip label: the known topic name, otherwise the model's own keyword.
+const labelOf = (client: Client, topic: string) => (topics[client.ref] ?? []).find((t) => t.id === topic)?.label ?? topic.charAt(0).toUpperCase() + topic.slice(1)
 
 export const question = (text: string): ChatEntry => ({ id: nextId(), role: 'berater', text })
 
@@ -76,7 +79,7 @@ function localAnswer(client: Client, text: string, settings: Settings, origin: O
   const t = found[0]
   return {
     entry: { id: nextId(), role: 'ki', origin, sources: t.sources, text: t.insight[settings.detail], ...pickModule(client, settings, t.module && { id: t.id, confidence: t.module.confidence }) },
-    hints: found.map((f) => hint(f.id, f.say, f.why, f.severity, origin, `Frage des Beraters: «${text}»`)),
+    hints: found.map((f) => hint(f.id, f.label, f.say, f.why, f.severity, origin, `Frage des Beraters: «${text}»`)),
     next: { heard: text, text: t.next, topic: t.id },
   }
 }
@@ -91,7 +94,7 @@ export async function answer(client: Client, text: string, settings: Settings, s
     const topicId = r.module?.id ?? words(text).slice(0, 2).join('-')
     return {
       entry: { id: nextId(), role: 'ki', origin: 'chat', sources: r.sources ?? [], text: r.text, ...(r.supported ? pickModule(client, settings, r.module) : {}) },
-      hints: r.supported && r.hint ? [hint(topicId, r.hint.text, r.hint.why, 'info', 'chat', `Frage des Beraters: «${text}»`)] : [],
+      hints: r.supported && r.hint ? [hint(topicId, labelOf(client, topicId), r.hint.text, r.hint.why, 'info', 'chat', `Frage des Beraters: «${text}»`)] : [],
       next: r.supported && r.next ? { heard: text, text: r.next, topic: topicId } : undefined,
     }
   } catch (e) {
@@ -109,7 +112,7 @@ function localThink(client: Client, segments: Segment[], settings: Settings): Th
     const t = found[0]
     if (line.speaker === 'Berater') { thought.advisor = { heard: line.text, text: t.next, topic: t.id }; continue }
     thought.customer = { heard: line.text, text: t.say, topic: t.id }
-    thought.hints.push(...found.map((f) => hint(f.id, f.say, f.why, f.severity, 'gespraech', `Kunde: «${line.text}»`)))
+    thought.hints.push(...found.map((f) => hint(f.id, f.label, f.say, f.why, f.severity, 'gespraech', `Kunde: «${line.text}»`)))
     thought.insight = { id: nextId(), role: 'ki', origin: 'gespraech', sources: t.sources, text: t.insight[settings.detail], ...pickModule(client, settings, t.module && { id: t.id, confidence: t.module.confidence }) }
   }
   return thought
@@ -128,12 +131,14 @@ export async function think(client: Client, transcript: TranscriptLine[], segmen
   if (!provider) return localThink(client, segments, settings)
   try {
     const r = await post<AnalyseResult>('/api/analyse', { provider, detail: settings.detail, context: contextFor(client), modules: catalogue(client), transcript: transcript.slice(-8), segments })
-    const lines: TranscriptLine[] = (r.segments?.length ? r.segments : segments).map((s) => ({ speaker: s.speaker === 'Berater' ? 'Berater' : 'Kunde', text: s.text }))
+    // The model only assigns roles to anonymous speaker ids. It must not add lines: it sometimes echoes context back.
+    const known = segments.every((x) => x.speaker === 'Kunde' || x.speaker === 'Berater')
+    const lines: TranscriptLine[] = (known || !r.segments?.length ? segments : r.segments.slice(-segments.length)).map((s) => ({ speaker: s.speaker === 'Berater' ? 'Berater' : 'Kunde', text: s.text }))
     return {
       lines,
       customer: r.customer ? { heard: r.customer.heard, text: r.customer.text, topic: r.customer.topic } : undefined,
       advisor: r.advisor ? { heard: r.advisor.heard, text: r.advisor.text, topic: r.advisor.topic } : undefined,
-      hints: r.customer ? [hint(r.customer.topic, r.customer.text, r.customer.why ?? '', 'info', 'gespraech', `Kunde: «${r.customer.heard}»`)] : [],
+      hints: r.customer ? [hint(r.customer.topic, labelOf(client, r.customer.topic), r.customer.text, r.customer.why ?? '', 'info', 'gespraech', `Kunde: «${r.customer.heard}»`)] : [],
       insight: r.insight ? { id: nextId(), role: 'ki', origin: 'gespraech', sources: r.insight.sources ?? [], text: r.insight.text, ...pickModule(client, settings, r.insight.module) } : undefined,
     }
   } catch {

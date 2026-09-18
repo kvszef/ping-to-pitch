@@ -41,7 +41,7 @@ export type TranscriptLine = { speaker: 'Kunde' | 'Berater'; text: string }
 
 export type Origin = 'gespraech' | 'chat' | 'kundendaten'
 
-export type Hint = { id: string; topicId: string; text: string; why: string; severity: Severity; origin: Origin; trigger: string }
+export type Hint = { id: string; topicId: string; label: string; text: string; why: string; severity: Severity; origin: Origin; trigger: string }
 
 export type ChatEntry =
   | { id: string; role: 'berater'; text: string }

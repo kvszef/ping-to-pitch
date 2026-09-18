@@ -52,14 +52,14 @@ const sideStyle = { Kauf: 'bg-brand text-white', Verkauf: 'bg-ink text-white', A
 
 export function Proposal({ card }: { card: CardOf<'proposal'> }) {
   return (
-    <Panel title={card.title} icon={FileText}>
-      <div className="mb-2 flex items-start justify-between gap-2"><p className="text-xs leading-snug">{card.summary}</p><span className="shrink-0 rounded-sm bg-pill px-1.5 py-px text-[10px]">{card.status}</span></div>
+    <Panel title={card.title} icon={FileText} aside={<span title={[card.summary, card.open].filter(Boolean).join(' ')} className="rounded-sm bg-pill px-1.5 py-px text-[10px]">{card.status}</span>}>
+      <p className="mb-2 text-xs leading-snug [.compact_&]:hidden">{card.summary}</p>
       <ul className="text-xs">
         {card.trades.map((t, i) => (
           <li key={t.name} className={`flex items-start gap-2 px-2 py-1.5 ${i % 2 ? '' : 'bg-stripe'}`}>
             <span className={`mt-px w-[74px] shrink-0 rounded-sm py-px text-center text-[10px] ${sideStyle[t.side]}`}>{t.side}</span>
-            <span className="min-w-0 flex-1 leading-snug">{t.name}</span>
-            <span className="shrink-0 whitespace-nowrap text-right tabular-nums leading-snug">{t.amount}<span className="block text-[11px] text-muted">{t.share}</span></span>
+            <span title={t.name} className="min-w-0 flex-1 leading-snug [.compact_&]:line-clamp-2">{t.name}</span>
+            <span className="shrink-0 whitespace-nowrap text-right tabular-nums leading-snug">{t.amount}<span className="block text-[11px] text-muted [.compact_&]:hidden">{t.share}</span></span>
           </li>
         ))}
       </ul>
@@ -73,7 +73,7 @@ export function Proposal({ card }: { card: CardOf<'proposal'> }) {
           </li>
         ))}
       </ul>
-      {card.open && <p className="mt-3 border-t border-line pt-2 text-[11px] leading-snug text-muted">{card.open}</p>}
+      {card.open && <p className="mt-3 border-t border-line pt-2 text-[11px] leading-snug text-muted [.compact_&]:hidden">{card.open}</p>}
     </Panel>
   )
 }
