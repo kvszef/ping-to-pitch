@@ -9,6 +9,7 @@ export async function ask(client: Client, question: string): Promise<string> {
       case 'headline': return [c.text]
       case 'metrics': return c.items.map((m) => `${m.label}: ${m.value}${m.delta ? ` (${m.delta})` : ''}`)
       case 'split': return [...c.left.points, ...c.right.points].map((p) => p.text)
+      case 'allocation': return c.rows.map((r) => `${r.label}: ${r.actual}% of portfolio, mandate band ${r.min}–${r.max}%, target ${r.target}%.`)
       case 'flags': return c.items.map((f) => `${f.text} (${f.source})`)
       case 'actions': return c.items.map((a) => `${a.text} ${a.why}`)
       case 'questions': return c.items.map((x) => x.a)

@@ -1,51 +1,68 @@
+import { ArrowLeft, Briefcase, CircleUser, ClipboardList, FileUp, Info, Menu, Phone, PieChart, StickyNote, Upload } from 'lucide-react'
 import { useState } from 'react'
-import { CardView } from './cards/registry'
+import { CardView, slotOf } from './cards/registry'
 import { ChatDock } from './components/ChatDock'
+import { InfoBand, Pill, SubBar, TopBar } from './components/Chrome'
+import { Dashboard } from './components/Dashboard'
 import { LiveOverlay } from './components/LiveOverlay'
 import { clients } from './data/mock'
 
+// Deep link: #CASE-A or #CASE-A/live
+const hash = location.hash.slice(1).split('/')
+
 export default function App() {
-  const [ref, setRef] = useState(clients[0].ref)
-  const [live, setLive] = useState(false)
-  const client = clients.find((c) => c.ref === ref) ?? clients[0]
+  const [ref, setRef] = useState<string | null>(() => hash[0] || null)
+  const [live, setLive] = useState(hash[1] === 'live')
+  const client = clients.find((c) => c.ref === ref)
+
+  if (!client) {
+    return (
+      <div className="flex h-full flex-col">
+        <TopBar />
+        <Dashboard clients={clients} onOpen={setRef} />
+      </div>
+    )
+  }
+
+  const main = client.briefing.filter((c) => slotOf(c) === 'main')
+  const side = client.briefing.filter((c) => slotOf(c) === 'side')
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center justify-between bg-brand px-5 py-3 text-white">
-        <div className="font-semibold tracking-wide">UNRISKOMEGA <span className="font-normal opacity-80">· 60-Second Briefing</span></div>
-        <div className="flex gap-2">
-          <button className="rounded bg-white/15 px-3 py-1.5 text-xs hover:bg-white/25">Upload clients.json</button>
-          <button className="rounded bg-white/15 px-3 py-1.5 text-xs hover:bg-white/25">Import PDF (ex-custody)</button>
-          <button onClick={() => setLive((v) => !v)} className="rounded bg-white px-3 py-1.5 text-xs font-semibold text-brand-dark">{live ? 'Exit live mode' : 'Live call mode'}</button>
+      <TopBar />
+      <SubBar title={`${client.name} (${client.ref})`} items={[
+        { label: 'Telefonberatung', icon: Phone, active: live, onClick: () => setLive((v) => !v) },
+        { label: 'Beratermappe', icon: Briefcase },
+        { label: 'Notizen', icon: StickyNote, badge: 0 },
+        { label: 'Briefing', icon: ClipboardList, active: !live },
+        { label: 'Analyse', icon: PieChart },
+        { label: 'Kundeninformation', icon: CircleUser },
+        { label: 'Portfolio', icon: Info },
+        { label: '', icon: ArrowLeft, onClick: () => { setRef(null); setLive(false) } },
+        { label: '', icon: Menu },
+      ]} />
+      <InfoBand total={client.aum} fields={[
+        { label: 'Portfolio', value: client.portfolioNr },
+        { label: 'Anlagedienstleistung', value: client.service },
+        { label: 'Strategie', value: client.strategy },
+        { label: 'Anlass', value: client.context },
+      ]}>
+        <div className="mt-2 flex gap-2">
+          {clients.map((c) => <Pill key={c.ref} icon={CircleUser} active={c.ref === client.ref} onClick={() => setRef(c.ref)}>{c.name}</Pill>)}
+          <span className="mx-1 border-l border-ink/40" />
+          <Pill icon={Upload}>clients.json</Pill>
+          <Pill icon={FileUp}>Fremdbank-PDF</Pill>
         </div>
-      </header>
+      </InfoBand>
 
-      <div className="flex min-h-0 flex-1">
-        <aside className="w-64 shrink-0 overflow-y-auto border-r border-line bg-white">
-          <div className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted">Clients</div>
-          {clients.map((c) => (
-            <button key={c.ref} onClick={() => setRef(c.ref)} className={`block w-full border-l-4 px-4 py-3 text-left hover:bg-surface ${c.ref === ref ? 'border-brand bg-surface' : 'border-transparent'}`}>
-              <div className="flex items-center justify-between">
-                <span className="font-medium">{c.name}</span>
-                {c.alerts > 0 && <span className="rounded-full bg-risk px-1.5 text-[10px] font-semibold text-white">{c.alerts}</span>}
-              </div>
-              <div className="text-xs text-muted">{c.mandate}</div>
-              <div className="text-xs text-muted">{c.context}</div>
-            </button>
-          ))}
-        </aside>
-
-        <main className="min-w-0 flex-1 overflow-y-auto p-5">
-          <div className="mx-auto max-w-4xl space-y-4">
-            <div className="flex items-baseline justify-between">
-              <h1 className="text-xl font-semibold">{client.name} <span className="text-sm font-normal text-muted">{client.ref} · {client.aum}</span></h1>
-              <span className="text-xs text-muted">{client.context} · ~60s read</span>
-            </div>
-            {client.briefing.map((card, i) => <CardView key={`${client.ref}-${i}`} card={card} />)}
-          </div>
+      <div className="flex min-h-0 flex-1 gap-2.5 p-2">
+        <main className="min-w-0 flex-1 space-y-2.5 overflow-y-auto pb-2 pr-0.5">
+          {main.map((card, i) => <CardView key={`${client.ref}-${i}`} card={card} />)}
         </main>
-
-        {!live && <aside className="hidden w-80 shrink-0 border-l border-line bg-white lg:block"><ChatDock client={client} /></aside>}
+        <aside className="flex w-[300px] shrink-0 flex-col gap-2.5">
+          {side.map((card, i) => <CardView key={`${client.ref}-s${i}`} card={card} />)}
+          {!live && <ChatDock client={client} className="min-h-0 flex-1" />}
+        </aside>
       </div>
 
       {live && <LiveOverlay client={client} onClose={() => setLive(false)} />}

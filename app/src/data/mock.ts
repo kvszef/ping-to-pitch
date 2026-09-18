@@ -4,11 +4,19 @@ import type { Client } from '../types'
 export const clients: Client[] = [
   {
     ref: 'CASE-A',
-    name: 'Client A',
-    mandate: 'Aggressive · Global equities · CHF',
-    aum: "CHF 1'240'000",
-    context: 'Short-notice call',
-    alerts: 2,
+    name: "Client A",
+    clientType: "Natürliche Person",
+    profile: "Dynamisch",
+    portfolioNr: "15.02996",
+    service: "Anlageberatung Portfolio",
+    strategy: "Wachstum",
+    aum: "CHF 1'240'000.00",
+    context: "Short-notice call",
+    birthday: "14.08.1988",
+    lastProfiling: "08.05.2026",
+    lastConsultation: "19.08.2026",
+    errors: 1,
+    warnings: 1,
     briefing: [
       { type: 'headline', text: 'Portfolio fell 4.2% this month — driven by US tech, and the sell-off is market-wide.', sub: 'Lead with the tech drawdown, then the USD mismatch. Client has asked about sustainable options.' },
       { type: 'metrics', items: [
@@ -26,6 +34,7 @@ export const clients: Client[] = [
         { text: 'CIO view: neutral on US tech, overweight quality.', kind: 'fact', source: 'CIO view (mock)' },
         { text: 'The move is global, so peers are affected similarly.', kind: 'interpretation' },
       ] } },
+      { type: 'allocation', title: 'Allocation vs. mandate', rows: [{ label: 'Liqu. / Geldmarkt', min: 0, target: 5, max: 15, actual: 3 }, { label: 'Obligationen', min: 0, target: 10, max: 20, actual: 6 }, { label: 'Aktien', min: 65, target: 85, max: 95, actual: 88 }, { label: 'Immobilien', min: 0, target: 0, max: 10, actual: 0 }, { label: 'Übrige Anlagen', min: 0, target: 0, max: 10, actual: 3 }] },
       { type: 'flags', title: 'Needs attention', items: [
         { severity: 'risk', text: 'USD exposure 11pt above the mandate band.', source: 'SAA currency band' },
         { severity: 'warn', text: 'Cluster risk: single instrument above 10%.', source: 'Suitability rule' },
@@ -44,11 +53,19 @@ export const clients: Client[] = [
   },
   {
     ref: 'CASE-B',
-    name: 'Client B',
-    mandate: 'Balanced · CHF',
-    aum: "CHF 680'000",
-    context: 'Quarterly call',
-    alerts: 1,
+    name: "Client B",
+    clientType: "Natürliche Person",
+    profile: "Ausgeglichen",
+    portfolioNr: "42.249999",
+    service: "Anlageberatung Portfolio",
+    strategy: "Ausgewogen",
+    aum: "CHF 680'000.00",
+    context: "Quarterly call",
+    birthday: "22.02.1976",
+    lastProfiling: "25.08.2026",
+    lastConsultation: "10.09.2026",
+    errors: 0,
+    warnings: 1,
     briefing: [
       { type: 'headline', text: 'Underperformed by 1.4pt last quarter — an underweight in European equities is the main cause.', sub: 'The CIO just turned positive on Europe, so there is a clean story and a clean fix.' },
       { type: 'metrics', items: [
@@ -64,6 +81,7 @@ export const clients: Client[] = [
         { text: 'CIO issued a positive outlook for European equities.', kind: 'fact', source: 'CIO view (mock)' },
         { text: 'The gap is allocation-driven and fixable within mandate.', kind: 'interpretation' },
       ] } },
+      { type: 'allocation', title: 'Allocation vs. mandate', rows: [{ label: 'Liqu. / Geldmarkt', min: 0, target: 5, max: 15, actual: 9 }, { label: 'Obligationen', min: 35, target: 45, max: 55, actual: 42 }, { label: 'Aktien', min: 35, target: 45, max: 55, actual: 44 }, { label: 'Immobilien', min: 0, target: 2.5, max: 10, actual: 3 }, { label: 'Übrige Anlagen', min: 0, target: 2.5, max: 10, actual: 2 }] },
       { type: 'flags', title: 'Needs attention', items: [
         { severity: 'warn', text: 'Underweight in equity region "Rest of Europe".', source: 'Suitability rule' },
         { severity: 'info', text: 'Asked about sustainable investment options previously.', source: 'Client note' },
@@ -80,11 +98,19 @@ export const clients: Client[] = [
   },
   {
     ref: 'CASE-C',
-    name: 'Client C',
-    mandate: 'Conservative · Capital preservation · CHF',
-    aum: "CHF 420'000",
-    context: 'Review meeting',
-    alerts: 2,
+    name: "Client C",
+    clientType: "Natürliche Person",
+    profile: "Konservativ",
+    portfolioNr: "27.131004",
+    service: "Anlageberatung Portfolio",
+    strategy: "Einkommen",
+    aum: "CHF 420'000.00",
+    context: "Review meeting",
+    birthday: "03.06.1954",
+    lastProfiling: "23.06.2026",
+    lastConsultation: "03.07.2026",
+    errors: 1,
+    warnings: 1,
     briefing: [
       { type: 'headline', text: 'A bond fund is flagged for suitability, and the client needs cash for a property purchase within 12 months.', sub: 'Both point the same way: reduce risk and build liquidity.' },
       { type: 'metrics', items: [
@@ -100,6 +126,7 @@ export const clients: Client[] = [
         { text: 'Planning to buy a property, liquidity need within 12 months.', kind: 'fact', source: 'Client note' },
         { text: 'Current liquidity will not cover a down payment.', kind: 'interpretation' },
       ] } },
+      { type: 'allocation', title: 'Allocation vs. mandate', rows: [{ label: 'Liqu. / Geldmarkt', min: 0, target: 10, max: 25, actual: 6 }, { label: 'Obligationen', min: 50, target: 65, max: 80, actual: 71 }, { label: 'Aktien', min: 5, target: 15, max: 25, actual: 14 }, { label: 'Immobilien', min: 0, target: 5, max: 15, actual: 6 }, { label: 'Übrige Anlagen', min: 0, target: 5, max: 10, actual: 3 }] },
       { type: 'flags', title: 'Needs attention', items: [
         { severity: 'risk', text: 'Product risk class exceeds the client\'s maximum.', source: 'Suitability rule' },
         { severity: 'warn', text: 'Liquidity need is not reflected in the allocation.', source: 'Client note + accounts' },

@@ -7,6 +7,7 @@ export type Card =
   | { type: 'headline'; text: string; sub?: string }
   | { type: 'metrics'; items: { label: string; value: string; delta?: string; tone?: Severity }[] }
   | { type: 'split'; title: string; left: { title: string; points: Point[] }; right: { title: string; points: Point[] } }
+  | { type: 'allocation'; title: string; rows: { label: string; min: number; target: number; max: number; actual: number }[] }
   | { type: 'flags'; title: string; items: { severity: Severity; text: string; source: string }[] }
   | { type: 'actions'; title: string; items: { text: string; why: string }[] }
   | { type: 'questions'; title: string; items: { q: string; a: string }[] }
@@ -18,10 +19,18 @@ export type CardOf<T extends Card['type']> = Extract<Card, { type: T }>
 export type Client = {
   ref: string
   name: string
-  mandate: string
+  clientType: string
+  profile: string
+  portfolioNr: string
+  service: string
+  strategy: string
   aum: string
   context: string
-  alerts: number
+  birthday: string
+  lastProfiling: string
+  lastConsultation: string
+  errors: number
+  warnings: number
   briefing: Card[]
 }
 

@@ -1,8 +1,11 @@
+import { MessageSquare } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { ask } from '../assistant'
 import type { ChatMessage, Client } from '../types'
 
-export function ChatDock({ client }: { client: Client }) {
+const suggestions = ['Why did it fall?', 'What about USD exposure?', 'Any sustainable options?']
+
+export function ChatDock({ client, className = '' }: { client: Client; className?: string }) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
@@ -21,29 +24,27 @@ export function ChatDock({ client }: { client: Client }) {
     setBusy(false)
   }
 
-  const suggestions = ['Why did it fall?', 'What about USD exposure?', 'Any sustainable options?']
-
   return (
-    <div className="flex h-full flex-col">
-      <div className="border-b border-line px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted">Ask about {client.name}</div>
-      <div className="flex-1 space-y-2 overflow-y-auto p-4">
+    <section className={`flex flex-col bg-white shadow-card ${className}`}>
+      <h3 className="flex items-center gap-1.5 px-4 pt-4 text-[15px]"><MessageSquare size={16} strokeWidth={1.5} /> Follow-up</h3>
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-4 text-xs">
         {messages.length === 0 && (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-1.5">
             {suggestions.map((s) => (
-              <button key={s} onClick={() => send(s)} className="rounded-full border border-line px-3 py-1 text-xs hover:border-brand hover:text-brand">{s}</button>
+              <button key={s} onClick={() => send(s)} className="rounded-sm bg-pill px-2 py-1 hover:bg-brand hover:text-white">{s}</button>
             ))}
           </div>
         )}
         {messages.map((m, i) => (
-          <div key={i} className={`max-w-[90%] rounded-lg px-3 py-2 leading-snug ${m.role === 'advisor' ? 'ml-auto bg-brand text-white' : 'bg-surface'}`}>{m.text}</div>
+          <div key={i} className={`max-w-[90%] px-2.5 py-1.5 leading-snug ${m.role === 'advisor' ? 'ml-auto bg-brand text-white' : 'bg-stripe'}`}>{m.text}</div>
         ))}
-        {busy && <div className="text-xs text-muted">Thinking…</div>}
+        {busy && <div className="text-muted">…</div>}
         <div ref={end} />
       </div>
-      <form onSubmit={(e) => { e.preventDefault(); send(input) }} className="flex gap-2 border-t border-line p-3">
-        <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask a follow-up…" className="flex-1 rounded border border-line px-3 py-2 outline-none focus:border-brand" />
-        <button className="rounded bg-brand px-3 py-2 font-medium text-white hover:bg-brand-dark">Send</button>
+      <form onSubmit={(e) => { e.preventDefault(); send(input) }} className="flex border-t border-line text-xs">
+        <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask a follow-up…" className="min-w-0 flex-1 px-3 py-2 outline-none" />
+        <button className="bg-brand px-3 text-white hover:bg-brand-dark">Send</button>
       </form>
-    </div>
+    </section>
   )
 }

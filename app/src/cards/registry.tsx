@@ -1,20 +1,24 @@
 import type { ComponentType } from 'react'
 import type { Card, CardOf } from '../types'
-import { Actions, Flags, Headline, Metrics, Questions, Split } from './basic'
+import { Actions, Allocation, Flags, Headline, Metrics, Questions, Split } from './basic'
 
-type Registry = { [T in Card['type']]: ComponentType<{ card: CardOf<T> }> }
+export type Slot = 'main' | 'side'
+type Entry<T extends Card['type']> = { component: ComponentType<{ card: CardOf<T> }>; slot: Slot }
 
-const registry: Registry = {
-  headline: Headline,
-  metrics: Metrics,
-  split: Split,
-  flags: Flags,
-  actions: Actions,
-  questions: Questions,
+const registry: { [T in Card['type']]: Entry<T> } = {
+  headline: { component: Headline, slot: 'main' },
+  metrics: { component: Metrics, slot: 'side' },
+  split: { component: Split, slot: 'main' },
+  allocation: { component: Allocation, slot: 'main' },
+  flags: { component: Flags, slot: 'main' },
+  actions: { component: Actions, slot: 'main' },
+  questions: { component: Questions, slot: 'main' },
 }
 
+export const slotOf = (card: Card): Slot => registry[card.type]?.slot ?? 'main'
+
 export function CardView({ card }: { card: Card }) {
-  const Component = registry[card.type] as ComponentType<{ card: Card }> | undefined
+  const Component = registry[card.type]?.component as ComponentType<{ card: Card }> | undefined
   if (!Component) return null
   return <Component card={card} />
 }
