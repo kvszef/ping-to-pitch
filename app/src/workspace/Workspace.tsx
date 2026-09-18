@@ -39,14 +39,18 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
   const [note, setNote] = useState<string | null>(null)
   const [lines, setLines] = useState<TranscriptLine[]>([])
   const [hints, setHints] = useState<Hint[]>([])
+  const [activeHint, setActiveHint] = useState<string | null>(null)
   const [chat, setChat] = useState<ChatEntry[]>([])
   const [busy, setBusy] = useState(false)
   const client = clients.find((c) => c.ref === ref) ?? clients[0]
   const [customerSlot, setCustomerSlot] = useState<Slot | null>(null)
   const [advisorSlot, setAdvisorSlot] = useState<Slot | null>(null)
 
-  const addHints = (found: Hint[]) =>
+  // New hints take the lead; the tabs keep their order so nothing jumps under the pointer.
+  const addHints = (found: Hint[]) => {
     setHints((h) => [...found, ...h.filter((x) => !found.some((f) => f.topicId === x.topicId))])
+    if (found[0]) setActiveHint(found[0].id)
+  }
 
   // Gesprochenes fliesst in beide Module: Hinweis für den Kunden, Einblick für den Berater.
   // Auswertungen laufen nacheinander, damit das Transkript in der gesprochenen Reihenfolge bleibt.
@@ -72,7 +76,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
 
   useEffect(() => {
     linesRef.current = []; queue.current = Promise.resolve()
-    setLines([]); setChat([]); setHints(openingHints(client)); setMic(false); setNote(null); setCustomerSlot(null); setAdvisorSlot(null)
+    setLines([]); setChat([]); setHints(openingHints(client)); setActiveHint(null); setMic(false); setNote(null); setCustomerSlot(null); setAdvisorSlot(null)
   }, [client.ref]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ohne Mikrofon läuft ein Beispielgespräch ab.
@@ -105,7 +109,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
   const open = useMemo(() => (topicData[client.ref] ?? []).filter((t) => !chat.some((e) => e.role === 'ki' && e.text === t.insight[settings.detail])), [client.ref, chat, settings.detail])
 
   const proposal = client.briefing.find((c) => c.type === 'proposal')
-  const promote = (id: string) => setHints((h) => [...h.filter((x) => x.id === id), ...h.filter((x) => x.id !== id)])
+  const shown = hints.find((h) => h.id === activeHint) ?? hints[0]
 
   const base = { assistent: 1 + (100 - settings.focus) / 50, chat: 1 + settings.focus / 50 }
 
@@ -164,20 +168,23 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
             <button onClick={() => onOpenBriefing(client.ref)} className="ml-auto inline-flex items-center gap-1 text-brand hover:underline">Briefing <ArrowRight size={11} /></button>
           </div>
 
-          {hints[0] && (
-            <div key={hints[0].id} title={`${hints[0].why}\n${originLabel[hints[0].origin]} · ${hints[0].trigger}`} className="anim-rise border-l-4 border-brand bg-brand-soft/25 p-4">
-              <div className="mb-1.5 flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted"><SeverityIcon severity={hints[0].severity} size={11} /> {hints[0].label}</div>
-              <p className="text-[19px] leading-snug">{hints[0].text}</p>
+          {hints.length > 1 && (
+            <div className="mb-2 flex flex-wrap gap-1">
+              {hints.slice(0, 6).map((h) => (
+                <button key={h.id} onClick={() => setActiveHint(h.id)} title={h.text} aria-pressed={h.id === shown?.id}
+                  className={`flex items-center gap-1 rounded-sm px-1.5 py-1 text-[11px] transition-colors ${h.id === shown?.id ? 'bg-brand text-white' : 'bg-pill hover:bg-brand-soft'}`}>
+                  <SeverityIcon severity={h.severity} size={11} /> {h.label}
+                </button>
+              ))}
             </div>
           )}
-          <div className="mt-2.5 flex flex-wrap gap-1.5">
-            {hints.slice(1).map((h) => (
-              <button key={h.id} onClick={() => promote(h.id)} title={h.text} className="anim-rise flex items-center gap-1.5 rounded-sm bg-pill px-2 py-1 text-xs transition-colors hover:bg-brand hover:text-white">
-                <SeverityIcon severity={h.severity} size={11} /> {h.label}
-              </button>
-            ))}
-          </div>
-
+          {shown && (
+            <div key={shown.id} title={`${shown.why}
+${originLabel[shown.origin]} · ${shown.trigger}`} className="anim-rise border-l-4 border-brand bg-brand-soft/25 p-4">
+              <div className="mb-1.5 flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted"><SeverityIcon severity={shown.severity} size={11} /> {shown.label}</div>
+              <p className="text-[19px] leading-snug">{shown.text}</p>
+            </div>
+          )}
           {(note || (settings.record && lines.length > 0)) && (
             <div className="mt-4 border-t border-line pt-3">
               {note && <p className="mb-2 flex items-start gap-1.5 text-[11px] leading-snug text-risk"><SeverityIcon severity="risk" size={11} /> {note}</p>}
