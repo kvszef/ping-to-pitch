@@ -2,6 +2,7 @@ import type { ComponentType } from 'react'
 import type { Card, CardOf } from '../types'
 import { Actions, Allocation, Flags, Headline, Metrics, Questions, Split } from './basic'
 import { Context, Drivers, Proposal } from './panels'
+import { TalkTrack } from './talktrack'
 import { CallNoteCard, Contradiction, LookThrough, Peers, Profile, StaleNote, Todos } from './findings'
 
 export type Slot = 'main' | 'side'
@@ -25,6 +26,7 @@ const registry: { [T in Card['type']]: Entry<T> } = {
   peers: { component: Peers, slot: 'main' },
   todos: { component: Todos, slot: 'main' },
   callnote: { component: CallNoteCard, slot: 'main' },
+  talktrack: { component: TalkTrack, slot: 'main' },
 }
 
 export const slotOf = (card: Card): Slot => registry[card.type]?.slot ?? 'main'

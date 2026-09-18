@@ -23,6 +23,7 @@ export async function ask(client: Client, question: string): Promise<string> {
       case 'peers': return [...c.metrics.map((m) => `${m.label}: ${m.value}${m.unit}, Vergleichsgruppe ${c.profile} (${c.n} Kunden) ${m.min}–${m.max}${m.unit}, Median ${m.median}${m.unit}.`), ...(c.note ? [c.note] : [])]
       case 'todos': return c.items.map((t) => `${t.done ? 'Erledigt' : t.overdue ? 'Überfällig' : 'Offen'} (${t.owner}${t.due ? `, fällig ${t.due}` : ''}): ${t.text}`)
       case 'callnote': return [...c.note.proposed.map((p) => `Vorgeschlagen: ${p.text} ${p.why ?? ''}`), ...c.note.promises.map((p) => `Zusage${p.due ? ` bis ${p.due}` : ''}: ${p.text}`), ...c.note.factUpdates.map((f) => `${f.note}${f.newValue ? ` → ${f.newValue}` : ''}`)]
+      case 'talktrack': return [c.open, ...c.mention, ...c.ask, ...c.avoid].map((l) => `${l.text} (${l.source}${l.date ? `, ${l.date}` : ''})`)
     }
   })
   const hits = lines.filter((l) => words.some((w) => l.toLowerCase().includes(w))).slice(0, 2)

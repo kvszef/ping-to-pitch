@@ -29,7 +29,7 @@ export type UploadResult = { ok: true; count: number; message: string; refs: str
 
 // Which tier a card belongs to when the briefing comes from local data.
 const tierOf: Record<Card['type'], Tier> = {
-  metrics: 'instant', flags: 'instant', allocation: 'instant', context: 'instant', drivers: 'instant',
+  talktrack: 'instant', metrics: 'instant', flags: 'instant', allocation: 'instant', context: 'instant', drivers: 'instant',
   headline: 'fast', actions: 'fast', questions: 'fast', proposal: 'fast',
   contradiction: 'fast', lookthrough: 'fast', stalenote: 'fast', todos: 'fast', callnote: 'fast',
   split: 'slow', // compares the portfolio with market news and the CIO view
@@ -39,7 +39,7 @@ const localDelay: Record<Tier, number> = { instant: 0, fast: 600, slow: 1500 }
 const timeout: Record<Tier, number> = { instant: 4000, fast: 20000, slow: 60000 }
 
 // Reading order on the page, independent of the order in which tiers arrive.
-const cardOrder: Card['type'][] = ['headline', 'metrics', 'split', 'allocation', 'drivers', 'contradiction', 'proposal', 'lookthrough', 'stalenote', 'context', 'profile', 'peers', 'flags', 'actions', 'todos', 'questions', 'callnote']
+const cardOrder: Card['type'][] = ['talktrack', 'headline', 'metrics', 'split', 'allocation', 'drivers', 'contradiction', 'proposal', 'lookthrough', 'stalenote', 'context', 'profile', 'peers', 'flags', 'actions', 'todos', 'questions', 'callnote']
 export function sortCards(cards: Card[]): Card[] {
   const rank = (c: Card) => { const i = cardOrder.indexOf(c.type); return i < 0 ? cardOrder.length : i }
   return cards.map((card, i) => ({ card, i })).sort((a, b) => rank(a.card) - rank(b.card) || a.i - b.i).map((x) => x.card)
@@ -113,10 +113,14 @@ function normalise(item: unknown): Client | null {
 // Restored last, once every helper above is initialised.
 uploaded = readStore()
 
+// Clients from the last /api/clients answer, so their local briefing is found without refetching.
+let listed: Client[] = []
+
 export async function listClients(): Promise<Client[]> {
   const data = await getJson('/api/clients')
   const items = Array.isArray(data) ? data : isObj(data) && Array.isArray(data.clients) ? data.clients : null
   const fromEngine = (items ?? []).map(normalise).filter((c): c is Client => c !== null)
+  listed = fromEngine
   // Sample clients stay first: the demo script and the conversation workspace are built on them.
   return mergeByRef(sampleClients, fromEngine, uploaded)
 }
@@ -128,7 +132,7 @@ export async function loadBriefing(ref: string, tier: Tier): Promise<Briefing> {
       return { cards: data.cards as Card[], findings: Array.isArray(data.findings) ? (data.findings as Finding[]) : [], origin: 'engine' }
     }
   }
-  const client = localClients().find((c) => c.ref === ref)
+  const client = localClients().find((c) => c.ref === ref) ?? listed.find((c) => c.ref === ref)
   await new Promise((resolve) => setTimeout(resolve, localDelay[tier]))
   return { cards: (client?.briefing ?? []).filter((c) => (tierOf[c.type] ?? 'instant') === tier), findings: [], origin: 'local' }
 }

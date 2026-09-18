@@ -25,6 +25,23 @@ export const clients: Client[] = [
     errors: 1,
     warnings: 1,
     briefing: [
+      { type: 'talktrack', title: '60-Sekunden-Briefing',
+        open: { text: 'Guten Tag, Sie haben es sicher gesehen: Ihr Portfolio hat diesen Monat 4.2% verloren. Ich erkläre Ihnen kurz, woher das kommt.', source: 'Performancebeitrag' },
+        mention: [
+          { text: '3.1 der 4.2 Prozentpunkte kommen aus drei US-Technologietiteln, der Rückgang ist marktweit.', source: 'Performancebeitrag', severity: 'risk' },
+          { text: 'Der USD-Anteil liegt mit 61% 11 Punkte über dem Band: CHF-Absicherung ohne Verkauf vorschlagen.', source: 'SAA-Währungsband', severity: 'risk' },
+          { text: 'Keine fossilen Energien gewünscht, über Fonds sind 3.4% im Portfolio.', source: 'Kundennotiz', date: '12.06.2026', severity: 'warn' },
+        ],
+        ask: [
+          { text: 'Sie wollten die Technologie weiter ausbauen. Gilt das nach diesem Monat noch?', source: 'Kundennotiz', date: '02.09.2026' },
+          { text: 'Haben Sie die ESG-Aufteilung erhalten, die ich Ihnen zugesagt habe?', source: 'Gespräch 19.08.2026', detail: 'Zusage seit 26.08.2026 überfällig' },
+        ],
+        avoid: [{ text: 'Verkauf der Technologietitel: Kunde will ausbauen, nicht reduzieren.', source: 'Kundennotiz', date: '02.09.2026' }],
+        reasons: [
+          { text: 'Monatsverlust von 4.2%', source: 'Performancebeitrag', severity: 'risk' },
+          { text: 'Dollar fällt den dritten Tag', source: 'Marktnachrichten (Beispiel)', severity: 'risk' },
+          { text: 'Offene Zusage: ESG-Aufteilung', source: 'Gespräch 19.08.2026', severity: 'warn' },
+        ] },
       { type: 'headline', text: 'Das Portfolio hat diesen Monat 4.2% verloren – getrieben von US-Technologie, und der Rückgang betrifft den ganzen Markt.', sub: 'Mit dem Technologie-Rückgang beginnen, dann das USD-Übergewicht ansprechen. Der Kunde hat nach nachhaltigen Anlagen gefragt.' },
       { type: 'metrics', items: [
         { label: 'Laufender Monat', value: '-4.2%', tone: 'risk' },
@@ -132,6 +149,20 @@ export const clients: Client[] = [
     errors: 0,
     warnings: 1,
     briefing: [
+      { type: 'talktrack', title: '60-Sekunden-Briefing',
+        open: { text: 'Guten Abend, Sie wollten den Vergleich mit der Benchmark: Sie liegen 1.4 Punkte dahinter, und ich weiss, woran es liegt.', source: 'Kundennotiz', date: '10.09.2026' },
+        mention: [
+          { text: 'Europäische Aktien liegen 7 Punkte unter dem Sollwert, daher kommt der Rückstand.', source: 'SAA-Länderband', severity: 'warn' },
+          { text: 'Vorschlag: 5 Punkte Liquidität in einen Europa-Fonds, passt zur neuen Hausmeinung.', source: 'CIO-Sicht (Beispiel)' },
+        ],
+        ask: [
+          { text: 'Haben Sie das Factsheet zur nachhaltigen Europa-Variante schon gelesen?', source: 'Gespräch', detail: 'Reaktion offen' },
+        ],
+        avoid: [{ text: 'Obligationen senken: abgelehnt, der Kunde will den laufenden Ertrag behalten.', source: 'Gesprächsnotiz' }],
+        reasons: [
+          { text: 'Wartet auf den Benchmark-Vergleich', source: 'Kundennotiz', date: '10.09.2026', severity: 'warn' },
+          { text: 'Factsheet Europa-Fonds zugesagt', source: 'Gesprächsnotiz', severity: 'info' },
+        ] },
       { type: 'headline', text: 'Im letzten Quartal 1.4 Prozentpunkte hinter der Zielallokation – Hauptursache ist das Untergewicht in europäischen Aktien.', sub: 'Die Hausmeinung ist für Europa neu positiv: Das ergibt eine klare Erklärung und eine klare Lösung.' },
       { type: 'metrics', items: [
         { label: 'Laufendes Quartal', value: '+0.6%', delta: 'Zielallokation +2.0%', tone: 'warn' },
@@ -224,6 +255,21 @@ export const clients: Client[] = [
     errors: 1,
     warnings: 1,
     briefing: [
+      { type: 'talktrack', title: '60-Sekunden-Briefing',
+        open: { text: 'Guten Morgen, ich rufe wegen Ihres Hauskaufs an: Wir sollten das Geld dafür jetzt sicher bereitstellen.', source: 'Kundennotiz', date: '03.07.2026' },
+        mention: [
+          { text: 'Ein Obligationenfonds mit 12% Gewicht liegt über Ihrer Risikogrenze. Verkaufen und im Geldmarkt parkieren.', source: 'Regelverletzung', severity: 'risk' },
+          { text: 'Die Liquidität beträgt 6% und reicht für eine Anzahlung nicht aus.', source: 'Konten', severity: 'warn' },
+        ],
+        ask: [
+          { text: 'Welcher Betrag und bis wann brauchen Sie ihn für den Kauf?', source: 'Offene Aufgabe', detail: 'seit 03.08.2026 überfällig' },
+          { text: 'Liegt die Finanzierungsbestätigung schon vor?', source: 'Gespräch 03.07.2026' },
+        ],
+        avoid: [{ text: 'Keine Fachbegriffe und keine neuen Aktienideen: seit dem Rückgang sehr risikoscheu.', source: 'Kundennotiz', date: '23.06.2026' }],
+        reasons: [
+          { text: 'Liquidität für den Immobilienkauf', source: 'Kundennotiz', date: '03.07.2026', severity: 'warn' },
+          { text: 'Regelverletzung Obligationenfonds', source: 'Regelverletzung', severity: 'risk' },
+        ] },
       { type: 'headline', text: 'Ein Obligationenfonds verletzt die Suitability, und der Kunde braucht innert 12 Monaten Liquidität für einen Immobilienkauf.', sub: 'Beides weist in dieselbe Richtung: Risiko reduzieren und Liquidität aufbauen.' },
       { type: 'metrics', items: [
         { label: 'Seit Jahresbeginn', value: '+1.9%', tone: 'ok' },

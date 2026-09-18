@@ -22,6 +22,7 @@ export type Card =
   | { type: 'peers'; title: string; profile: string; n: number; metrics: { label: string; unit: string; signed?: boolean; min: number; median: number; max: number; value: number }[]; note?: string; source: string }
   | { type: 'todos'; title: string; items: { text: string; owner: 'Berater' | 'Kunde'; due?: string; done: boolean; overdue?: boolean; source: string }[] }
   | { type: 'callnote'; title: string; source: string; note: CallNote }
+  | { type: 'talktrack'; title: string; open: TalkLine; mention: TalkLine[]; ask: TalkLine[]; avoid: TalkLine[]; reasons?: TalkLine[] }
 
 // A quoted client note with its date and where it comes from.
 export type Evidence = { quote: string; date: string; source: string }
@@ -37,6 +38,9 @@ export type CallNote = {
 }
 
 export type Point = { text: string; kind: Kind; source?: string }
+
+// One spoken line of the 60-second talk track, always with the source it can be traced to.
+export type TalkLine = { text: string; source: string; date?: string; detail?: string; severity?: Severity }
 
 export type CardOf<T extends Card['type']> = Extract<Card, { type: T }>
 

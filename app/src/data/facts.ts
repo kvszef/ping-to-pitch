@@ -20,11 +20,11 @@ export type ClientFacts = {
 }
 
 type Raw = Record<string, unknown>
-const isObj = (v: unknown): v is Raw => typeof v === 'object' && v !== null && !Array.isArray(v)
-const list = (v: unknown): Raw[] => (Array.isArray(v) ? v.filter(isObj) : [])
+export const isObj = (v: unknown): v is Raw => typeof v === 'object' && v !== null && !Array.isArray(v)
+export const list = (v: unknown): Raw[] => (Array.isArray(v) ? v.filter(isObj) : [])
 const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
 const IBAN = /\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]{4}){3,}(?:[ ]?[A-Z0-9]{1,3})?\b/g
-const str = (v: unknown): string => (typeof v === 'string' ? v.replace(IBAN, '[entfernt]').trim() : '')
+export const str = (v: unknown): string => (typeof v === 'string' ? v.replace(IBAN, '[entfernt]').trim() : '')
 const round = (v: number) => Math.round(v * 10) / 10
 const pct = (v: number) => round(v * 100)
 

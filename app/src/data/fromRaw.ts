@@ -1,4 +1,5 @@
 import { factsFromRaw } from './facts'
+import { talkTrackFromRaw } from './talkTrack'
 import { ruleText } from './ruleText'
 import type { Card, Client, Severity } from '../types'
 
@@ -120,7 +121,9 @@ export function fromRaw(input: unknown, now: Date): Client {
   ].filter((f) => f.value)
 
   const flagItems = violations(raw)
+  const clientFacts = factsFromRaw(raw)
   const briefing: Card[] = [
+    talkTrackFromRaw(raw, clientFacts, flagItems, now),
     { type: 'metrics', items: [
       { label: 'Vermögen', value: formatAmount(aum, 0), delta: currency },
       { label: 'Liquiditätsanteil', value: aum > 0 ? formatShare(liquidity / aum) : EMPTY, delta: aum > 0 ? `${currency} ${formatAmount(liquidity, 0)}` : undefined },
@@ -146,7 +149,7 @@ export function fromRaw(input: unknown, now: Date): Client {
     lastConsultation: formatDate(lastProposal),
     errors,
     warnings,
-    facts: factsFromRaw(raw),
+    facts: clientFacts,
     briefing,
   }
 }
