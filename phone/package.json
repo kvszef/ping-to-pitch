@@ -9,6 +9,12 @@
   "scripts": {
     "dev": "node --env-file-if-exists=.env src/server.ts",
     "setup": "node --env-file-if-exists=.env src/assistant.ts",
-    "simulate": "node --env-file-if-exists=.env src/simulate.ts"
+    "simulate": "node --env-file-if-exists=.env src/simulate.ts",
+    "toolbox:get": "node scripts/get-toolbox.ts",
+    "toolbox": "node --env-file-if-exists=.env scripts/run-toolbox.ts",
+    "load-data": "node --env-file-if-exists=.env --no-warnings=ExperimentalWarning scripts/load-data.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.127.0"
   }
 }
