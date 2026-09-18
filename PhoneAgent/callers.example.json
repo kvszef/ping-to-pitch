@@ -1,4 +1,0 @@
-{
-  "_comment": "Anrufernummer (E.164) -> Kundennummer. Kopie als callers.json speichern; die Datei ist per .gitignore ausgeschlossen.",
-  "+41790000000": "CASE-004"
-}
