@@ -1,0 +1,46 @@
+name: ci
+
+# Advisory only. There is no branch protection and no required check: red CI blocks nobody,
+# it means "fix forward soon". Runs the same steps as `npm run check` in app/, plus the build.
+on:
+  push:
+    paths: ['app/**', 'core-case/portfolio-data/**', '.github/workflows/ci.yml']
+  pull_request:
+    paths: ['app/**', 'core-case/portfolio-data/**', '.github/workflows/ci.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  app:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      # Later steps run even if an earlier one failed, so one push reports every problem at once.
+      - name: Lint
+        if: ${{ !cancelled() }}
+        run: npm run lint
+      - name: Typecheck
+        if: ${{ !cancelled() }}
+        run: npm run typecheck
+      - name: Test
+        if: ${{ !cancelled() }}
+        run: npm test
+      - name: Build
+        if: ${{ !cancelled() }}
+        run: npm run build
