@@ -1,144 +1,176 @@
-import type { Client } from '../types'
+import type { Card, Client, IncomingCall, Signal } from '../types'
 
-// MOCK DATA — shaped like what the analytics + LLM layer will return.
+// BEISPIELDATEN — gleiche Form, wie sie die Analyse- und LLM-Schicht später liefert.
+
+const allocation = (rows: [string, number, number, number, number][]): Card => ({
+  type: 'allocation',
+  title: 'Allokation gegenüber Mandat',
+  rows: rows.map(([label, min, target, max, actual]) => ({ label, min, target, max, actual })),
+})
+
 export const clients: Client[] = [
   {
     ref: 'CASE-A',
-    name: "Client A",
-    clientType: "Natürliche Person",
-    profile: "Dynamisch",
-    portfolioNr: "15.02996",
-    service: "Anlageberatung Portfolio",
-    strategy: "Wachstum",
+    name: 'Kunde A',
+    clientType: 'Natürliche Person',
+    profile: 'Dynamisch',
+    portfolioNr: '15.02996',
+    service: 'Anlageberatung Portfolio',
+    strategy: 'Wachstum',
     aum: "CHF 1'240'000.00",
-    context: "Short-notice call",
-    birthday: "14.08.1988",
-    lastProfiling: "08.05.2026",
-    lastConsultation: "19.08.2026",
+    context: 'Kurzfristiger Anruf',
+    birthday: '14.08.1988',
+    lastProfiling: '08.05.2026',
+    lastConsultation: '19.08.2026',
     errors: 1,
     warnings: 1,
     briefing: [
-      { type: 'headline', text: 'Portfolio fell 4.2% this month — driven by US tech, and the sell-off is market-wide.', sub: 'Lead with the tech drawdown, then the USD mismatch. Client has asked about sustainable options.' },
+      { type: 'headline', text: 'Das Portfolio hat diesen Monat 4.2% verloren – getrieben von US-Technologie, und der Rückgang betrifft den ganzen Markt.', sub: 'Mit dem Technologie-Rückgang beginnen, dann das USD-Übergewicht ansprechen. Der Kunde hat nach nachhaltigen Anlagen gefragt.' },
       { type: 'metrics', items: [
-        { label: 'MTD', value: '-4.2%', tone: 'risk' },
-        { label: 'YTD', value: '+6.1%', tone: 'ok' },
-        { label: 'Equity', value: '88%', delta: 'target 85%' },
-        { label: 'USD exposure', value: '61%', delta: '+11pt vs band', tone: 'risk' },
+        { label: 'Laufender Monat', value: '-4.2%', tone: 'risk' },
+        { label: 'Seit Jahresbeginn', value: '+6.1%', tone: 'ok' },
+        { label: 'Aktienquote', value: '88%', delta: 'Soll 85%' },
+        { label: 'USD-Anteil', value: '61%', delta: '+11 Pkt. über Band', tone: 'risk' },
       ] },
-      { type: 'split', title: 'What happened', left: { title: 'Portfolio', points: [
-        { text: 'US technology is 34% of the portfolio across 5 positions.', kind: 'fact', source: 'Positions' },
-        { text: 'Top 3 detractors are all US tech and explain 3.1pt of the 4.2% decline.', kind: 'fact', source: 'Contribution' },
-        { text: 'The decline is concentration-driven, not stock-specific.', kind: 'interpretation' },
-      ] }, right: { title: 'Market', points: [
-        { text: 'Tech sector volatility spiked across all major indices this month.', kind: 'fact', source: 'News (mock)' },
-        { text: 'CIO view: neutral on US tech, overweight quality.', kind: 'fact', source: 'CIO view (mock)' },
-        { text: 'The move is global, so peers are affected similarly.', kind: 'interpretation' },
+      { type: 'split', title: 'Was ist passiert', left: { title: 'Portfolio', points: [
+        { text: 'US-Technologie macht 34% des Portfolios aus, verteilt auf 5 Positionen.', kind: 'fact', source: 'Positionen' },
+        { text: 'Die 3 grössten Verlustbringer sind alle US-Technologie und erklären 3.1 der 4.2 Prozentpunkte.', kind: 'fact', source: 'Performancebeitrag' },
+        { text: 'Der Rückgang ist eine Folge der Konzentration, nicht einzelner Titel.', kind: 'interpretation' },
+      ] }, right: { title: 'Markt', points: [
+        { text: 'Die Volatilität im Technologiesektor ist diesen Monat in allen grossen Indizes stark gestiegen.', kind: 'fact', source: 'Marktnachrichten (Beispiel)' },
+        { text: 'Hausmeinung: US-Technologie neutral, Qualitätsaktien übergewichten.', kind: 'fact', source: 'CIO-Sicht (Beispiel)' },
+        { text: 'Die Bewegung ist global, vergleichbare Portfolios sind ähnlich betroffen.', kind: 'interpretation' },
       ] } },
-      { type: 'allocation', title: 'Allocation vs. mandate', rows: [{ label: 'Liqu. / Geldmarkt', min: 0, target: 5, max: 15, actual: 3 }, { label: 'Obligationen', min: 0, target: 10, max: 20, actual: 6 }, { label: 'Aktien', min: 65, target: 85, max: 95, actual: 88 }, { label: 'Immobilien', min: 0, target: 0, max: 10, actual: 0 }, { label: 'Übrige Anlagen', min: 0, target: 0, max: 10, actual: 3 }] },
-      { type: 'flags', title: 'Needs attention', items: [
-        { severity: 'risk', text: 'USD exposure 11pt above the mandate band.', source: 'SAA currency band' },
-        { severity: 'warn', text: 'Cluster risk: single instrument above 10%.', source: 'Suitability rule' },
-        { severity: 'info', text: 'Client expressed interest in sustainable investments.', source: 'Client note' },
+      allocation([['Liqu. / Geldmarkt', 0, 5, 15, 3], ['Obligationen', 0, 10, 20, 6], ['Aktien', 65, 85, 95, 88], ['Immobilien', 0, 0, 10, 0], ['Übrige Anlagen', 0, 0, 10, 3]]),
+      { type: 'flags', title: 'Handlungsbedarf', items: [
+        { severity: 'risk', text: 'USD-Anteil liegt 11 Prozentpunkte über dem Mandatsband.', source: 'SAA-Währungsband' },
+        { severity: 'warn', text: 'Klumpenrisiko: ein Einzeltitel über 10%.', source: 'Suitability-Regel' },
+        { severity: 'info', text: 'Kunde hat Interesse an nachhaltigen Anlagen geäussert.', source: 'Kundennotiz' },
       ] },
-      { type: 'actions', title: 'Next best actions', items: [
-        { text: 'Propose a CHF hedge on the USD equity sleeve.', why: 'Brings currency exposure back inside the band without selling.' },
-        { text: 'Trim the largest tech position toward 8%.', why: 'Clears the cluster-risk violation.' },
-        { text: 'Present 2 sustainable global equity funds from the recommendation list.', why: 'Follows up on the stated interest.' },
+      { type: 'actions', title: 'Nächste beste Schritte', items: [
+        { text: 'CHF-Absicherung auf dem USD-Aktienanteil vorschlagen.', why: 'Bringt den Währungsanteil ohne Verkäufe zurück ins Band.' },
+        { text: 'Grösste Technologieposition auf rund 8% reduzieren.', why: 'Behebt die Verletzung der Klumpenrisiko-Regel.' },
+        { text: 'Zwei nachhaltige globale Aktienfonds aus der Empfehlungsliste vorstellen.', why: 'Greift das geäusserte Interesse auf.' },
       ] },
-      { type: 'questions', title: 'Likely questions', items: [
-        { q: 'Should I sell my tech stocks?', a: 'Drawdown is sector-wide; mandate tolerates it. Trim only where cluster limits are breached.' },
-        { q: 'Is my portfolio sustainable?', a: 'Partially — show the ESG split and the two fund alternatives.' },
+      { type: 'questions', title: 'Wahrscheinliche Fragen', items: [
+        { q: 'Soll ich meine Technologieaktien verkaufen?', a: 'Der Rückgang betrifft den ganzen Sektor und liegt innerhalb des Mandats. Reduzieren nur dort, wo Klumpenlimiten verletzt sind.' },
+        { q: 'Ist mein Portfolio nachhaltig?', a: 'Teilweise – ESG-Aufteilung zeigen und die zwei Fondsalternativen vorstellen.' },
       ] },
     ],
   },
   {
     ref: 'CASE-B',
-    name: "Client B",
-    clientType: "Natürliche Person",
-    profile: "Ausgeglichen",
-    portfolioNr: "42.249999",
-    service: "Anlageberatung Portfolio",
-    strategy: "Ausgewogen",
+    name: 'Kunde B',
+    clientType: 'Natürliche Person',
+    profile: 'Ausgeglichen',
+    portfolioNr: '42.249999',
+    service: 'Anlageberatung Portfolio',
+    strategy: 'Ausgewogen',
     aum: "CHF 680'000.00",
-    context: "Quarterly call",
-    birthday: "22.02.1976",
-    lastProfiling: "25.08.2026",
-    lastConsultation: "10.09.2026",
+    context: 'Quartalsgespräch',
+    birthday: '22.02.1976',
+    lastProfiling: '25.08.2026',
+    lastConsultation: '10.09.2026',
     errors: 0,
     warnings: 1,
     briefing: [
-      { type: 'headline', text: 'Underperformed by 1.4pt last quarter — an underweight in European equities is the main cause.', sub: 'The CIO just turned positive on Europe, so there is a clean story and a clean fix.' },
+      { type: 'headline', text: 'Im letzten Quartal 1.4 Prozentpunkte hinter der Zielallokation – Hauptursache ist das Untergewicht in europäischen Aktien.', sub: 'Die Hausmeinung ist für Europa neu positiv: Das ergibt eine klare Erklärung und eine klare Lösung.' },
       { type: 'metrics', items: [
-        { label: 'QTD', value: '+0.6%', delta: 'target mix +2.0%', tone: 'warn' },
-        { label: 'Equity', value: '44%', delta: 'target 45%' },
-        { label: 'Europe eq.', value: '6%', delta: '-7pt vs target', tone: 'warn' },
-        { label: 'Cash', value: '9%' },
+        { label: 'Laufendes Quartal', value: '+0.6%', delta: 'Zielallokation +2.0%', tone: 'warn' },
+        { label: 'Aktienquote', value: '44%', delta: 'Soll 45%' },
+        { label: 'Aktien Europa', value: '6%', delta: '-7 Pkt. unter Soll', tone: 'warn' },
+        { label: 'Liquidität', value: '9%' },
       ] },
-      { type: 'split', title: 'What happened', left: { title: 'Portfolio', points: [
-        { text: 'European equities sit 7pt below the SAA target.', kind: 'fact', source: 'SAA country band' },
-        { text: 'Cash at 9% dragged in a rising market.', kind: 'fact', source: 'Positions' },
-      ] }, right: { title: 'Market', points: [
-        { text: 'CIO issued a positive outlook for European equities.', kind: 'fact', source: 'CIO view (mock)' },
-        { text: 'The gap is allocation-driven and fixable within mandate.', kind: 'interpretation' },
+      { type: 'split', title: 'Was ist passiert', left: { title: 'Portfolio', points: [
+        { text: 'Europäische Aktien liegen 7 Prozentpunkte unter dem SAA-Sollwert.', kind: 'fact', source: 'SAA-Länderband' },
+        { text: 'Die Liquidität von 9% hat in einem steigenden Markt Rendite gekostet.', kind: 'fact', source: 'Positionen' },
+      ] }, right: { title: 'Markt', points: [
+        { text: 'Der CIO hat einen positiven Ausblick für europäische Aktien publiziert.', kind: 'fact', source: 'CIO-Sicht (Beispiel)' },
+        { text: 'Der Rückstand kommt aus der Allokation und lässt sich innerhalb des Mandats beheben.', kind: 'interpretation' },
       ] } },
-      { type: 'allocation', title: 'Allocation vs. mandate', rows: [{ label: 'Liqu. / Geldmarkt', min: 0, target: 5, max: 15, actual: 9 }, { label: 'Obligationen', min: 35, target: 45, max: 55, actual: 42 }, { label: 'Aktien', min: 35, target: 45, max: 55, actual: 44 }, { label: 'Immobilien', min: 0, target: 2.5, max: 10, actual: 3 }, { label: 'Übrige Anlagen', min: 0, target: 2.5, max: 10, actual: 2 }] },
-      { type: 'flags', title: 'Needs attention', items: [
-        { severity: 'warn', text: 'Underweight in equity region "Rest of Europe".', source: 'Suitability rule' },
-        { severity: 'info', text: 'Asked about sustainable investment options previously.', source: 'Client note' },
+      allocation([['Liqu. / Geldmarkt', 0, 5, 15, 9], ['Obligationen', 35, 45, 55, 42], ['Aktien', 35, 45, 55, 44], ['Immobilien', 0, 2.5, 10, 3], ['Übrige Anlagen', 0, 2.5, 10, 2]]),
+      { type: 'flags', title: 'Handlungsbedarf', items: [
+        { severity: 'warn', text: 'Untergewicht in der Aktienregion «Übriges Europa».', source: 'Suitability-Regel' },
+        { severity: 'info', text: 'Hat sich früher nach nachhaltigen Anlagemöglichkeiten erkundigt.', source: 'Kundennotiz' },
       ] },
-      { type: 'actions', title: 'Next best actions', items: [
-        { text: 'Deploy 5pt of cash into a European equity fund.', why: 'Closes most of the underweight, aligned with the CIO view.' },
-        { text: 'Offer a sustainable European equity option.', why: 'Combines the rebalance with the client\'s stated interest.' },
-        { text: 'Send the benchmark comparison after the call.', why: 'Pre-empts the performance question in writing.' },
+      { type: 'actions', title: 'Nächste beste Schritte', items: [
+        { text: '5 Prozentpunkte Liquidität in einen europäischen Aktienfonds investieren.', why: 'Schliesst den grössten Teil des Untergewichts und entspricht der Hausmeinung.' },
+        { text: 'Eine nachhaltige Variante für europäische Aktien anbieten.', why: 'Verbindet die Umschichtung mit dem geäusserten Interesse.' },
+        { text: 'Nach dem Gespräch den Vergleich zur Zielallokation zustellen.', why: 'Beantwortet die Performancefrage schriftlich.' },
       ] },
-      { type: 'questions', title: 'Likely questions', items: [
-        { q: 'Why am I behind?', a: 'Allocation, not selection: too little Europe, too much cash.' },
+      { type: 'questions', title: 'Wahrscheinliche Fragen', items: [
+        { q: 'Warum liege ich zurück?', a: 'Allokation, nicht Titelauswahl: zu wenig Europa, zu viel Liquidität.' },
       ] },
     ],
   },
   {
     ref: 'CASE-C',
-    name: "Client C",
-    clientType: "Natürliche Person",
-    profile: "Konservativ",
-    portfolioNr: "27.131004",
-    service: "Anlageberatung Portfolio",
-    strategy: "Einkommen",
+    name: 'Kunde C',
+    clientType: 'Natürliche Person',
+    profile: 'Konservativ',
+    portfolioNr: '27.131004',
+    service: 'Anlageberatung Portfolio',
+    strategy: 'Einkommen',
     aum: "CHF 420'000.00",
-    context: "Review meeting",
-    birthday: "03.06.1954",
-    lastProfiling: "23.06.2026",
-    lastConsultation: "03.07.2026",
+    context: 'Jahresgespräch',
+    birthday: '03.06.1954',
+    lastProfiling: '23.06.2026',
+    lastConsultation: '03.07.2026',
     errors: 1,
     warnings: 1,
     briefing: [
-      { type: 'headline', text: 'A bond fund is flagged for suitability, and the client needs cash for a property purchase within 12 months.', sub: 'Both point the same way: reduce risk and build liquidity.' },
+      { type: 'headline', text: 'Ein Obligationenfonds verletzt die Suitability, und der Kunde braucht innert 12 Monaten Liquidität für einen Immobilienkauf.', sub: 'Beides weist in dieselbe Richtung: Risiko reduzieren und Liquidität aufbauen.' },
       { type: 'metrics', items: [
-        { label: 'YTD', value: '+1.9%', tone: 'ok' },
-        { label: 'Volatility', value: '4.1%', delta: 'max 5.5%' },
-        { label: 'Cash', value: '6%', tone: 'warn' },
-        { label: 'Flagged', value: '1 pos.', tone: 'risk' },
+        { label: 'Seit Jahresbeginn', value: '+1.9%', tone: 'ok' },
+        { label: 'Volatilität', value: '4.1%', delta: 'Maximum 5.5%' },
+        { label: 'Liquidität', value: '6%', tone: 'warn' },
+        { label: 'Beanstandet', value: '1 Pos.', tone: 'risk' },
       ] },
-      { type: 'split', title: 'What happened', left: { title: 'Portfolio', points: [
-        { text: 'Bond fund (12% weight) has a product risk class above the profile ceiling.', kind: 'fact', source: 'Suitability violation' },
-        { text: 'Liquidity is 6% of assets.', kind: 'fact', source: 'Accounts' },
-      ] }, right: { title: 'Client', points: [
-        { text: 'Planning to buy a property, liquidity need within 12 months.', kind: 'fact', source: 'Client note' },
-        { text: 'Current liquidity will not cover a down payment.', kind: 'interpretation' },
+      { type: 'split', title: 'Was ist passiert', left: { title: 'Portfolio', points: [
+        { text: 'Ein Obligationenfonds (12% Gewicht) hat eine Produktrisikoklasse über dem Maximum des Profils.', kind: 'fact', source: 'Regelverletzung' },
+        { text: 'Die Liquidität beträgt 6% des Vermögens.', kind: 'fact', source: 'Konten' },
+      ] }, right: { title: 'Kunde', points: [
+        { text: 'Plant einen Immobilienkauf, Liquiditätsbedarf innert 12 Monaten.', kind: 'fact', source: 'Kundennotiz' },
+        { text: 'Die heutige Liquidität reicht für eine Anzahlung nicht aus.', kind: 'interpretation' },
       ] } },
-      { type: 'allocation', title: 'Allocation vs. mandate', rows: [{ label: 'Liqu. / Geldmarkt', min: 0, target: 10, max: 25, actual: 6 }, { label: 'Obligationen', min: 50, target: 65, max: 80, actual: 71 }, { label: 'Aktien', min: 5, target: 15, max: 25, actual: 14 }, { label: 'Immobilien', min: 0, target: 5, max: 15, actual: 6 }, { label: 'Übrige Anlagen', min: 0, target: 5, max: 10, actual: 3 }] },
-      { type: 'flags', title: 'Needs attention', items: [
-        { severity: 'risk', text: 'Product risk class exceeds the client\'s maximum.', source: 'Suitability rule' },
-        { severity: 'warn', text: 'Liquidity need is not reflected in the allocation.', source: 'Client note + accounts' },
+      allocation([['Liqu. / Geldmarkt', 0, 10, 25, 6], ['Obligationen', 50, 65, 80, 71], ['Aktien', 5, 15, 25, 14], ['Immobilien', 0, 5, 15, 6], ['Übrige Anlagen', 0, 5, 10, 3]]),
+      { type: 'flags', title: 'Handlungsbedarf', items: [
+        { severity: 'risk', text: 'Produktrisikoklasse übersteigt das Maximum des Kunden.', source: 'Suitability-Regel' },
+        { severity: 'warn', text: 'Der Liquiditätsbedarf ist in der Allokation nicht abgebildet.', source: 'Kundennotiz + Konten' },
       ] },
-      { type: 'actions', title: 'Next best actions', items: [
-        { text: 'Sell the flagged bond fund.', why: 'Resolves the suitability error.' },
-        { text: 'Park proceeds in money market until the purchase.', why: 'Matches the 12-month horizon and preserves capital.' },
-        { text: 'Confirm the amount and date of the purchase.', why: 'Sizes the liquidity reserve correctly.' },
+      { type: 'actions', title: 'Nächste beste Schritte', items: [
+        { text: 'Den beanstandeten Obligationenfonds verkaufen.', why: 'Behebt die Regelverletzung.' },
+        { text: 'Den Erlös bis zum Kauf im Geldmarkt parkieren.', why: 'Passt zum Horizont von 12 Monaten und erhält das Kapital.' },
+        { text: 'Betrag und Zeitpunkt des Immobilienkaufs klären.', why: 'Bestimmt die richtige Höhe der Liquiditätsreserve.' },
       ] },
-      { type: 'questions', title: 'Likely questions', items: [
-        { q: 'Is my money safe for the purchase?', a: 'Not fully yet — the plan above earmarks it.' },
+      { type: 'questions', title: 'Wahrscheinliche Fragen', items: [
+        { q: 'Ist mein Geld für den Kauf sicher?', a: 'Noch nicht vollständig – der Plan oben reserviert es dafür.' },
       ] },
     ],
   },
 ]
+
+export const signals: Signal[] = [
+  {
+    id: 'S-1', title: 'Technologiesektor: Volatilität stark gestiegen', reach: 'Global', time: 'vor 12 Min.', source: 'Marktnachrichten (Beispiel)',
+    detail: 'Alle grossen Indizes betroffen, keine titelspezifische Ursache.',
+    affected: [{ ref: 'CASE-A', severity: 'risk', exposure: '34% US-Technologie, 5 Positionen', opener: 'Ihr Portfolio ist vom Rückgang im Technologiesektor betroffen – ich möchte kurz die Einordnung mit Ihnen besprechen.' }],
+  },
+  {
+    id: 'S-2', title: 'Hausmeinung: Europäische Aktien neu positiv', reach: 'Hausmeinung', time: 'vor 1 Std.', source: 'CIO-Sicht (Beispiel)',
+    detail: 'Der CIO hebt europäische Aktien von neutral auf übergewichten an.',
+    affected: [{ ref: 'CASE-B', severity: 'warn', exposure: 'Europa 7 Pkt. unter Soll, 9% Liquidität', opener: 'Unsere Anlagestrategen sehen Europa neu positiv – bei Ihnen besteht dort ein Untergewicht, das wir mit vorhandener Liquidität schliessen könnten.' }],
+  },
+  {
+    id: 'S-3', title: 'USD/CHF: Dollar schwächt sich weiter ab', reach: 'Global', time: 'vor 2 Std.', source: 'Marktnachrichten (Beispiel)',
+    detail: 'Der Dollar verliert gegenüber dem Franken den dritten Tag in Folge.',
+    affected: [{ ref: 'CASE-A', severity: 'risk', exposure: 'USD-Anteil 61%, 11 Pkt. über Band', opener: 'Der schwächere Dollar trifft Ihr Portfolio überdurchschnittlich – ich habe einen Vorschlag zur Absicherung.' }],
+  },
+  {
+    id: 'S-4', title: 'Obligationenfonds: Produktrisikoklasse angehoben', reach: 'Titel', time: 'gestern', source: 'Wertschriftenstamm',
+    detail: 'Der Fonds liegt neu über dem Maximum konservativer Anlageprofile.',
+    affected: [{ ref: 'CASE-C', severity: 'risk', exposure: '12% Gewicht im Portfolio', opener: 'Ein Fonds in Ihrem Depot wurde neu eingestuft und passt nicht mehr zu Ihrem Profil – ich zeige Ihnen eine Alternative.' }],
+  },
+]
+
+export const sampleCall: IncomingCall = { ref: 'CASE-A', number: '+41 44 555 01 23', reason: 'Vermuteter Anlass: Rückgang im Technologiesektor (Signal S-1)' }

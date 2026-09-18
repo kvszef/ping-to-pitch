@@ -6,12 +6,12 @@ export function Headline({ card }: { card: CardOf<'headline'> }) {
   return (
     <Panel title="Briefing" icon={ClipboardList}>
       <p className="text-[17px] leading-snug">{card.text}</p>
-      {card.sub && <p className="mt-3 text-muted"><span className="font-medium text-ink">Advisor tip:</span> {card.sub}</p>}
+      {card.sub && <p className="mt-3 text-muted"><span className="font-medium text-ink">Beratertipp:</span> {card.sub}</p>}
     </Panel>
   )
 }
 
-// Rendered in the side column as square tiles, like the analysis tile grid.
+// Erscheint in der Seitenspalte als quadratische Kacheln, analog zum Kachelraster der Analyse.
 export function Metrics({ card }: { card: CardOf<'metrics'> }) {
   return (
     <div className="grid grid-cols-2 gap-2.5">

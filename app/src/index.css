@@ -4,7 +4,7 @@
 @import "@fontsource/fira-sans/600.css";
 @import "tailwindcss";
 
-/* Values sampled from the URO Advisor Pro reference screenshots. */
+/* Werte aus den Referenz-Screenshots von URO Advisor Pro übernommen. */
 @theme {
   --color-topbar: #5499e4;
   --color-brand: #5997ed;

@@ -1,8 +1,8 @@
 export type Kind = 'fact' | 'interpretation' | 'action'
 export type Severity = 'risk' | 'warn' | 'ok' | 'info'
 
-// A briefing is an ordered list of cards. Add a variant here, a component in
-// cards/, and one line in cards/registry.tsx — nothing else needs to change.
+// Ein Briefing ist eine geordnete Liste von Karten. Neue Karte: Variante hier ergänzen,
+// Komponente in cards/ anlegen, eine Zeile in cards/registry.tsx – sonst ändert sich nichts.
 export type Card =
   | { type: 'headline'; text: string; sub?: string }
   | { type: 'metrics'; items: { label: string; value: string; delta?: string; tone?: Severity }[] }
@@ -33,5 +33,19 @@ export type Client = {
   warnings: number
   briefing: Card[]
 }
+
+export type Reach = 'Global' | 'Sektor' | 'Titel' | 'Hausmeinung'
+
+export type Signal = {
+  id: string
+  title: string
+  detail: string
+  source: string
+  time: string
+  reach: Reach
+  affected: { ref: string; severity: Severity; exposure: string; opener: string }[]
+}
+
+export type IncomingCall = { ref: string; number: string; reason: string }
 
 export type ChatMessage = { role: 'advisor' | 'assistant'; text: string }

@@ -1,21 +1,13 @@
-import { AlertTriangle, Briefcase, Menu, Plus, Search, Users, XCircle, Ban } from 'lucide-react'
+import { AlertTriangle, Plus, Search, XCircle } from 'lucide-react'
 import type { Client } from '../types'
 import { SeverityIcon } from '../cards/ui'
-import { SubBar } from './Chrome'
 
-const tabs = [['Kunden', 0], ['Neukunden', 6], ['Beratungen', 215], ['01 - Liquidity > 10%', 112], ['02 - Maturities', 0], ['03 - Last Consultation > 12 Months', 191], ['04 - Rule Violations (urgent)', 28], ['05 - Birthdays', 13]] as const
+const tabs = [['Kunden', 0], ['Neukunden', 6], ['Beratungen', 215], ['01 - Liquidität > 10%', 112], ['02 - Fälligkeiten', 0], ['03 - Letzte Beratung > 12 Monate', 191], ['04 - Regelverletzungen (dringend)', 28], ['05 - Geburtstage', 13]] as const
 const columns = ['KundenNr.', 'Name', 'Kundenprofil', 'Anlass', 'Geburtstag', 'Letzte Profilierung', 'Letzte Beratung']
 
 export function Dashboard({ clients, onOpen }: { clients: Client[]; onOpen: (ref: string) => void }) {
   return (
     <>
-      <SubBar title="Kundenberater-Dashboard" items={[
-        { label: 'Beratermappe', icon: Briefcase },
-        { label: 'Kundenliste', icon: Users, active: true },
-        { label: 'Regelverletzungen', icon: Ban, badge: clients.reduce((n, c) => n + c.errors, 0), badgeTone: 'red' },
-        { label: 'Warnungen', icon: AlertTriangle, badge: clients.reduce((n, c) => n + c.warnings, 0), badgeTone: 'red' },
-        { label: '', icon: Menu },
-      ]} />
       <div className="flex shrink-0 items-center justify-between bg-band px-3 py-3">
         <div>
           <div className="text-[17px]">Willkommen zurück, Hans Muster</div>

@@ -3,7 +3,7 @@ import type { Client } from '../types'
 import { SeverityIcon } from '../cards/ui'
 import { ChatDock } from './ChatDock'
 
-// Compact in-call mode: one glanceable strip of what matters, chat as fallback.
+// Kompakter Gesprächsmodus: das Wichtigste auf einen Blick, Rückfragen als Rückfallebene.
 export function LiveOverlay({ client, onClose }: { client: Client; onClose: () => void }) {
   const headline = client.briefing.find((c) => c.type === 'headline')
   const flags = client.briefing.find((c) => c.type === 'flags')
@@ -24,7 +24,7 @@ export function LiveOverlay({ client, onClose }: { client: Client; onClose: () =
         )}
         {actions && (
           <div className="border-l-2 border-brand bg-stripe px-3 py-2">
-            <div className="text-[10px] uppercase tracking-wide text-muted">Say next</div>
+            <div className="text-[10px] uppercase tracking-wide text-muted">Jetzt ansprechen</div>
             {actions.items[0].text}
           </div>
         )}

@@ -1,25 +1,50 @@
-import { ArrowLeft, Briefcase, CircleUser, ClipboardList, FileUp, Info, Menu, Phone, PieChart, StickyNote, Upload } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Ban, Briefcase, CircleUser, ClipboardList, FileUp, Info, Menu, Phone, PieChart, Radio, StickyNote, Upload, Users } from 'lucide-react'
 import { useState } from 'react'
 import { CardView, slotOf } from './cards/registry'
 import { ChatDock } from './components/ChatDock'
-import { InfoBand, Pill, SubBar, TopBar } from './components/Chrome'
+import { InfoBand, Pill, SubBar, TopBar, type ToolItem } from './components/Chrome'
 import { Dashboard } from './components/Dashboard'
 import { LiveOverlay } from './components/LiveOverlay'
-import { clients } from './data/mock'
+import { CallBanner, Signals } from './components/Signals'
+import { clients, sampleCall, signals } from './data/mock'
+import type { IncomingCall } from './types'
 
-// Deep link: #CASE-A or #CASE-A/live
+type Page = 'kunden' | 'signale'
+
+// Direktlinks: #signale, #CASE-A, #CASE-A/live; Zusatz /anruf simuliert einen eingehenden Anruf
 const hash = location.hash.slice(1).split('/')
 
 export default function App() {
-  const [ref, setRef] = useState<string | null>(() => hash[0] || null)
+  const [page, setPage] = useState<Page>(hash[0] === 'signale' ? 'signale' : 'kunden')
+  const [ref, setRef] = useState<string | null>(() => (hash[0]?.startsWith('CASE') ? hash[0] : null))
   const [live, setLive] = useState(hash[1] === 'live')
+  const [call, setCall] = useState<IncomingCall | null>(hash.includes('anruf') ? sampleCall : null)
   const client = clients.find((c) => c.ref === ref)
+  const caller = clients.find((c) => c.ref === call?.ref)
+
+  const open = (r: string, asCall = false) => { setRef(r); setLive(asCall) }
+  const home = (p: Page) => { setRef(null); setLive(false); setPage(p) }
+  const accept = () => { if (call) open(call.ref, true); setCall(null) }
+
+  const signalsItem: ToolItem = { label: 'Anrufe & Signale', icon: Radio, badge: signals.length + (call ? 1 : 0), badgeTone: 'red', active: !client && page === 'signale', onClick: () => home('signale') }
+  const banner = call && caller && !(page === 'signale' && !client) && <CallBanner client={caller} call={call} onAccept={accept} onDecline={() => setCall(null)} />
 
   if (!client) {
     return (
       <div className="flex h-full flex-col">
         <TopBar />
-        <Dashboard clients={clients} onOpen={setRef} />
+        <SubBar title="Kundenberater-Dashboard" items={[
+          { label: 'Beratermappe', icon: Briefcase },
+          signalsItem,
+          { label: 'Kundenliste', icon: Users, active: page === 'kunden', onClick: () => home('kunden') },
+          { label: 'Regelverletzungen', icon: Ban, badge: clients.reduce((n, c) => n + c.errors, 0), badgeTone: 'red' },
+          { label: 'Warnungen', icon: AlertTriangle, badge: clients.reduce((n, c) => n + c.warnings, 0), badgeTone: 'red' },
+          { label: '', icon: Menu },
+        ]} />
+        {page === 'kunden'
+          ? <Dashboard clients={clients} onOpen={open} />
+          : <Signals clients={clients} signals={signals} call={call} onSimulateCall={() => setCall(sampleCall)} onAccept={accept} onDecline={() => setCall(null)} onOpen={open} />}
+        {banner}
       </div>
     )
   }
@@ -33,12 +58,13 @@ export default function App() {
       <SubBar title={`${client.name} (${client.ref})`} items={[
         { label: 'Telefonberatung', icon: Phone, active: live, onClick: () => setLive((v) => !v) },
         { label: 'Beratermappe', icon: Briefcase },
+        signalsItem,
         { label: 'Notizen', icon: StickyNote, badge: 0 },
         { label: 'Briefing', icon: ClipboardList, active: !live },
         { label: 'Analyse', icon: PieChart },
         { label: 'Kundeninformation', icon: CircleUser },
         { label: 'Portfolio', icon: Info },
-        { label: '', icon: ArrowLeft, onClick: () => { setRef(null); setLive(false) } },
+        { label: '', icon: ArrowLeft, onClick: () => home(page) },
         { label: '', icon: Menu },
       ]} />
       <InfoBand total={client.aum} fields={[
@@ -48,10 +74,10 @@ export default function App() {
         { label: 'Anlass', value: client.context },
       ]}>
         <div className="mt-2 flex gap-2">
-          {clients.map((c) => <Pill key={c.ref} icon={CircleUser} active={c.ref === client.ref} onClick={() => setRef(c.ref)}>{c.name}</Pill>)}
+          {clients.map((c) => <Pill key={c.ref} icon={CircleUser} active={c.ref === client.ref} onClick={() => open(c.ref, live)}>{c.name}</Pill>)}
           <span className="mx-1 border-l border-ink/40" />
-          <Pill icon={Upload}>clients.json</Pill>
-          <Pill icon={FileUp}>Fremdbank-PDF</Pill>
+          <Pill icon={Upload}>Kundendatei laden</Pill>
+          <Pill icon={FileUp}>Fremdbank-PDF importieren</Pill>
         </div>
       </InfoBand>
 
@@ -66,6 +92,7 @@ export default function App() {
       </div>
 
       {live && <LiveOverlay client={client} onClose={() => setLive(false)} />}
+      {banner}
     </div>
   )
 }

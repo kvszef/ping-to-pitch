@@ -21,8 +21,10 @@ const kindStyle: Record<Kind, string> = {
   action: 'bg-teal/30 text-ink',
 }
 
+const kindLabel: Record<Kind, string> = { fact: 'Fakt', interpretation: 'Einschätzung', action: 'Massnahme' }
+
 export function KindTag({ kind }: { kind: Kind }) {
-  return <span className={`mr-1 px-1.5 py-px text-[10px] uppercase tracking-wide ${kindStyle[kind]}`}>{kind}</span>
+  return <span className={`mr-1 px-1.5 py-px text-[10px] uppercase tracking-wide ${kindStyle[kind]}`}>{kindLabel[kind]}</span>
 }
 
 export const toneText: Record<Severity, string> = {
