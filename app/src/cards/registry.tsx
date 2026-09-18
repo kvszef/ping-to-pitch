@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react'
 import type { Card, CardOf } from '../types'
 import { Actions, Allocation, Flags, Headline, Metrics, Questions, Split } from './basic'
+import { Context, Drivers, Proposal } from './panels'
 
 export type Slot = 'main' | 'side'
 type Entry<T extends Card['type']> = { component: ComponentType<{ card: CardOf<T> }>; slot: Slot }
@@ -13,6 +14,9 @@ const registry: { [T in Card['type']]: Entry<T> } = {
   flags: { component: Flags, slot: 'main' },
   actions: { component: Actions, slot: 'main' },
   questions: { component: Questions, slot: 'main' },
+  drivers: { component: Drivers, slot: 'main' },
+  context: { component: Context, slot: 'main' },
+  proposal: { component: Proposal, slot: 'main' },
 }
 
 export const slotOf = (card: Card): Slot => registry[card.type]?.slot ?? 'main'

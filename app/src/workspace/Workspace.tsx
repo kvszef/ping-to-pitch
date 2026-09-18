@@ -1,12 +1,15 @@
-import { Activity, ArrowRight, BarChart3, Headset, MessageSquare, Mic, MicOff, Phone, PhoneCall, PhoneOff, Settings as SettingsIcon, Users } from 'lucide-react'
+import { Activity, ArrowRight, BarChart3, ChevronDown, Headset, MessageSquare, Mic, MicOff, Phone, PhoneCall, PhoneOff, Settings as SettingsIcon, Users } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { SeverityIcon, Source } from '../cards/ui'
 import { Pill } from '../components/Chrome'
+import { CardView } from '../cards/registry'
+import { newsFeed } from '../data/mock'
 import { topics as topicData, transcripts } from '../data/workspace'
 import type { Client, Signal } from '../types'
 import { activeProvider, answer, fetchStatus, openingHints, question, think, type Segment, type Status } from './brain'
 import { LiveIsland } from './CallIsland'
 import { ModuleView } from './modules'
+import { NewsFeed } from './NewsFeed'
 import { SettingsPanel } from './SettingsPanel'
 import { useSettings } from './settings'
 import type { ChatEntry, Hint, Origin, Slot, TranscriptLine } from './types'
@@ -23,6 +26,11 @@ type Props = {
 
 const originLabel: Record<Origin, string> = { gespraech: 'Aus dem Gespräch', chat: 'Aus dem Berater-Chat', kundendaten: 'Aus den Kundendaten' }
 const rank = { risk: 0, warn: 1, info: 2, ok: 3 }
+const MID_WIDTH = 340
+// Reihenfolge der Tafeln in der mittleren Spalte: vom Vorschlag über die Schritte zur Begründung.
+const midOrder = ['proposal', 'actions', 'drivers', 'context'] as const
+const WORDS_PER_SECOND = 3.3
+const strings = (o: unknown): string[] => (typeof o === 'string' ? [o] : o && typeof o === 'object' ? Object.values(o).flatMap(strings) : [])
 const providerLabel = { openai: 'OpenAI', apertus: 'Apertus', beispiel: 'Beispielmodus' }
 
 export function Workspace({ clients, signals, initialRef, initialCall, onSimulateCall, onOpenBriefing }: Props) {
@@ -100,6 +108,14 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
   const topSignal = (r: string) => signals.flatMap((s) => s.affected.filter((a) => a.ref === r).map((a) => ({ ...a, title: s.title }))).sort((a, b) => rank[a.severity] - rank[b.severity])[0]
   const open = useMemo(() => (topicData[client.ref] ?? []).filter((t) => !chat.some((e) => e.role === 'ki' && e.text === t.insight[settings.detail])), [client.ref, chat, settings.detail])
 
+  const midCards = midOrder.flatMap((type) => client.briefing.filter((c) => c.type === type))
+  const [closed, setClosed] = useState<Set<string>>(new Set(['drivers', 'context']))
+  const toggle = (type: string) => setClosed((c) => { const n = new Set(c); if (!n.delete(type)) n.add(type); return n })
+  const readSeconds = useMemo(() => {
+    const text = [...newsFeed.filter((n) => n.affects[client.ref]).map((n) => `${n.title} ${n.affects[client.ref].meaning}`), ...midCards.filter((c) => !closed.has(c.type)).flatMap(strings)].join(' ')
+    return Math.round(text.split(/[^\p{L}\p{N}%.]+/u).filter((w) => w.length > 1).length / WORDS_PER_SECOND / 5) * 5
+  }, [client.ref, closed]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const base = { assistent: 1 + (100 - settings.focus) / 50, chat: 1 + settings.focus / 50 }
 
   // Trennlinie von Hand ziehen: die Zeigerposition bestimmt den Anteil des Berater-Chats (25–75 %).
@@ -108,7 +124,8 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
   const dragTo = (x: number) => {
     const box = split.current?.getBoundingClientRect()
     if (!box) return
-    const share = (box.right - x) / box.width
+    // Die mittlere Spalte ist fest breit; verteilt wird nur der Rest zwischen Gesprächsassistent und Berater-Chat.
+    const share = 1 - (x - box.left) / (box.width - MID_WIDTH - 20)
     update({ focus: Math.round(Math.max(0, Math.min(100, (share * 4 - 1) * 50))) })
   }
 
@@ -210,6 +227,23 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
             <span className={`h-10 w-[3px] rounded-full transition-all duration-200 group-hover:h-16 group-hover:bg-brand group-focus-visible:h-16 group-focus-visible:bg-brand ${dragging ? 'h-16 bg-brand' : 'bg-track'}`} />
           </div>
         )}
+
+        <div className={`compact flex shrink-0 flex-col gap-2.5 ${settings.dragSplit ? 'mr-2.5' : ''}`} style={{ width: MID_WIDTH }}>
+          <div className="flex shrink-0 items-center justify-between px-1 text-[11px] text-muted"><span className="uppercase tracking-wide">Lage auf einen Blick</span><span>Lesezeit ≈ {readSeconds} Sek.</span></div>
+          <div className="flex max-h-[40%] shrink-0 flex-col"><NewsFeed key={client.ref} feed={newsFeed} clientRef={client.ref} /></div>
+          <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto pb-0.5">
+            {midCards.map((card, i) => (closed.has(card.type) ? (
+              <button key={`${client.ref}-m${i}`} onClick={() => toggle(card.type)} className="flex w-full items-center justify-between bg-white px-3.5 py-2.5 text-left text-[13px] shadow-card hover:text-brand">
+                {'title' in card ? card.title : ''} <ChevronDown size={14} className="text-muted" />
+              </button>
+            ) : (
+              <div key={`${client.ref}-m${i}`} className="relative">
+                <CardView card={card} />
+                <button onClick={() => toggle(card.type)} aria-label="Einklappen" className="absolute right-2.5 top-3 text-muted hover:text-brand"><ChevronDown size={14} className="rotate-180" /></button>
+              </div>
+            )))}
+          </div>
+        </div>
 
         <Pane grow={base.chat} still={dragging} icon={MessageSquare} title="Berater-Chat" sub="Einblicke für Sie, mit Zugriff auf die Kundendaten"
           footer={

@@ -11,6 +11,9 @@ export type Card =
   | { type: 'flags'; title: string; items: { severity: Severity; text: string; source: string }[] }
   | { type: 'actions'; title: string; items: { text: string; why: string }[] }
   | { type: 'questions'; title: string; items: { q: string; a: string }[] }
+  | { type: 'drivers'; title: string; period: string; total: string; note: string; items: { name: string; weight: number; ret: number; contribution: number }[] }
+  | { type: 'context'; title: string; facts: { label: string; value: string }[]; notes: { text: string; date: string }[]; changes: string[] }
+  | { type: 'proposal'; title: string; status: string; summary: string; trades: { side: 'Kauf' | 'Verkauf' | 'Absicherung'; name: string; amount: string; share: string }[]; effects: { label: string; before: string; after: string; ok: boolean }[]; open?: string }
 
 export type Point = { text: string; kind: Kind; source?: string }
 
@@ -44,6 +47,16 @@ export type Signal = {
   time: string
   reach: Reach
   affected: { ref: string; severity: Severity; exposure: string; opener: string }[]
+}
+
+// Eine Meldung des Tages. `affects` hält je Kunde fest, welche Position betroffen ist und was das für ihn bedeutet.
+export type NewsItem = {
+  id: string
+  time: string
+  title: string
+  source: string
+  reach: Reach
+  affects: Record<string, { position: string; meaning: string; severity: Severity }>
 }
 
 export type IncomingCall = { ref: string; number: string; reason: string }

@@ -1,4 +1,4 @@
-import type { Card, Client, IncomingCall, Signal } from '../types'
+import type { Card, Client, IncomingCall, NewsItem, Signal } from '../types'
 
 // BEISPIELDATEN — gleiche Form, wie sie die Analyse- und LLM-Schicht später liefert.
 
@@ -42,6 +42,29 @@ export const clients: Client[] = [
         { text: 'Die Bewegung ist global, vergleichbare Portfolios sind ähnlich betroffen.', kind: 'interpretation' },
       ] } },
       allocation([['Liqu. / Geldmarkt', 0, 5, 15, 3], ['Obligationen', 0, 10, 20, 6], ['Aktien', 65, 85, 95, 88], ['Immobilien', 0, 0, 10, 0], ['Übrige Anlagen', 0, 0, 10, 3]]),
+      { type: 'drivers', title: 'Treiber der Wertentwicklung', period: 'Laufender Monat', total: '-4.2%', note: 'Drei US-Technologietitel erklären 3.1 der 4.2 Prozentpunkte. Schweizer Titel haben gestützt.', items: [
+        { name: 'US-Technologie, Position 1', weight: 13.4, ret: -11.2, contribution: -1.5 },
+        { name: 'US-Technologie, Position 2', weight: 8.9, ret: -10.1, contribution: -0.9 },
+        { name: 'US-Technologie, Position 3', weight: 7.2, ret: -9.7, contribution: -0.7 },
+        { name: 'ETF Aktien Welt', weight: 18.0, ret: -3.9, contribution: -0.7 },
+        { name: 'Währungseffekt USD/CHF', weight: 61, ret: -1.1, contribution: -0.7 },
+        { name: 'Schweizer Qualitätsaktien', weight: 12.0, ret: 2.5, contribution: 0.3 },
+      ] },
+      { type: 'proposal', title: 'Anlagevorschlag', status: 'Entwurf', summary: 'Klumpenrisiko abbauen, USD-Anteil ins Band zurückführen und das Interesse an nachhaltigen Anlagen aufnehmen – ohne die Aktienquote zu senken.', trades: [
+        { side: 'Verkauf', name: 'US-Technologie, Position 1 (Teilverkauf)', amount: "CHF 67'000", share: '-5.4 Pkt.' },
+        { side: 'Kauf', name: 'Nachhaltiger Aktienfonds Welt (Empfehlungsliste)', amount: "CHF 67'000", share: '+5.4 Pkt.' },
+        { side: 'Absicherung', name: 'USD/CHF-Termingeschäft auf US-Aktienanteil', amount: "CHF 136'000", share: '11 Pkt.' },
+      ], effects: [
+        { label: 'Grösste Einzelposition', before: '13.4%', after: '8.0%', ok: true },
+        { label: 'USD-Anteil (Band 30–50%)', before: '61%', after: '50%', ok: true },
+        { label: 'Aktienquote (Band 65–95%)', before: '88%', after: '88%', ok: true },
+        { label: 'Regelverletzungen', before: '2', after: '0', ok: true },
+      ], open: 'Kein offener Vorschlag. Letzter Vorschlag vom 19.08.2026 («Marktvolatilität – Nachfassen») wurde abgelehnt.' },
+      { type: 'context', title: 'Kundenkontext', facts: [{ label: 'Anlageziel', value: 'Langfristiger Vermögensaufbau' }, { label: 'Anlagehorizont', value: 'Über 10 Jahre' }, { label: 'ESG-Profil', value: 'Ja' }, { label: 'Erreichbarkeit', value: 'Bevorzugt E-Mail' }], changes: ['Portfolio -4.2% im laufenden Monat', 'Neue Regelverletzung: USD-Anteil über Band', 'Zwei Marktsignale betreffen das Portfolio'], notes: [
+        { date: '02.09.2026', text: 'Beobachtet die Technologieaktien im Portfolio genau, möchte weiter ausbauen.' },
+        { date: '19.08.2026', text: 'Wünscht beim nächsten Rebalancing einen möglichst hohen Anteil nachhaltiger Fonds.' },
+        { date: '08.05.2026', text: 'Kommt mit höherer Volatilität zurecht, langer Anlagehorizont.' },
+      ] },
       { type: 'flags', title: 'Handlungsbedarf', items: [
         { severity: 'risk', text: 'USD-Anteil liegt 11 Prozentpunkte über dem Mandatsband.', source: 'SAA-Währungsband' },
         { severity: 'warn', text: 'Klumpenrisiko: ein Einzeltitel über 10%.', source: 'Suitability-Regel' },
@@ -89,6 +112,26 @@ export const clients: Client[] = [
         { text: 'Der Rückstand kommt aus der Allokation und lässt sich innerhalb des Mandats beheben.', kind: 'interpretation' },
       ] } },
       allocation([['Liqu. / Geldmarkt', 0, 5, 15, 9], ['Obligationen', 35, 45, 55, 42], ['Aktien', 35, 45, 55, 44], ['Immobilien', 0, 2.5, 10, 3], ['Übrige Anlagen', 0, 2.5, 10, 2]]),
+      { type: 'drivers', title: 'Treiber der Wertentwicklung', period: 'Laufendes Quartal', total: '+0.6%', note: 'Der Rückstand von 1.4 Punkten zur Zielallokation entsteht durch fehlendes Europa-Gewicht und hohe Liquidität, nicht durch die Titelauswahl.', items: [
+        { name: 'Schweizer Aktien', weight: 21, ret: 2.4, contribution: 0.5 },
+        { name: 'Aktien Nordamerika', weight: 13, ret: 2.3, contribution: 0.3 },
+        { name: 'Aktien Europa (Untergewicht)', weight: 6, ret: 4.8, contribution: 0.3 },
+        { name: 'Obligationen CHF', weight: 42, ret: 0.2, contribution: 0.1 },
+        { name: 'Liquidität', weight: 9, ret: 0.0, contribution: 0.0 },
+        { name: 'Übrige Anlagen', weight: 2, ret: -3.0, contribution: -0.1 },
+      ] },
+      { type: 'proposal', title: 'Anlagevorschlag', status: 'Entwurf', summary: 'Überschüssige Liquidität in europäische Aktien umschichten – im Einklang mit der neuen Hausmeinung und dem Wunsch nach nachhaltigen Anlagen.', trades: [
+        { side: 'Kauf', name: 'Nachhaltiger Aktienfonds Europa (Empfehlungsliste)', amount: "CHF 34'000", share: '+5.0 Pkt.' },
+      ], effects: [
+        { label: 'Aktien Europa (Band 8–18%)', before: '6%', after: '11%', ok: true },
+        { label: 'Liquidität (Soll 5%)', before: '9%', after: '4%', ok: true },
+        { label: 'Aktienquote (Band 35–55%)', before: '44%', after: '49%', ok: true },
+        { label: 'Regelverletzungen', before: '1', after: '0', ok: true },
+      ], open: 'Offener Vorschlag vom 10.09.2026 («Periodische Portfolioüberprüfung») ist noch im Entwurf.' },
+      { type: 'context', title: 'Kundenkontext', facts: [{ label: 'Anlageziel', value: 'Vermögenserhalt mit Ertrag' }, { label: 'Anlagehorizont', value: '5 bis 10 Jahre' }, { label: 'ESG-Profil', value: 'Nicht erfasst' }, { label: 'Erreichbarkeit', value: 'Nach 18 Uhr' }], changes: ['Hausmeinung für Europa von neutral auf positiv', 'Rückstand zur Zielallokation auf 1.4 Punkte gestiegen'], notes: [
+        { date: '10.09.2026', text: 'Wünscht beim nächsten Gespräch einen Vergleich mit der Benchmark.' },
+        { date: '25.08.2026', text: 'Hat sich nach nachhaltigen Anlagemöglichkeiten erkundigt.' },
+      ] },
       { type: 'flags', title: 'Handlungsbedarf', items: [
         { severity: 'warn', text: 'Untergewicht in der Aktienregion «Übriges Europa».', source: 'Suitability-Regel' },
         { severity: 'info', text: 'Hat sich früher nach nachhaltigen Anlagemöglichkeiten erkundigt.', source: 'Kundennotiz' },
@@ -134,6 +177,26 @@ export const clients: Client[] = [
         { text: 'Die heutige Liquidität reicht für eine Anzahlung nicht aus.', kind: 'interpretation' },
       ] } },
       allocation([['Liqu. / Geldmarkt', 0, 10, 25, 6], ['Obligationen', 50, 65, 80, 71], ['Aktien', 5, 15, 25, 14], ['Immobilien', 0, 5, 15, 6], ['Übrige Anlagen', 0, 5, 10, 3]]),
+      { type: 'drivers', title: 'Treiber der Wertentwicklung', period: 'Seit Jahresbeginn', total: '+1.9%', note: 'Ruhige Entwicklung. Der beanstandete Fonds hat am meisten beigetragen – und trägt das höchste Risiko.', items: [
+        { name: 'Beanstandeter Obligationenfonds', weight: 12, ret: 5.8, contribution: 0.7 },
+        { name: 'Obligationen CHF Inland', weight: 59, ret: 1.2, contribution: 0.7 },
+        { name: 'Schweizer Aktien', weight: 14, ret: 3.6, contribution: 0.5 },
+        { name: 'Immobilienfonds', weight: 6, ret: 1.7, contribution: 0.1 },
+        { name: 'Übrige Anlagen', weight: 3, ret: -3.3, contribution: -0.1 },
+      ] },
+      { type: 'proposal', title: 'Anlagevorschlag', status: 'Entwurf', summary: 'Regelverletzung beheben und die Liquidität für den Immobilienkauf innert 12 Monaten bereitstellen.', trades: [
+        { side: 'Verkauf', name: 'Beanstandeter Obligationenfonds (ganze Position)', amount: "CHF 50'400", share: '-12.0 Pkt.' },
+        { side: 'Kauf', name: 'Geldmarktfonds CHF (Empfehlungsliste)', amount: "CHF 50'400", share: '+12.0 Pkt.' },
+      ], effects: [
+        { label: 'Produktrisikoklasse im Profil', before: 'verletzt', after: 'eingehalten', ok: true },
+        { label: 'Liquidität und Geldmarkt (Band bis 25%)', before: '6%', after: '18%', ok: true },
+        { label: 'Obligationen (Band 50–80%)', before: '71%', after: '59%', ok: true },
+        { label: 'Betrag für Immobilienkauf gedeckt', before: 'offen', after: 'offen', ok: false },
+      ], open: 'Betrag und Zeitpunkt des Immobilienkaufs sind nicht erfasst – im Gespräch klären.' },
+      { type: 'context', title: 'Kundenkontext', facts: [{ label: 'Anlageziel', value: 'Kapitalerhalt' }, { label: 'Anlagehorizont', value: 'Unter 3 Jahren für Teilbetrag' }, { label: 'ESG-Profil', value: 'Nein' }, { label: 'Erreichbarkeit', value: 'Telefonisch vormittags' }], changes: ['Obligationenfonds neu eingestuft, Regelverletzung seit gestern', 'Jahresgespräch steht an'], notes: [
+        { date: '03.07.2026', text: 'Plant einen Immobilienkauf, möglicher Liquiditätsbedarf innert 12 Monaten.' },
+        { date: '23.06.2026', text: 'Seit dem letzten Marktrückgang sehr risikoscheu, bevorzugt defensive Ausrichtung.' },
+      ] },
       { type: 'flags', title: 'Handlungsbedarf', items: [
         { severity: 'risk', text: 'Produktrisikoklasse übersteigt das Maximum des Kunden.', source: 'Suitability-Regel' },
         { severity: 'warn', text: 'Der Liquiditätsbedarf ist in der Allokation nicht abgebildet.', source: 'Kundennotiz + Konten' },
@@ -174,3 +237,21 @@ export const signals: Signal[] = [
 ]
 
 export const sampleCall: IncomingCall = { ref: 'CASE-A', number: '+41 44 555 01 23', reason: 'Vermuteter Anlass: Rückgang im Technologiesektor (Signal S-1)' }
+
+// Meldungen des Tages, neueste zuerst. Nur Einträge mit `affects` haben einen Bezug zu einem Kunden.
+export const newsFeed: NewsItem[] = [
+  { id: 'N-14', time: '09:42', reach: 'Global', source: 'Marktnachrichten (Beispiel)', title: 'Technologiewerte weiten Verluste aus, Volatilität auf Jahreshoch', affects: { 'CASE-A': { position: 'US-Technologie, 34% des Portfolios', meaning: 'Rückgang ist marktweit – Einordnung statt Verkauf.', severity: 'risk' } } },
+  { id: 'N-12', time: '09:31', reach: 'Sektor', source: 'Marktnachrichten (Beispiel)', title: 'Europäische Banken legen nach Quartalszahlen zu', affects: { 'CASE-B': { position: 'Aktien Europa 6%, 7 Pkt. unter Soll', meaning: 'Das Untergewicht kostet weiter Rendite.', severity: 'warn' } } },
+  { id: 'N-13', time: '09:20', reach: 'Global', source: 'Marktnachrichten (Beispiel)', title: 'Dollar fällt zum Franken den dritten Tag in Folge', affects: { 'CASE-A': { position: 'USD-Anteil 61%, 11 Pkt. über Band', meaning: 'Währungsverlust kommt zum Kursrückgang hinzu – Absicherung ansprechen.', severity: 'risk' } } },
+  { id: 'N-11', time: '09:05', reach: 'Titel', source: 'Marktnachrichten (Beispiel)', title: 'Nestlé bestätigt Jahresausblick', affects: {  } },
+  { id: 'N-10', time: '08:50', reach: 'Hausmeinung', source: 'CIO-Sicht (Beispiel)', title: 'Hausmeinung: Europäische Aktien von neutral auf übergewichten', affects: { 'CASE-B': { position: 'Aktien Europa 6%, Liquidität 9%', meaning: 'Hausmeinung stützt die Umschichtung aus der Liquidität.', severity: 'warn' } } },
+  { id: 'N-09', time: '08:41', reach: 'Global', source: 'Marktnachrichten (Beispiel)', title: 'SNB belässt den Leitzins unverändert', affects: { 'CASE-C': { position: 'Geplanter Geldmarktanteil 18%', meaning: 'Geldmarkt bleibt für 12 Monate eine ruhige Parklösung.', severity: 'info' } } },
+  { id: 'N-08', time: '08:30', reach: 'Titel', source: 'Wertschriftenstamm', title: 'Obligationenfonds: Produktrisikoklasse angehoben', affects: { 'CASE-C': { position: 'Obligationenfonds, 12% Gewicht', meaning: 'Passt nicht mehr zum konservativen Profil – Verkauf empfohlen.', severity: 'risk' } } },
+  { id: 'N-07', time: '08:12', reach: 'Sektor', source: 'Marktnachrichten (Beispiel)', title: 'Ölpreis steigt nach Förderkürzung', affects: {  } },
+  { id: 'N-06', time: '07:58', reach: 'Titel', source: 'Marktnachrichten (Beispiel)', title: 'Holcim schliesst Übernahme in Nordamerika ab', affects: {  } },
+  { id: 'N-05', time: '07:45', reach: 'Global', source: 'Marktnachrichten (Beispiel)', title: 'Asiatische Börsen schliessen uneinheitlich', affects: {  } },
+  { id: 'N-04', time: '07:30', reach: 'Sektor', source: 'Marktnachrichten (Beispiel)', title: 'Pharmawerte: Zulassungsentscheid in den USA verschoben', affects: {  } },
+  { id: 'N-03', time: '07:15', reach: 'Global', source: 'Marktnachrichten (Beispiel)', title: 'Goldpreis erreicht neues Hoch', affects: {  } },
+  { id: 'N-02', time: '07:02', reach: 'Titel', source: 'Marktnachrichten (Beispiel)', title: 'Zurich Insurance kündigt Aktienrückkauf an', affects: {  } },
+  { id: 'N-01', time: '06:45', reach: 'Global', source: 'Marktnachrichten (Beispiel)', title: 'US-Futures vorbörslich leicht im Minus', affects: {  } },
+]

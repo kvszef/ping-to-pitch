@@ -46,3 +46,8 @@ button { cursor: pointer; }
 .island-swap { animation: island-swap .9s cubic-bezier(.22, 1, .36, 1) both; }
 .island-wave { animation: island-wave 1s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .island-pop, .island-stagger, .island-swap, .island-wave { animation: none; } }
+
+/* Neue Meldung: gleitet ein und bleibt kurz hervorgehoben */
+@keyframes news-in { 0% { opacity: 0; transform: translateY(-10px); background-color: rgba(89, 151, 237, .28); } 25% { opacity: 1; transform: none; } 100% { background-color: transparent; } }
+.news-in { animation: news-in 2.6s cubic-bezier(.22, 1, .36, 1); }
+@media (prefers-reduced-motion: reduce) { .news-in { animation: none; } }
