@@ -1,0 +1,18 @@
+{"meta":{"clientRef":"CASE-038","name":"Charlie Brown","from":"+41791234567","beschreibung":"Kunde ruft wegen Waehrungsrisiko und Nachhaltigkeit an. Jede Zeile ist eine abgeschlossene Aeusserung. Das Feld truth ist die echte Rolle und dient nur der Bewertung der Rollenzuordnung; dem System wird sie nie gezeigt, weil Vapi alles mit derselben Rolle liefert.","erwartet":["Fremdwaehrungsanteil ueber 50 Prozent ist ein Error-Verstoss","USD-Klumpenrisiko: Grenze 35,5 Prozent fuer Privatkunden","EUR-Klumpenrisiko: Grenze 9 Prozent fuer Privatkunden","Starkes Untergewicht Schweizer Aktien","Notiz vom 11.07.2026: moechte beim naechsten Rebalancing moeglichst hohe Gewichtung nachhaltiger Fonds","Notiz vom 16.06.2026: wuenscht einen Vergleich gegen die Benchmark","Notiz vom 12.05.2025: keine fossilen Energietraeger"]}}
+{"ms":1200,"truth":"advisor","text":"Gruezi Herr Brown, schoen hoeren Sie sich. Was kann ich fuer Sie tun?"}
+{"ms":6500,"truth":"caller","text":"Gruezi. Ich habe mir gestern den Depotauszug angeschaut und mich gefragt, wie es eigentlich um mein Portfolio steht."}
+{"ms":14000,"truth":"advisor","text":"Gerne, ich schaue mir das gerade mit Ihnen an."}
+{"ms":18500,"truth":"caller","text":"Mir ist vor allem aufgefallen, dass da sehr viel in Dollar drin ist. Ist das nicht ein bisschen viel?"}
+{"ms":27000,"truth":"advisor","text":"Da haben Sie recht, das schauen wir uns an."}
+{"ms":31000,"truth":"caller","text":"Und der Euro-Anteil kommt ja auch noch dazu. Trifft mich das zusaetzlich, wenn der Franken stark bleibt?"}
+{"ms":40000,"truth":"advisor","text":"Der gesamte Fremdwaehrungsanteil ist tatsaechlich hoeher als in Ihrem Profil vorgesehen."}
+{"ms":47000,"truth":"caller","text":"Und wie sieht es mit Schweizer Aktien aus? Ich dachte immer, da waere ich breiter aufgestellt."}
+{"ms":56000,"truth":"advisor","text":"Das ist ein guter Punkt, den nehme ich gleich mit auf."}
+{"ms":60000,"truth":"caller","text":"Ich hatte ausserdem beim letzten Mal gesagt, dass ich gerne mehr nachhaltige Fonds haette. Ist da etwas passiert?"}
+{"ms":70000,"truth":"advisor","text":"Das ist notiert, und beim naechsten Rebalancing setzen wir das um."}
+{"ms":76000,"truth":"caller","text":"Wichtig ist mir, dass keine fossilen Energietraeger drin sind. Das hatte ich damals ausdruecklich gesagt."}
+{"ms":85000,"truth":"advisor","text":"Das ist so hinterlegt, daran halten wir uns."}
+{"ms":90000,"truth":"caller","text":"Und koennen Sie mir noch sagen, wie ich im Vergleich zur Benchmark liege? Das wollte ich schon letztes Mal wissen."}
+{"ms":100000,"truth":"advisor","text":"Ja, den Vergleich bereite ich Ihnen auf und schicke ihn Ihnen zu."}
+{"ms":106000,"truth":"caller","text":"Gut. Dann machen wir das so. Besten Dank und auf Wiederhoeren."}
+{"ms":112000,"truth":"advisor","text":"Sehr gerne, Herr Brown. Ich melde mich diese Woche. Auf Wiederhoeren."}
