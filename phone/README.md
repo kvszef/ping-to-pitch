@@ -1,7 +1,9 @@
-# phone – Telefonnummer mit Live-Transkript
+# phone – Telefonnummer mit Live-Transkript und Copilot
 
 Eine echte Telefonnummer, die den Anruf annimmt, **schweigt** und alles Gesprochene live
-mitschreibt. Gedacht als Zulieferer für den Gesprächsassistenten in [app/](../app/).
+mitschreibt. Darauf sitzt ein Copilot: Er erkennt an der Anrufernummer, wer anruft, holt über
+**MCP Toolbox** die Kundendaten und blendet dem Berater während des Gesprächs Antwortvorschläge,
+Fakten und nächste Schritte ein.
 
 ```
 Handy ──PSTN──▶ gratis Vapi-Nummer ──▶ Assistent (schweigt)
@@ -9,12 +11,16 @@ Handy ──PSTN──▶ gratis Vapi-Nummer ──▶ Assistent (schweigt)
                                           ├─ POST /llm    ← Vapi fragt nach einer Antwort, bekommt eine leere
                                           └─ POST /vapi   ← Transkript-Ereignisse, live
                                                    │
+                                                   ├──▶ Copilot: Nummer ▶ Kunde ▶ Briefing ▶ Vorschläge
+                                                   │         │
+                                                   │         └──▶ MCP Toolbox ──▶ SQLite (Case-Daten)
+                                                   │
                                                    └──▶ GET /events (SSE) ──▶ Browser
 ```
 
 Vapi transkribiert selbst und schickt fertige Sätze per Webhook. Dieser Dienst muss deshalb
-**kein Audio anfassen** – kein μ-law, kein Resampling, keine Streams. Vier Routen, null
-Laufzeit-Abhängigkeiten, Node führt das TypeScript direkt aus.
+**kein Audio anfassen** – kein μ-law, kein Resampling, keine Streams. Node führt das TypeScript
+direkt aus; einzige Laufzeit-Abhängigkeit ist das Anthropic-SDK für den Copiloten.
 
 ## Was nur du selbst erledigen kannst
 
@@ -78,15 +84,60 @@ anruft, hört nichts zurück. Der Aufbau ist deshalb **ein Handy auf Lautspreche
 | `GREETING` | Ansage beim Abheben. Leer lassen, damit der Assistent von der ersten Sekunde an schweigt. |
 | `VAPI_PHONE_NUMBER` | Nur nötig, wenn mehrere Nummern im Konto liegen. Sonst wird die erste genommen. |
 
+## Der Copilot
+
+Der Berater hat während des Gesprächs eine Seite offen, die mitliest und hilft. Was dafür nötig
+war, ist genau das, was Vapi **nicht** liefert: wer anruft, was dieser Kunde besitzt, und was man
+ihm gerade antworten sollte.
+
+**Kundendaten über MCP Toolbox.** Die Case-Daten (`../core-case/portfolio-data/`) werden einmalig in
+eine lokale SQLite-Datei geladen. [MCP Toolbox](https://mcp-toolbox.dev) macht daraus neun
+benannte, lesende Werkzeuge, die das Sprachmodell selbst aufruft – von `find_client_by_phone` über
+`get_saa_gap` bis `get_recent_notes`. Der Vorteil gegenüber selbstgebauten Abfragen: die Werkzeuge
+sind ohne eine Zeile Anwendungscode prüfbar, über `http://127.0.0.1:5000/ui` oder direkt in Claude
+Code.
+
+```bash
+npm run toolbox:get     # Binary nach bin/ laden, einmalig
+npm run load-data       # data/unrisk.db aus den Case-Daten bauen
+npm run toolbox         # Toolbox auf 127.0.0.1:5000 (eigenes Terminal)
+```
+
+**Die Anrufernummer muss zugeordnet werden.** Die 47 Case-Kunden enthalten keine Telefonnummern.
+Deshalb legst du `data/callers.json` an; sie ist der einzige bewusst gemockte Teil der Datenkette:
+
+```json
+{ "+41791234567": "CASE-038" }
+```
+
+`CASE-038` (Charlie Brown) ist ein guter Demo-Kunde: Fremdwährungs-Klumpenrisiko in USD und EUR,
+starkes Untergewicht Schweizer Aktien, dazu Notizen zu nachhaltigen Fonds und zum
+Benchmark-Vergleich. Das dazu passende Gespräch liegt als
+[fixtures/call-case-038.jsonl](fixtures/call-case-038.jsonl).
+
+**Woran der Copilot sich hält.** Jede Aussage stammt aus einem Werkzeug und trägt ihre Quelle.
+Tragen die Daten eine Aussage nicht, sagt er das, statt zu raten. Er gibt keine verbindliche
+Anlageempfehlung ab und nennt keine IBANs. Ausgaben sind Deutsch in Schweizer Schreibweise.
+
+**Ohne Modell und ohne Guthaben:** `MOCK_BRAIN=1` in der `.env` liefert feste, plausible Antworten
+aus den Werkzeugdaten. Zusammen mit `npm run simulate` ist die ganze Kette damit jederzeit
+vorführbar – auch am Demo-Tag ohne Netz.
+
 ## Aufbau
 
 | Datei | Aufgabe |
 | --- | --- |
-| [src/server.ts](src/server.ts) | Die vier Routen. `/vapi` nimmt die Ereignisse, `/llm` antwortet leer, `/events` verteilt, `/` zeigt an. |
+| [src/server.ts](src/server.ts) | Die Routen. `/vapi` nimmt die Ereignisse, `/llm` antwortet leer, `/events` verteilt, `/` zeigt an. |
 | [src/live.ts](src/live.ts) | Laufendes Transkript und SSE-Verteilung. Vorläufige Zeilen ersetzen einander, statt sich zu stapeln. |
 | [src/assistant.ts](src/assistant.ts) | Legt den Assistenten bei Vapi an bzw. aktualisiert ihn und hängt ihn an die Nummer. |
-| [src/page.ts](src/page.ts) | Die Prüfstand-Seite. Für die Jury ist die App unter `app/` zuständig, nicht diese. |
+| [src/page.ts](src/page.ts) | Die Prüfstand-Seite für die Telefonie allein. |
 | [src/simulate.ts](src/simulate.ts) | Gespräch ohne Telefon. |
+| [src/copilot/events.ts](src/copilot/events.ts) | Der Ereignisvertrag. Alle Teile sprechen nur darüber miteinander. |
+| [src/copilot/types.ts](src/copilot/types.ts) | Die Schnittstellen zwischen den Bausteinen, inklusive der neun Werkzeugnamen. |
+| [src/copilot/bus.ts](src/copilot/bus.ts) | Gesprächszustand und Verteilung an die Browser, mit Nachreichen des Verlaufs. |
+| [toolbox/schema.sql](toolbox/schema.sql) | Das SQLite-Schema für `clients.json` und `reference.json`. |
+| [toolbox/tools.yaml](toolbox/tools.yaml) | Quelle, die neun Werkzeuge und das Toolset `call_copilot`. |
+| [scripts/load-data.ts](scripts/load-data.ts) | Baut `data/unrisk.db`, idempotent. |
 
 ## Warum der Assistent schweigt
 
