@@ -138,7 +138,7 @@ Each track owns its own files, so agents running in parallel do not collide. Own
 | **A1** | Briefing writer | Ahmet | `server/ai/briefing*` | Findings → the four 60-second blocks, likely questions, 3–5 next actions, in the client's tone (E4). Works without an LLM too (fallback) |
 | **A2** | Live call copilot | Ahmet | `server/ai/call*`, `src/workspace/useCallAudio.ts` | Listening already works (ElevenLabs). Add only: to-dos the client asked for, and "show the data being talked about". Scripted call stays one click away. Biggest stage risk, so no more than that |
 | **A3** | Memory | Ahmet | `server/memory*` | Post-call draft → one-tap confirm → SQLite → read by the engine. Seeded from rejected proposals |
-| **A4** | Follow-up chat | Ahmet | `server/ai/chat*` | Tool-using chat over engine data. Says so when the data does not support an answer |
+| **A4** | Ask-the-data chat | Kaushik | `server/ai/chat*`, `src/components/ChatDock.tsx` | The on-demand twin of the live copilot: the advisor asks, the chat answers from the client's data, including niche questions no check covers (a single transaction, a fee, one position's history). The LLM only picks a tool and phrases the result; tools over the engine's data index do the lookup and the arithmetic, and every answer names its source. Says so when the data does not support an answer. Stretch, off by default: a fast outside search for things the data cannot hold (what a company does, a term), always labelled "outside source", never mixed into client numbers, and no client name or identifier in the query |
 | **N1** | News + CIO view | Arash | `server/market/` | News items matched to each client's holdings with embeddings (including what sits inside funds) → `Signal[]`. Sample news file and a live source behind one interface. "This happened before, and here is what markets did next": decide when this track starts, it needs outside price data |
 | **N2** | Outbound mode | free hands | `server/alerts*` | Light version: rank all clients by their findings and news hits into "who to call today", shown on the existing Anrufe & Signale page. No background watcher |
 | **N3** | Ex-custody PDF | free hands | `server/import*` | PDF → virtual portfolio → same engine path (bonus points) |
@@ -150,8 +150,8 @@ Integration is continuous and Claude's job. Everything plugs into a registry, so
 
 ### Start now, nobody waits
 
-- **Kaushik**: keep building against `src/data/mock.ts`. Its shape is the API shape; when the engine lands only the import changes. New cards can be built against hand-written findings in the `Finding` shape above.
-- **Ahmet**: A1, A3 and A4 only need `Finding[]` and `CallNote`. Until fixtures land, hand-write three findings from section 2 and build against them. A2 needs nothing from anyone.
+- **Kaushik**: keep building against `src/data/mock.ts`. Its shape is the API shape; when the engine lands only the import changes. New cards can be built against hand-written findings in the `Finding` shape above. A4 starts from the existing `/api/chat` and `ChatDock.tsx`; its tools can read `clients.json` directly until the engine's data index lands.
+- **Ahmet**: A1 and A3 only need `Finding[]` and `CallNote`. Until fixtures land, hand-write three findings from section 2 and build against them. A2 needs nothing from anyone.
 - **Arash**: P0, then E1–E4 in parallel agents. N1 (news matching with embeddings) whenever he wants to start it; it depends on nothing but a sample news file.
 
 ## 5. Milestones
