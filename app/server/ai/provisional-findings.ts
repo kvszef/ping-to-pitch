@@ -74,7 +74,7 @@ export function shortName(name: string): string {
 }
 
 type Holding = Position & { exposure: number; fraction: number; via: 'direkt' | 'Fonds' }
-type Exposure = { total: number; direct: number; viaFunds: number; unclassified: number; holdings: Holding[] }
+export type Exposure = { total: number; direct: number; viaFunds: number; unclassified: number; holdings: Holding[] }
 
 function exposure(positions: Position[], ref: RefIndex, direct: (s: Raw) => boolean, fundRow: (m: Raw) => boolean): Exposure {
   const out: Exposure = { total: 0, direct: 0, viaFunds: 0, unclassified: 0, holdings: [] }
@@ -322,4 +322,11 @@ export function provisionalFindings(client: unknown, reference: unknown, now: Da
       evidence: [{ source: 'Kundendatei', quote: 'LiquidityInDefaultCurrency' }] })
   }
   return findings
+}
+
+/** Holdings behind an exclusion wish, for the contradiction card. Null for wishes the data cannot check. */
+export function exclusionHoldings(client: unknown, reference: unknown, kind: Exclusion): Exposure | null {
+  const rule = EXCLUSIONS[kind]
+  if (!rule) return null
+  return exposure(positionsOf(isObj(client) ? client : {}), indexReference(reference), rule.direct, rule.fundRow)
 }

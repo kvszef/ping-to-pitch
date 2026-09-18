@@ -1,7 +1,7 @@
-import { factsFromRaw } from './facts'
-import { talkTrackFromRaw } from './talkTrack'
-import { ruleText } from './ruleText'
-import type { Card, Client, Severity } from '../types'
+import { factsFromRaw } from './facts.ts'
+import { talkTrackFromRaw } from './talkTrack.ts'
+import { ruleText } from './ruleText.ts'
+import type { Card, Client, Severity } from '../types.ts'
 
 // Maps one raw client (shape of core-case/portfolio-data/clients.json) to the UI's `Client` with a
 // basic, purely factual briefing. It is the offline fallback for uploaded files until the engine

@@ -1,4 +1,4 @@
-import type { ClientFacts } from './data/facts'
+import type { ClientFacts } from './data/facts.ts'
 export type Kind = 'fact' | 'interpretation' | 'action'
 export type Severity = 'risk' | 'warn' | 'ok' | 'info'
 

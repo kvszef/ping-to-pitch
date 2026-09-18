@@ -1,6 +1,6 @@
-import type { CardOf, Severity, TalkLine } from '../types'
-import type { ClientFacts } from './facts'
-import { isObj, list, str } from './facts'
+import type { CardOf, Severity, TalkLine } from '../types.ts'
+import type { ClientFacts } from './facts.ts'
+import { isObj, list, str } from './facts.ts'
 
 // The 60-second talk track for a raw client file (PLAN section 2): open with, must mention, ask,
 // don't bring up, plus ranked guesses why the client might be calling. Deterministic and pure; the

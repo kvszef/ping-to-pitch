@@ -8,6 +8,7 @@ import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { indexReference, run, type ReferenceIndex } from '../../engine/run.ts'
 import { composeBriefing, phraseBriefing, type Briefing60 } from './briefing.ts'
+import { factCards, talkTrackCard } from './cards.ts'
 import type { Finding } from './findings.ts'
 import { provisionalFindings } from './provisional-findings.ts'
 
@@ -59,7 +60,7 @@ export async function briefing60(method: string, url: string, body: Buffer | nul
     raw = typeof c === 'object' && c !== null && !Array.isArray(c) ? (c as Record<string, unknown>) : undefined
   } else {
     const ref = decodeURIComponent(u.pathname.split('/')[3] ?? '')
-    raw = clients.find((c) => c.ClientRef === ref)
+    raw = uploaded.get(ref) ?? clients.find((c) => c.ClientRef === ref)
   }
   if (!raw) return { status: 404, data: { error: 'Kunde nicht gefunden' } }
 
@@ -95,6 +96,48 @@ export async function briefing60(method: string, url: string, body: Buffer | nul
       llmError, now: now.toISOString().slice(0, 10),
     },
   }
+}
+
+// ---- main app: GET /api/briefing/:ref?tier=instant|fast|slow, POST /api/clients/upload ----------
+
+// Client files uploaded in this server session (the live demo hands over three unseen ones).
+const uploaded = new Map<string, Record<string, unknown>>()
+
+export function uploadClients(body: Buffer) {
+  const data: unknown = JSON.parse(body.toString('utf8') || 'null')
+  const items = Array.isArray(data) ? data : typeof data === 'object' && data !== null && Array.isArray((data as { clients?: unknown }).clients) ? (data as { clients: unknown[] }).clients : [data]
+  const ok = items.filter((c): c is Record<string, unknown> => typeof c === 'object' && c !== null && typeof (c as { ClientRef?: unknown }).ClientRef === 'string')
+  for (const c of ok) uploaded.set(str(c.ClientRef), c)
+  return { status: ok.length ? 200 : 400, data: ok.length ? { ok: true, count: ok.length, refs: ok.map((c) => str(c.ClientRef)) } : { error: 'Keine Kunden mit ClientRef in der Datei' } }
+}
+
+const providerFor = (llm: Llm): Provider | null => (llm.ready('openai') ? 'openai' : llm.ready('apertus') ? 'apertus' : null)
+
+/** Cards for the main app. Everything is instant; with a model configured, the phrased talk track follows as `fast`. */
+export async function appBriefing(url: string, llm: Llm) {
+  const u = new URL(url, 'http://local')
+  const ref = decodeURIComponent(u.pathname.split('/')[3] ?? '')
+  const tier = u.searchParams.get('tier') ?? 'instant'
+  const { clients, reference, index } = await data()
+  const raw = uploaded.get(ref) ?? clients.find((c) => c.ClientRef === ref)
+  if (!raw) return { status: 404, data: { error: 'Kunde nicht gefunden' } }
+  if (tier === 'slow') return { status: 200, data: { cards: [], findings: [] } } // news and peers are not built yet
+
+  const now = new Date()
+  let engine: Finding[] = []
+  try { engine = run(raw, { ref: index, now, memory: [] }) } catch { /* the stopgap still answers */ }
+  const { findings } = mergeFindings(engine, provisionalFindings(raw, reference, now))
+  const template = composeBriefing(ref, findings)
+  const provider = providerFor(llm)
+
+  if (tier === 'instant') {
+    const cards = factCards(raw, reference, findings, template, now)
+    return { status: 200, data: { cards: provider ? cards : [talkTrackCard(template, findings), ...cards], findings } }
+  }
+  if (!provider) return { status: 200, data: { cards: [], findings: [] } }
+  let phrased = template
+  try { phrased = await phraseBriefing(template, (m) => llm.complete(provider, m), provider) } catch { /* keep the template */ }
+  return { status: 200, data: { cards: [talkTrackCard(phrased, findings)], findings: [] } }
 }
 
 /** Refs and names for the client picker. */
