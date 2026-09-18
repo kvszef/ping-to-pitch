@@ -1,0 +1,14 @@
+.env
+node_modules/
+dist/
+
+# Toolbox-Binary wird per `npm run toolbox:get` geladen
+bin/
+
+# Kundendaten, Anruferzuordnung und Gespraechsmitschnitte bleiben lokal
+data/
+!data/.gitkeep
+
+# Aufgezeichnete Audiodateien
+*.wav
+!fixtures/*.wav
