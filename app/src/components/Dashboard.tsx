@@ -1,11 +1,23 @@
 import { AlertTriangle, Plus, Search, XCircle } from 'lucide-react'
+import { useState } from 'react'
 import type { Client } from '../types'
 import { SeverityIcon } from '../cards/ui'
+import { ClientUpload } from './ClientUpload'
 
 const tabs = [['Kunden', 0], ['Neukunden', 6], ['Beratungen', 215], ['01 - Liquidität > 10%', 112], ['02 - Fälligkeiten', 0], ['03 - Letzte Beratung > 12 Monate', 191], ['04 - Regelverletzungen (dringend)', 28], ['05 - Geburtstage', 13]] as const
 const columns = ['KundenNr.', 'Name', 'Kundenprofil', 'Anlass', 'Geburtstag', 'Letzte Profilierung', 'Letzte Beratung']
 
-export function Dashboard({ clients, onOpen }: { clients: Client[]; onOpen: (ref: string) => void }) {
+const PAGE_SIZE = 10
+
+export function Dashboard({ clients, onOpen, onUploaded }: { clients: Client[]; onOpen: (ref: string) => void; onUploaded: () => void }) {
+  const [query, setQuery] = useState('')
+  const [page, setPage] = useState(0)
+  const q = query.trim().toLowerCase()
+  const found = q ? clients.filter((c) => c.name.toLowerCase().includes(q) || c.ref.toLowerCase().includes(q)) : clients
+  const pages = Math.max(1, Math.ceil(found.length / PAGE_SIZE))
+  const current = Math.min(page, pages - 1)
+  const rows = found.slice(current * PAGE_SIZE, (current + 1) * PAGE_SIZE)
+
   return (
     <>
       <div className="flex shrink-0 items-center justify-between bg-band px-3 py-3">
@@ -29,10 +41,13 @@ export function Dashboard({ clients, onOpen }: { clients: Client[]; onOpen: (ref
               ))}
               <span className="flex h-5 w-5 items-center justify-center rounded-sm bg-pill"><Plus size={12} /></span>
             </div>
-            <label className="flex shrink-0 items-center border border-line text-xs">
-              <span className="border-r border-line p-1.5"><Search size={12} /></span>
-              <input placeholder="Suche" className="w-24 px-2 outline-none" />
-            </label>
+            <div className="flex shrink-0 items-center gap-2">
+              <ClientUpload variant="box" onLoaded={() => { setQuery(''); setPage(0); onUploaded() }} />
+              <label className="flex shrink-0 items-center border border-line text-xs">
+                <span className="border-r border-line p-1.5"><Search size={12} /></span>
+                <input value={query} onChange={(e) => { setQuery(e.target.value); setPage(0) }} placeholder="Suche" aria-label="Kunden suchen" className="w-28 px-2 outline-none" />
+              </label>
+            </div>
           </div>
 
           <table className="w-full text-xs">
@@ -44,7 +59,7 @@ export function Dashboard({ clients, onOpen }: { clients: Client[]; onOpen: (ref
               </tr>
             </thead>
             <tbody>
-              {clients.map((c, i) => (
+              {rows.map((c, i) => (
                 <tr key={c.ref} onClick={() => onOpen(c.ref)} className={`cursor-pointer hover:bg-brand-soft/30 ${i % 2 ? 'bg-stripe' : ''}`}>
                   <td className="py-2.5 pl-3">{c.errors > 0 && <SeverityIcon severity="risk" size={12} />}</td>
                   <td>{c.warnings > 0 && <SeverityIcon severity="warn" size={12} />}</td>
@@ -57,11 +72,17 @@ export function Dashboard({ clients, onOpen }: { clients: Client[]; onOpen: (ref
                   <td className="pr-3 text-right">{c.lastConsultation}</td>
                 </tr>
               ))}
+              {rows.length === 0 && <tr><td colSpan={9} className="py-6 text-center text-muted">Keine Kunden gefunden für «{query.trim()}».</td></tr>}
             </tbody>
           </table>
 
           <div className="mt-5 flex items-center justify-center gap-3 text-xs text-muted">
-            « Vorherige <span className="rounded-sm bg-brand px-2 py-0.5 text-white">1</span> Nächste »
+            <button type="button" disabled={current === 0} onClick={() => setPage(current - 1)} className="enabled:hover:text-brand disabled:cursor-default disabled:opacity-50">« Vorherige</button>
+            {Array.from({ length: pages }, (_, i) => (
+              <button type="button" key={i} onClick={() => setPage(i)} aria-current={i === current ? 'page' : undefined} className={`rounded-sm px-2 py-0.5 ${i === current ? 'bg-brand text-white' : 'hover:bg-pill'}`}>{i + 1}</button>
+            ))}
+            <button type="button" disabled={current >= pages - 1} onClick={() => setPage(current + 1)} className="enabled:hover:text-brand disabled:cursor-default disabled:opacity-50">Nächste »</button>
+            <span className="ml-2 tabular-nums">{found.length} {found.length === 1 ? 'Kunde' : 'Kunden'}</span>
           </div>
         </section>
       </main>
