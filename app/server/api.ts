@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { resolve } from 'node:path'
 import type { Plugin } from 'vite'
+import { briefing60, briefingClients } from './ai/briefing-route.ts'
 
 // Kleine API im Vite-Server. Die Schlüssel bleiben hier und erreichen den Browser nie.
 // Apertus wird über eine OpenAI-kompatible Schnittstelle angesprochen (Basis-URL in .env.local).
@@ -137,6 +138,11 @@ export function api(env: Env): Plugin {
         try {
           if (req.url === '/api/status') return send(res, 200, { openai: ready(env, 'openai'), apertus: ready(env, 'apertus'), elevenlabs: !!env.ELEVENLABS_API_KEY })
           if (req.url === '/api/clients' && req.method === 'GET') return send(res, 200, await caseClients())
+          if (req.url.startsWith('/api/briefing60')) {
+            if (req.url.startsWith('/api/briefing60/clients')) return send(res, 200, await briefingClients())
+            const out = await briefing60(req.method ?? 'GET', req.url, req.method === 'POST' ? await body(req) : null, { complete: (p, m) => complete(env, p, true, m), ready: (p) => ready(env, p) })
+            return send(res, out.status, out.data)
+          }
           if (req.method !== 'POST') return send(res, 405, { error: 'Nur POST' })
           const raw = await body(req)
           if (req.url === '/api/transcribe') return send(res, 200, { segments: await transcribe(env, raw, req.headers['content-type'] || 'audio/webm') })
