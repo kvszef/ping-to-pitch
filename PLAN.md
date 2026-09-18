@@ -1,0 +1,152 @@
+# PLAN
+
+What we are building, how the pieces fit, and who can start on what right now.
+How we work (git, tests, code rules): [CLAUDE.md](CLAUDE.md). Official brief and judging criteria: [task.md](task.md).
+
+## 1. The product
+
+**From Ping to Pitch.** The phone rings. Before the advisor says hello, the screen shows a 60-second briefing built from the client's real data: what happened, what is wrong, what to say, what to propose. During the call the tool listens and helps. After the call it drafts the call note. Next time it remembers.
+
+Three modes:
+
+| Mode | Trigger | What happens |
+|---|---|---|
+| **Inbound** | Client calls | Instant facts are on screen at pickup. Slower parts (LLM wording, news, history) stream in while the advisor does small talk. Everything is there in under 60 s. |
+| **Outbound** | A rule violation, a news hit or a price move | The client lands on a "call today" list. The advisor opens a prep workspace, takes a minute or more to get ready, then calls. |
+| **After the call** | Call ends | AI drafts: what was proposed, how the client reacted, why, which promises were made. One tap to confirm, saved to SQLite. The next briefing uses it: no repeated rejected ideas, open promises get closed, stale facts get updated. |
+
+## 2. How we win
+
+Scoring: problem fit 25, technical 20, AI grounding 20, UX 20, bonus 15. **Core is 85%.** Order of work follows from that: core on real data first, differentiators second, enrichment third.
+
+What the real data already proves (checked against `clients.json` / `reference.json`):
+
+- **Contradiction and fund look-through are one feature.** 13 clients have a "no fossil fuels" note, 11 of them hold energy anyway, and for 10 of those it is *only* inside funds. Invisible in the position list. Demo clients: CASE-004 (3.4% via funds), CASE-037 (ESG "Yes", 1.8% via funds), CASE-017 (direct: Neste).
+- **Notes expire.** CASE-007's "property within 12 months" note is from Oct 2024, so the window closed a year ago. A naive briefing states it as fact. We turn it into a question: "did the purchase happen?"
+- **Memory works from minute zero.** 76 proposals in the data are `Abgelehnt` (CASE-012 alone has 12). "Don't repeat rejected ideas" needs no call history to demo.
+- **Communication profile** has real input: notes like "email only", "after 6pm", "written summary after every meeting".
+- **History and peers** are computable: 58 months of NAV per portfolio, 47 clients to compare within a risk profile.
+- **News and CIO view are not in the dataset.** They are enrichment, behind one interface with a mock and a live source. Judges explicitly ask where mock ends and production begins.
+
+Framing that matters with these judges (a suitability and compliance vendor): we do not "maximise revenue per client", we **never miss a suitable opportunity**. Same features (opportunity radar, ex-custody import to win outside assets, life events from notes), but every suggestion passes mandate, risk profile, ESG preference and the client's stated wishes first.
+
+## 3. Architecture
+
+```
+clients.json | uploaded client file | ex-custody PDF ─┐
+reference.json ───────────────────────────────────────┤
+call memory (SQLite) ─────────────────────────────────┤
+                                                      ▼
+                     ENGINE  app/engine       pure, deterministic, tested
+                     checks[]  ─►  Finding[]  every number with its evidence
+                                                      │
+        ┌─────────────────────────────────────────────┼──────────────────────────────┐
+        ▼ instant  < 200 ms                           ▼ fast  < 5 s                   ▼ slow  < 60 s
+  facts, flags, allocation,               LLM phrases findings into          news + CIO view matched to
+  contradictions, stale notes             headline, questions, actions       holdings, history, peers
+        └─────────────────────────────────────────────┼──────────────────────────────┘
+                                                      ▼
+                                  Card[]  ─►  UI  app/src/cards  (registry)
+```
+
+Three registries, so that **connecting a piece means registering it**:
+
+1. **Checks** (`app/engine/checks/`): `(client, ctx) => Finding[]`. One file per check, one line in the registry.
+2. **Sections** (briefing tiers): each produces `Card[]` and declares `instant | fast | slow`. The UI requests all three tiers in parallel and renders each as it arrives. That is all the parallelism we need.
+3. **Cards** (`app/src/cards/registry.tsx`): already exists.
+
+The engine computes, the LLM phrases. No number reaches the screen unless deterministic code produced it. That is our answer to the 20% grounding criterion.
+
+### Contracts v0
+
+Code against these today. They land as TypeScript types plus JSON fixtures in `app/engine/`; change them in one place and say so in the commit.
+
+```ts
+type Finding = {
+  id: string          // stable: `${check}:${clientRef}:${subject}`. Memory uses it to know "already rejected".
+  check: string       // 'contradiction.fossil-fuel'
+  kind: 'fact' | 'interpretation' | 'action'          // same vocabulary as app/src/types.ts
+  severity: 'risk' | 'warn' | 'ok' | 'info'
+  title: string       // German, one line, written for the advisor
+  detail?: string
+  numbers?: Record<string, number>                    // raw, fractions 0–1, never pre-formatted
+  evidence: { source: string; ref?: string; quote?: string; date?: string }[]
+  fix?: DraftProposal // smallest fix, same shape as clients.json → Proposals[]
+  topic?: string      // links a finding to a conversation topic / chart module
+}
+
+type Check = (client: RawClient, ctx: { ref: ReferenceIndex; now: Date; memory: CallNote[] }) => Finding[]
+
+type CallNote = {
+  id: string; clientRef: string; date: string; confirmed: boolean
+  proposed: { findingId?: string; text: string; reaction: 'accepted' | 'rejected' | 'open'; why?: string }[]
+  promises: { text: string; due?: string; done: boolean }[]
+  factUpdates: { note: string; status: 'confirmed' | 'outdated' | 'changed'; newValue?: string }[]
+}
+```
+
+```
+GET  /api/clients                        list for the dashboard
+GET  /api/briefing/:ref?tier=instant     { cards: Card[], findings: Finding[] }   (also tier=fast, tier=slow)
+POST /api/clients/upload                 a file shaped like clients.json (3 new ones arrive at the live demo)
+POST /api/import/pdf                     ex-custody statement → virtual portfolio, same shape as Portfolios[]
+POST /api/call/note · POST /api/call/note/:id/confirm
+already there: /api/chat · /api/analyse · /api/transcribe · /api/status
+```
+
+An ex-custody portfolio is just a `Portfolios[]` entry with `isExCustody: true`. The engine needs no special case, and neither does the fix simulator: apply the fix to a copy, run the checks again, show before and after.
+
+## 4. Tracks
+
+Each track owns its own files, so agents running in parallel do not collide. Owner means "knows it best", not "has permission".
+
+| | Track | Owner | Files | Delivers |
+|---|---|---|---|---|
+| **P0** | Foundation | Arash + Claude | `app/engine/{types,data,run}.ts`, fixtures, CI | Contracts, null-safe data index with fund look-through, check runner, fixtures, test harness |
+| **E1** | Portfolio facts | Arash | `engine/checks/portfolio-*` | Performance and drivers, allocation vs SAA bands (asset class, currency, region, sector) with look-through, concentration, violations decoded, pending and rejected proposals |
+| **E2** | Contradiction + fix | Arash | `engine/checks/contradiction-*`, `engine/fix/` | Wishes (notes, ESG, risk profile) vs holdings, smallest fix as a draft proposal, re-check that the fix breaks nothing else |
+| **E3** | Context | Arash | `engine/checks/context-*` | Stale notes as questions, communication profile, worst months, peers, "clients like this did X" |
+| **A1** | Briefing writer | Ahmet | `server/ai/briefing*` | Findings → headline, likely questions, 3–5 next actions. Works without an LLM too (fallback) |
+| **A2** | Live call copilot | Ahmet | `server/ai/call*`, `src/workspace/useCallAudio.ts` | Fast transcript, client to-dos, "show the data being talked about". Scripted call as fallback |
+| **A3** | Memory | Ahmet | `server/memory*` | Post-call draft → one-tap confirm → SQLite → read by the engine. Seeded from rejected proposals |
+| **A4** | Follow-up chat | Ahmet | `server/ai/chat*` | Tool-using chat over engine data. Says so when the data does not support an answer |
+| **N1** | News + CIO view | free hands | `server/market/` | Mock and live source behind one interface → `Signal[]` matched to holdings. "Similar events before, and what markets did next" |
+| **N2** | Outbound mode | free hands | `server/alerts*` | Triggers from rules and news, "who to call today" ranking, prep workspace |
+| **N3** | Ex-custody PDF | free hands | `server/import*` | PDF → virtual portfolio → same engine path (bonus points) |
+| **U1** | Real data in the UI | Kaushik | `src/` | Mock replaced by the API, skeleton loading per tier, client-file upload |
+| **U2** | New cards | Kaushik | `src/cards/` | Contradiction + fix (before/after), look-through, stale note, communication profile, peers, to-dos, post-call confirm |
+| **U3** | 60-second format | Kaushik | `src/` | The creative briefing format (bonus points) |
+
+Integration is continuous and Claude's job. Everything plugs into a registry, so there is no big-bang merge at the end.
+
+### Start now, nobody waits
+
+- **Kaushik**: keep building against `src/data/mock.ts`. Its shape is the API shape; when the engine lands only the import changes. New cards can be built against hand-written findings in the `Finding` shape above.
+- **Ahmet**: A1, A3 and A4 only need `Finding[]` and `CallNote`. Until fixtures land, hand-write three findings from section 2 and build against them. A2 needs nothing from anyone.
+- **Arash**: P0, then E1–E3 in parallel agents.
+
+## 5. Milestones
+
+1. **M1 Real data.** Any of the 47 clients, and any uploaded file, renders a real briefing in the existing UI. Until this works nothing else counts.
+2. **M2 Differentiators.** Contradiction + fix, look-through, stale notes, communication profile, history, peers.
+3. **M3 Enrichment.** Live call copilot, post-call memory, chat, news and outbound mode, PDF import.
+4. **M4 Freeze.** Demo script on three hero clients, every live dependency rehearsed with its fallback, README explains mock vs production.
+
+`main` is always demo-able. Rehearse the demo from a fresh clone before every milestone.
+
+## 6. Risks
+
+| Risk | Answer |
+|---|---|
+| Live demo brings 3 unseen client files; `reference.json` only covers today's 47 clients | Engine degrades on unknown securities (falls back to the position's own fields, says "unclassified"), never throws. A test feeds it a client with unknown IDs. |
+| `DATA.md` promises "absent, never null" but explicit nulls exist (20 clients have `SuitabilityViolations: null`) | Null-safe accessors in one place, whole-dataset test |
+| Live listening fails on stage (mic, latency, Swiss German) | Scripted call already exists in the UI; keep it one click away |
+| LLM invents numbers | It never sees a task that needs arithmetic; it only phrases findings |
+| LLM or news API down | Every live dependency has an offline fallback (pattern: example mode in `brain.ts`) |
+| Real IBANs in the data | No names, IBANs or account numbers to an LLM, a log or a commit |
+
+## 7. Decided
+
+- Engine is TypeScript in `app/engine/`: shares types with the UI, runs in the same process, works on uploaded files. The repo is TypeScript only.
+- Everyone pushes to `main`. CI is advisory. No hooks, no branch protection.
+- UI text and LLM output in German (Swiss spelling). Code, commits and docs in English.
