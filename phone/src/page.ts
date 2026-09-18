@@ -23,7 +23,7 @@ export const page = `<!doctype html>
   .line.partial { opacity: .5; font-style: italic; }
   .who { display: inline-block; min-width: 88px; font-size: 11px; letter-spacing: .04em;
          text-transform: uppercase; color: #7db8ff; vertical-align: top; }
-  .who.assistant { color: #69d4d6; }
+  .who.advisor { color: #69d4d6; }
   .empty { color: #9aa0a6; }
 </style>
 </head>
@@ -52,9 +52,11 @@ export const page = `<!doctype html>
       seen.set(line.id, el)
     }
     el.className = 'line' + (line.final ? '' : ' partial')
-    const who = line.speaker === 'assistant' ? 'Assistent' : 'Anrufer'
-    el.innerHTML = '<span class="who ' + line.speaker + '"></span><span></span>'
-    el.firstChild.textContent = who
+    // Vapi liefert "assistant"/"user", die Bruecke "Berater"/"Kunde" – beide hier benannt.
+    const namen = { assistant: 'Assistent', user: 'Anrufer' }
+    const advisor = line.speaker === 'assistant' || line.speaker === 'Berater'
+    el.innerHTML = '<span class="who' + (advisor ? ' advisor' : '') + '"></span><span></span>'
+    el.firstChild.textContent = namen[line.speaker] || line.speaker
     el.lastChild.textContent = line.text
     window.scrollTo(0, document.body.scrollHeight)
   }
