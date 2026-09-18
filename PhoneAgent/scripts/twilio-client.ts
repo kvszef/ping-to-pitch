@@ -1,6 +1,15 @@
 import twilio from 'twilio'
 import { config } from '../src/config.ts'
 
+// Skripte sollen bei fehlenden Zugangsdaten oder Twilio-Fehlern eine klare Meldung zeigen, keinen Stacktrace.
+const fail = (err: unknown): void => {
+  console.error(err instanceof Error ? err.message : String(err))
+  if (process.env.DEBUG) console.error(err)
+  process.exit(1)
+}
+process.on('unhandledRejection', fail)
+process.on('uncaughtException', fail)
+
 export const twilioClient = () => {
   const { accountSid, authToken } = config.twilio
   if (!accountSid || !authToken) throw new Error('TWILIO_ACCOUNT_SID und TWILIO_AUTH_TOKEN fehlen in .env')
