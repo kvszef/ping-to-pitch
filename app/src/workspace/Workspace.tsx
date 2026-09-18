@@ -4,12 +4,13 @@ import { SeverityIcon, Source } from '../cards/ui'
 import { Pill } from '../components/Chrome'
 import { topics as topicData, transcripts } from '../data/workspace'
 import type { Client, Signal } from '../types'
-import { answer, detectTopics, hintFor, openingHints, question } from './brain'
+import { activeProvider, answer, fetchStatus, openingHints, question, think, type Segment, type Status } from './brain'
 import { LiveIsland } from './CallIsland'
 import { ModuleView } from './modules'
 import { SettingsPanel } from './SettingsPanel'
 import { useSettings } from './settings'
-import type { ChatEntry, Hint, Origin, Slot, Topic, TranscriptLine } from './types'
+import type { ChatEntry, Hint, Origin, Slot, TranscriptLine } from './types'
+import { canListen, useCallAudio } from './useCallAudio'
 
 type Props = {
   clients: Client[]
@@ -23,9 +24,7 @@ type Props = {
 type PaneId = 'assistent' | 'chat'
 const originLabel: Record<Origin, string> = { gespraech: 'Aus dem Gespräch', chat: 'Aus dem Berater-Chat', kundendaten: 'Aus den Kundendaten' }
 const rank = { risk: 0, warn: 1, info: 2, ok: 3 }
-
-type Recognition = { lang: string; continuous: boolean; interimResults: boolean; start: () => void; stop: () => void; onresult: ((e: { resultIndex: number; results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void) | null; onend: (() => void) | null }
-const SpeechRecognitionCtor = (window as unknown as Record<string, unknown>).SpeechRecognition ?? (window as unknown as Record<string, unknown>).webkitSpeechRecognition
+const providerLabel = { openai: 'OpenAI', apertus: 'Apertus', beispiel: 'Beispielmodus' }
 
 export function Workspace({ clients, signals, initialRef, initialCall, onSimulateCall, onOpenBriefing }: Props) {
   const [settings, update] = useSettings()
@@ -33,6 +32,8 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
   const [ref, setRef] = useState(initialRef ?? clients[0].ref)
   const [inCall, setInCall] = useState(!!initialCall)
   const [mic, setMic] = useState(false)
+  const [status, setStatus] = useState<Status>({ openai: false, apertus: false, elevenlabs: false })
+  const [note, setNote] = useState<string | null>(null)
   const [lines, setLines] = useState<TranscriptLine[]>([])
   const [hints, setHints] = useState<Hint[]>([])
   const [chat, setChat] = useState<ChatEntry[]>([])
@@ -42,57 +43,58 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
   const [customerSlot, setCustomerSlot] = useState<Slot | null>(null)
   const [advisorSlot, setAdvisorSlot] = useState<Slot | null>(null)
 
-  const addHints = (found: Topic[], origin: Origin, trigger: string) =>
-    setHints((h) => [...found.map((t) => hintFor(t, origin, trigger)), ...h.filter((x) => !found.some((t) => t.id === x.topicId))])
+  const addHints = (found: Hint[]) =>
+    setHints((h) => [...found, ...h.filter((x) => !found.some((f) => f.topicId === x.topicId))])
 
   // Gesprochenes fliesst in beide Module: Hinweis für den Kunden, Einblick für den Berater.
-  const hear = async (line: TranscriptLine) => {
-    setLines((l) => [...l, line])
-    const found = detectTopics(client.ref, line.text)
-    if (!found.length) return
-    // Zwei getrennte Spuren: Aussagen des Kunden führen zu einer Antwort, Aussagen des Beraters zum nächsten Schritt.
-    if (line.speaker === 'Berater') return setAdvisorSlot({ heard: line.text, text: found[0].next, topic: found[0].id })
-    setCustomerSlot({ heard: line.text, text: found[0].say, topic: found[0].id })
-    addHints(found, 'gespraech', `Kunde: «${line.text}»`)
-    const { entry } = await answer(client, line.text, settings, 'gespraech')
-    setChat((c) => (c.some((e) => e.role === 'ki' && e.text === (entry as { text: string }).text) ? c : [...c, entry]))
+  // Auswertungen laufen nacheinander, damit das Transkript in der gesprochenen Reihenfolge bleibt.
+  const linesRef = useRef<TranscriptLine[]>([])
+  const queue = useRef(Promise.resolve())
+  const hear = (segments: Segment[]) => {
+    queue.current = queue.current.then(async () => {
+      const thought = await think(client, linesRef.current, segments, settings, status)
+      linesRef.current = [...linesRef.current, ...thought.lines]
+      setLines(linesRef.current)
+      // Zwei getrennte Spuren: Aussagen des Kunden führen zu einer Antwort, Aussagen des Beraters zum nächsten Schritt.
+      if (thought.customer) setCustomerSlot(thought.customer)
+      if (thought.advisor) setAdvisorSlot(thought.advisor)
+      if (thought.hints.length) addHints(thought.hints)
+      const insight = thought.insight
+      if (insight) setChat((c) => (c.some((e) => e.role === 'ki' && e.text === (insight as { text: string }).text) ? c : [...c, insight]))
+    })
   }
   const hearRef = useRef(hear)
   hearRef.current = hear
 
+  useEffect(() => { fetchStatus().then(setStatus) }, [])
+
   useEffect(() => {
-    setLines([]); setChat([]); setHints(openingHints(client)); setMic(false); setCustomerSlot(null); setAdvisorSlot(null)
+    linesRef.current = []; queue.current = Promise.resolve()
+    setLines([]); setChat([]); setHints(openingHints(client)); setMic(false); setNote(null); setCustomerSlot(null); setAdvisorSlot(null)
   }, [client.ref]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Ohne Mikrofon läuft ein Beispielgespräch ab.
   useEffect(() => {
     if (!inCall || !settings.record || mic) return
     const script = transcripts[client.ref] ?? []
     let i = 0
     const timer = setInterval(() => {
       if (i >= script.length) return clearInterval(timer)
-      hearRef.current(script[i++])
+      hearRef.current([script[i++]])
     }, 4500)
     return () => clearInterval(timer)
   }, [inCall, settings.record, mic, client.ref])
 
-  useEffect(() => {
-    if (!mic || !inCall || !settings.record || !SpeechRecognitionCtor) return
-    const rec = new (SpeechRecognitionCtor as new () => Recognition)()
-    rec.lang = 'de-CH'; rec.continuous = true; rec.interimResults = false
-    rec.onresult = (e) => { for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) hearRef.current({ speaker: 'Kunde', text: e.results[i][0].transcript.trim() }) }
-    rec.onend = () => setMic(false)
-    rec.start()
-    return () => { rec.onend = null; rec.stop() }
-  }, [mic, inCall, settings.record])
+  useCallAudio(mic && inCall && settings.record, status.elevenlabs, (segments) => hearRef.current(segments), (error) => { setMic(false); if (error) setNote(error) })
 
   async function ask(text: string) {
     if (!text.trim() || busy) return
     setChat((c) => [...c, question(text)])
     setBusy(true)
-    const { entry, topics } = await answer(client, text, settings)
-    setChat((c) => [...c, entry])
-    addHints(topics, 'chat', `Frage des Beraters: «${text}»`)
-    if (topics[0] && !settings.record) setAdvisorSlot({ heard: text, text: topics[0].next, topic: topics[0].id })
+    const reply = await answer(client, text, settings, status, chat)
+    setChat((c) => [...c, reply.entry])
+    addHints(reply.hints)
+    if (reply.next && !(inCall && settings.record)) setAdvisorSlot(reply.next)
     setBusy(false)
   }
 
@@ -108,7 +110,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
       <div className="flex shrink-0 items-center justify-between bg-band px-3 py-3">
         <div>
           <div className="text-[17px]">Anrufe &amp; Signale</div>
-          <div className="mt-1 text-[11px]">Marktsignale: {signals.length} <span className="mx-1 text-muted">|</span> Kontaktvorschläge: {signals.reduce((n, s) => n + s.affected.length, 0)} <span className="mx-1 text-muted">|</span> Aufzeichnung: {settings.record ? 'ein' : 'aus'} <span className="mx-1 text-muted">|</span> Detailgrad: {settings.detail}</div>
+          <div className="mt-1 text-[11px]">Marktsignale: {signals.length} <span className="mx-1 text-muted">|</span> Kontaktvorschläge: {signals.reduce((n, s) => n + s.affected.length, 0)} <span className="mx-1 text-muted">|</span> Aufzeichnung: {settings.record ? 'ein' : 'aus'} <span className="mx-1 text-muted">|</span> Detailgrad: {settings.detail} <span className="mx-1 text-muted">|</span> KI: {providerLabel[activeProvider(settings, status) ?? 'beispiel']} <span className="mx-1 text-muted">|</span> Transkription: {status.elevenlabs ? 'ElevenLabs' : 'Browser'}</div>
         </div>
         <div className="flex gap-2">
           <Pill icon={PhoneCall} onClick={onSimulateCall}>Anruf simulieren</Pill>
@@ -152,7 +154,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
 
         <Pane id="assistent" grow={grow('assistent')} dim={hovered === 'chat'} setHovered={setHovered} icon={Headset} title="Gesprächsassistent" sub="Was Sie dem Kunden sagen können"
           actions={<>
-            {inCall && settings.record && !!SpeechRecognitionCtor && <button onClick={() => setMic((m) => !m)} className={`flex items-center gap-1 rounded-sm px-2 py-1 text-[11px] ${mic ? 'bg-risk text-white' : 'bg-pill hover:bg-track'}`}>{mic ? <Mic size={12} /> : <MicOff size={12} />} Mikrofon</button>}
+            {inCall && settings.record && canListen(status.elevenlabs) && <button onClick={() => setMic((m) => !m)} className={`flex items-center gap-1 rounded-sm px-2 py-1 text-[11px] ${mic ? 'bg-risk text-white' : 'bg-pill hover:bg-track'}`}>{mic ? <Mic size={12} /> : <MicOff size={12} />} Mikrofon</button>}
             <button onClick={() => setInCall((v) => !v)} className={`flex items-center gap-1 rounded-sm px-2 py-1 text-[11px] text-white ${inCall ? 'bg-risk' : 'bg-brand hover:bg-brand-dark'}`}>{inCall ? <><PhoneOff size={12} /> Gespräch beenden</> : <><Phone size={12} /> Gespräch starten</>}</button>
           </>}>
           <div className="mb-3 flex items-center gap-2 text-[11px] text-muted">
@@ -179,6 +181,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
           </ul>
 
           <div className="mt-4 border-t border-line pt-3">
+            {note && <p className="mb-2 flex items-start gap-1.5 text-[11px] leading-snug text-risk"><SeverityIcon severity="risk" size={11} /> {note}</p>}
             <div className="mb-1 text-[10px] uppercase tracking-wide text-muted">Transkript</div>
             {!settings.record
               ? <p className="text-[11px] leading-snug text-muted">Aufzeichnung ausgeschaltet. Es wird nichts transkribiert – die Hinweise stützen sich auf den Berater-Chat und die Kundendaten.</p>
@@ -205,7 +208,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
       </div>
 
       {inCall && <LiveIsland key={client.ref} client={client} recording={settings.record} customer={customerSlot} advisor={advisorSlot} onEnd={() => setInCall(false)} />}
-      <SettingsPanel open={settingsOpen} settings={settings} update={update} onClose={() => setSettingsOpen(false)} />
+      <SettingsPanel open={settingsOpen} settings={settings} status={status} update={update} onClose={() => setSettingsOpen(false)} />
     </>
   )
 }

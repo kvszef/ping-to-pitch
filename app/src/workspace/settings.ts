@@ -3,7 +3,7 @@ import type { Settings } from './types'
 
 const KEY = 'uro.berater.einstellungen'
 
-export const defaults: Settings = { focus: 50, record: true, detail: 'standard', autoModules: true, confidence: 70 }
+export const defaults: Settings = { provider: 'openai', focus: 50, record: true, detail: 'standard', autoModules: true, confidence: 70 }
 
 function load(): Settings {
   try {

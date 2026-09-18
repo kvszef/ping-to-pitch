@@ -2,7 +2,10 @@ import type { Severity } from '../types'
 
 export type Detail = 'kurz' | 'standard' | 'detailliert'
 
+export type Provider = 'openai' | 'apertus'
+
 export type Settings = {
+  provider: Provider
   focus: number // 0 = ganz Gesprächsassistent, 100 = ganz Berater-Chat
   record: boolean
   detail: Detail

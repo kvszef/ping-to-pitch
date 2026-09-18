@@ -1,7 +1,8 @@
 import { X } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { defaults } from './settings'
-import type { Detail, Settings } from './types'
+import type { Status } from './brain'
+import type { Detail, Provider, Settings } from './types'
 
 const details: { id: Detail; label: string; text: string }[] = [
   { id: 'kurz', label: 'Kurz', text: 'Ein bis zwei Sätze, nur Kernzahlen.' },
@@ -30,7 +31,12 @@ function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) =
   )
 }
 
-export function SettingsPanel({ open, settings, update, onClose }: { open: boolean; settings: Settings; update: (p: Partial<Settings>) => void; onClose: () => void }) {
+const providers: { id: Provider; label: string; text: string }[] = [
+  { id: 'openai', label: 'OpenAI', text: 'Verarbeitung ausserhalb der Schweiz. Es werden nur anonymisierte Fakten übermittelt.' },
+  { id: 'apertus', label: 'Apertus', text: 'Offenes Schweizer Sprachmodell. Geeignet für den Betrieb in der Schweiz oder im Haus.' },
+]
+
+export function SettingsPanel({ open, settings, status, update, onClose }: { open: boolean; settings: Settings; status: Status; update: (p: Partial<Settings>) => void; onClose: () => void }) {
   return (
     <>
       <div onClick={onClose} className={`fixed inset-0 z-40 bg-ink/30 transition-opacity duration-300 ${open ? 'opacity-100' : 'pointer-events-none opacity-0'}`} />
@@ -40,6 +46,16 @@ export function SettingsPanel({ open, settings, update, onClose }: { open: boole
           <button onClick={onClose} aria-label="Schliessen"><X size={16} /></button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-4 text-xs">
+          <Row title="KI-Anbieter" hint="Welches Sprachmodell Gesprächsassistent und Berater-Chat verwenden. Ist der gewählte Anbieter nicht eingerichtet, arbeitet das Werkzeug im Beispielmodus.">
+            <div className="grid grid-cols-2 gap-1.5">
+              {providers.map((p) => (
+                <button key={p.id} onClick={() => update({ provider: p.id })} className={`rounded-sm px-2 py-1.5 transition-colors ${settings.provider === p.id ? 'bg-brand text-white' : 'bg-pill hover:bg-track'}`}>{p.label}</button>
+              ))}
+            </div>
+            <div className="mt-2 text-[11px] leading-snug text-muted">{providers.find((p) => p.id === settings.provider)!.text}</div>
+            <div className={`mt-1 text-[11px] ${status[settings.provider] ? 'text-ok' : 'text-risk'}`}>{status[settings.provider] ? 'Eingerichtet und aktiv.' : 'Nicht eingerichtet – Beispielmodus aktiv.'}</div>
+          </Row>
+
           <Row title="Schwerpunkt" hint="Welches Modul erhält standardmässig mehr Platz. Beim Überfahren mit dem Zeiger vergrössert sich ein Modul weiterhin.">
             <input type="range" min={0} max={100} step={10} value={settings.focus} onChange={(e) => update({ focus: +e.target.value })} className="w-full accent-brand" />
             <div className="mt-1 flex justify-between text-[11px] text-muted"><span>Gesprächsassistent</span><span>ausgeglichen</span><span>Berater-Chat</span></div>
