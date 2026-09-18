@@ -36,3 +36,4 @@ Thumbs.db
 
 # Personal agent settings
 .claude/settings.local.json
+CLAUDE.local.md
