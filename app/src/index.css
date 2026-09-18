@@ -30,3 +30,19 @@
 html, body, #root { height: 100%; }
 body { background: var(--color-surface); color: var(--color-ink); font-size: 13px; letter-spacing: 0.01em; }
 button { cursor: pointer; }
+
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.anim-rise { animation: rise 0.45s cubic-bezier(.22, 1, .36, 1) both; }
+@media (prefers-reduced-motion: reduce) { .anim-rise { animation: none; } }
+
+/* Anruf-Insel: federndes Einblenden, gestaffelter Inhalt, ruhiger Wechsel der Hinweise */
+@keyframes island-pop { 0% { opacity: 0; transform: translateY(-28px) scale(.55); filter: blur(10px); } 60% { opacity: 1; filter: blur(0); } 100% { opacity: 1; transform: none; } }
+@keyframes island-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes island-swap { from { opacity: 0; transform: translateY(12px); filter: blur(6px); } to { opacity: 1; transform: none; filter: blur(0); } }
+@keyframes island-wave { 0%, 100% { height: 4px; } 50% { height: 16px; } }
+.island-pop { animation: island-pop .8s cubic-bezier(.3, 1.4, .5, 1) both; transform-origin: top center; }
+.island-stagger { animation: island-in .6s cubic-bezier(.22, 1, .36, 1) .25s both; }
+.island-stagger + .island-stagger { animation-delay: .4s; }
+.island-swap { animation: island-swap .9s cubic-bezier(.22, 1, .36, 1) both; }
+.island-wave { animation: island-wave 1s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .island-pop, .island-stagger, .island-swap, .island-wave { animation: none; } }

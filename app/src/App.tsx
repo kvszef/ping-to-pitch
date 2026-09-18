@@ -1,17 +1,18 @@
-import { AlertTriangle, ArrowLeft, Ban, Briefcase, CircleUser, ClipboardList, FileUp, Info, Menu, Phone, PieChart, Radio, StickyNote, Upload, Users } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Ban, Briefcase, CircleUser, ClipboardList, Info, Menu, Phone, PieChart, Radio, StickyNote, Upload, Users } from 'lucide-react'
 import { useState } from 'react'
 import { CardView, slotOf } from './cards/registry'
 import { ChatDock } from './components/ChatDock'
 import { InfoBand, Pill, SubBar, TopBar, type ToolItem } from './components/Chrome'
 import { Dashboard } from './components/Dashboard'
 import { LiveOverlay } from './components/LiveOverlay'
-import { CallBanner, Signals } from './components/Signals'
 import { clients, sampleCall, signals } from './data/mock'
 import type { IncomingCall } from './types'
+import { RingingIsland } from './workspace/CallIsland'
+import { Workspace } from './workspace/Workspace'
 
 type Page = 'kunden' | 'signale'
 
-// Direktlinks: #signale, #CASE-A, #CASE-A/live; Zusatz /anruf simuliert einen eingehenden Anruf
+// Direktlinks: #signale, #signale/gespraech/CASE-B, #CASE-A, #CASE-A/live; Zusatz /anruf simuliert einen eingehenden Anruf
 const hash = location.hash.slice(1).split('/')
 
 export default function App() {
@@ -19,15 +20,18 @@ export default function App() {
   const [ref, setRef] = useState<string | null>(() => (hash[0]?.startsWith('CASE') ? hash[0] : null))
   const [live, setLive] = useState(hash[1] === 'live')
   const [call, setCall] = useState<IncomingCall | null>(hash.includes('anruf') ? sampleCall : null)
+  const demoCall = hash.includes('gespraech')
   const client = clients.find((c) => c.ref === ref)
   const caller = clients.find((c) => c.ref === call?.ref)
 
   const open = (r: string, asCall = false) => { setRef(r); setLive(asCall) }
   const home = (p: Page) => { setRef(null); setLive(false); setPage(p) }
-  const accept = () => { if (call) open(call.ref, true); setCall(null) }
+  const [session, setSession] = useState<{ n: number; ref?: string; call?: boolean }>({ n: 0, ref: demoCall ? hash[2] : undefined, call: demoCall })
+  // Ein angenommener Anruf öffnet den Arbeitsplatz mit dem Kunden und laufendem Gespräch.
+  const accept = () => { if (!call) return; setSession((s) => ({ n: s.n + 1, ref: call.ref, call: true })); setCall(null); home('signale') }
 
   const signalsItem: ToolItem = { label: 'Anrufe & Signale', icon: Radio, badge: signals.length + (call ? 1 : 0), badgeTone: 'red', active: !client && page === 'signale', onClick: () => home('signale') }
-  const banner = call && caller && !(page === 'signale' && !client) && <CallBanner client={caller} call={call} onAccept={accept} onDecline={() => setCall(null)} />
+  const banner = call && caller && <RingingIsland client={caller} call={call} signal={signals.find((s) => s.affected.some((a) => a.ref === caller.ref))} onAccept={accept} onDecline={() => setCall(null)} />
 
   if (!client) {
     return (
@@ -43,7 +47,7 @@ export default function App() {
         ]} />
         {page === 'kunden'
           ? <Dashboard clients={clients} onOpen={open} />
-          : <Signals clients={clients} signals={signals} call={call} onSimulateCall={() => setCall(sampleCall)} onAccept={accept} onDecline={() => setCall(null)} onOpen={open} />}
+          : <Workspace key={session.n} clients={clients} signals={signals} initialRef={session.ref} initialCall={session.call} onSimulateCall={() => setCall(sampleCall)} onOpenBriefing={open} />}
         {banner}
       </div>
     )
@@ -77,7 +81,6 @@ export default function App() {
           {clients.map((c) => <Pill key={c.ref} icon={CircleUser} active={c.ref === client.ref} onClick={() => open(c.ref, live)}>{c.name}</Pill>)}
           <span className="mx-1 border-l border-ink/40" />
           <Pill icon={Upload}>Kundendatei laden</Pill>
-          <Pill icon={FileUp}>Fremdbank-PDF importieren</Pill>
         </div>
       </InfoBand>
 
