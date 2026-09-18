@@ -70,6 +70,13 @@ def run_vosk(name: str) -> Transcriber:
 
 
 def run_parakeet(name: str) -> Transcriber:
+    # Windows ships an old onnxruntime.dll in System32 that would shadow the venv one.
+    import ctypes
+    import onnxruntime
+    capi = Path(onnxruntime.__file__).parent / "capi"
+    if os.name == "nt":
+        os.add_dll_directory(str(capi))
+        ctypes.CDLL(str(capi / "onnxruntime.dll"))
     import sherpa_onnx
     d = MODELS / name
     rec = sherpa_onnx.OfflineRecognizer.from_transducer(
