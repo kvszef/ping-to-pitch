@@ -1,7 +1,7 @@
 import { X } from 'lucide-react'
 import type { Client } from '../types'
 import { SeverityIcon } from '../cards/ui'
-import { ChatDock } from './ChatDock'
+import { ChatThread } from './ChatDock'
 
 // Kompakter Gesprächsmodus: das Wichtigste auf einen Blick, Rückfragen als Rückfallebene.
 export function LiveOverlay({ client, onClose }: { client: Client; onClose: () => void }) {
@@ -29,7 +29,7 @@ export function LiveOverlay({ client, onClose }: { client: Client; onClose: () =
           </div>
         )}
       </div>
-      <ChatDock client={client} className="h-60 border-t border-line/70" />
+      <ChatThread client={client} className="h-60 border-t border-line/70" />
     </div>
   )
 }
