@@ -76,9 +76,22 @@ if (assistantId) {
   console.log(`Assistent angelegt: ${assistantId}`)
 }
 
-const nummern = await vapi<Nummer[]>('GET', '/phone-number')
+let nummern = await vapi<Nummer[]>('GET', '/phone-number')
+
+// Noch keine Nummer im Konto: eine gratis Vapi-Nummer beanspruchen. Die Vorwahl muss frei sein –
+// ist sie es nicht, nennt Vapi in der Fehlermeldung verfügbare Alternativen.
 if (!nummern.length) {
-  abbruch('Keine Nummer im Konto. Im Vapi-Dashboard unter Phone Numbers → Create a Phone Number → «Free Vapi Number» mit US-Vorwahl anlegen, dann erneut versuchen.')
+  const vorwahl = (process.env.VAPI_AREA_CODE ?? '858').trim()
+  console.log(`Keine Nummer im Konto. Beanspruche eine gratis Vapi-Nummer mit Vorwahl ${vorwahl} …`)
+  const r = await fetch('https://api.vapi.ai/phone-number', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ provider: 'vapi', numberDesiredAreaCode: vorwahl, name: 'URO Beraterlinie' }),
+  })
+  const text = await r.text()
+  if (!r.ok) abbruch(`Nummer konnte nicht beansprucht werden (${r.status}):\n${text.slice(0, 500)}\n\nAndere Vorwahl versuchen: VAPI_AREA_CODE=<vorwahl> npm run setup`)
+  nummern = [JSON.parse(text) as Nummer]
+  console.log(`Nummer beansprucht: ${nummern[0].number}`)
 }
 
 // Ohne Auswahl die erste Nummer nehmen; bei mehreren entscheidet VAPI_PHONE_NUMBER.
