@@ -21,7 +21,7 @@ describe('fromRaw on the real clients.json', () => {
       const client = fromRaw(raw, now)
       expect(client.ref).toBe(raw.ClientRef)
       expect(client.name.length).toBeGreaterThan(0)
-      expect(client.briefing.map((c) => c.type)).toEqual(['metrics', 'flags', 'context'])
+      expect(client.briefing.map((c) => c.type)).toEqual(['talktrack', 'metrics', 'flags', 'context'])
     }
   })
 
@@ -37,7 +37,7 @@ describe('fromRaw on the real clients.json', () => {
 
   it('invents no headline, proposal, actions or news', () => {
     const types = new Set(all.flatMap((raw) => fromRaw(raw, now).briefing.map((c) => c.type)))
-    expect([...types].sort()).toEqual(['context', 'flags', 'metrics'])
+    expect([...types].sort()).toEqual(['context', 'flags', 'metrics', 'talktrack'])
   })
 
   it('counts errors and warnings from the violation severities (CASE-001)', () => {
@@ -77,7 +77,7 @@ describe('fromRaw happy path', () => {
   })
 
   it('builds metrics, flags and context', () => {
-    const [metrics, flags, context] = client.briefing
+    const [, metrics, flags, context] = client.briefing
     expect(metrics.type === 'metrics' && metrics.items.map((m) => m.value)).toEqual(["1'240'000", '10.0%', '2', '25.0%'])
     expect(flags.type === 'flags' && flags.items).toEqual([
       { severity: 'risk', text: 'Max volatility (2×)', source: 'Regelverletzung' },
