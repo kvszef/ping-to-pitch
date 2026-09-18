@@ -1,7 +1,6 @@
-import { ArrowRight, BarChart3, MessageSquare, Mic, MicOff, Phone, PhoneCall, PhoneOff, Settings as SettingsIcon, Users } from 'lucide-react'
+import { ArrowRight, BarChart3, MessageSquare, PanelLeftClose, PanelRightClose, Mic, MicOff, Phone, PhoneCall, PhoneOff, Settings as SettingsIcon, Users } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { SeverityIcon } from '../cards/ui'
-import { Pill } from '../components/Chrome'
 import { CardView } from '../cards/registry'
 import { newsFeed } from '../data/mock'
 import { transcripts } from '../data/workspace'
@@ -42,6 +41,10 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
   const [activeHint, setActiveHint] = useState<string | null>(null)
   const [chat, setChat] = useState<ChatEntry[]>([])
   const [busy, setBusy] = useState(false)
+  // Answers that arrive while the chat is folded show as a dot on the strip.
+  const [seen, setSeen] = useState(0)
+  useEffect(() => { if (settings.chatOpen) setSeen(chat.length) }, [settings.chatOpen, chat.length])
+  const unseen = settings.chatOpen ? 0 : chat.slice(seen).filter((e) => e.role === 'ki').length
   const client = clients.find((c) => c.ref === ref) ?? clients[0]
   const [customerSlot, setCustomerSlot] = useState<Slot | null>(null)
   const [advisorSlot, setAdvisorSlot] = useState<Slot | null>(null)
@@ -141,30 +144,41 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
 
   return (
     <>
-      <div className="flex shrink-0 items-center justify-between px-4 py-2.5">
-        <div className="text-[17px]">Anrufe &amp; Signale</div>
-        <div className="flex items-center gap-1">
-          <Pill icon={PhoneCall} onClick={onSimulateCall}>Anruf simulieren</Pill>
-          <button onClick={() => setSettingsOpen(true)} aria-label="Einstellungen" title={`Einstellungen · KI: ${providerLabel[activeProvider(settings, status) ?? 'beispiel']}`} className="flex h-7 w-7 items-center justify-center rounded-full text-muted hover:bg-pill hover:text-ink"><SettingsIcon size={15} /></button>
-        </div>
-      </div>
-
       <div className="flex min-h-0 flex-1 gap-2.5 bg-gradient-to-br from-brand-soft/25 via-transparent to-transparent p-2">
-        <aside className={`flex w-[196px] shrink-0 flex-col overflow-hidden rounded-xl bg-white/60 transition-opacity duration-500 ${inCall ? 'opacity-40 hover:opacity-100' : ''}`}>
-          <ul className="min-h-0 flex-1 overflow-y-auto py-1.5">
-            {clients.map((c) => {
-              const s = topSignal(c.ref)
-              const severity = s?.severity ?? (c.errors ? 'risk' : c.warnings ? 'warn' : null)
-              return (
-                <li key={c.ref}>
-                  <button onClick={() => select(c.ref)} title={s?.title ?? c.profile} className={`flex w-full items-center gap-2.5 px-4 py-2 text-left text-[13px] transition-colors duration-200 ${c.ref === ref ? 'bg-brand-soft/40 text-ink' : 'text-ink/75 hover:bg-brand-soft/20'}`}>
-                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${severity === 'risk' ? 'bg-risk' : severity === 'warn' ? 'bg-warn' : 'bg-transparent'}`} />
-                    <span className="min-w-0 flex-1 truncate">{c.name}</span>
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
+        <aside style={{ width: settings.clientsOpen ? 196 : 44 }} className={`flex shrink-0 flex-col overflow-hidden rounded-xl bg-white/60 transition-[width,opacity] duration-500 ease-[cubic-bezier(.22,1,.36,1)] ${inCall ? 'opacity-40 hover:opacity-100' : ''}`}>
+          {!settings.clientsOpen ? (
+            <button onClick={() => update({ clientsOpen: true })} aria-label="Kundenliste öffnen" title="Kundenliste öffnen"
+              className="flex h-full w-11 flex-col items-center gap-2.5 py-4 text-muted transition-colors hover:text-ink">
+              <Users size={16} strokeWidth={1.5} />
+              <span className="whitespace-nowrap text-[11px] [writing-mode:vertical-rl]">Kunden</span>
+            </button>
+          ) : (
+            <>
+              <div className="flex shrink-0 items-center justify-end border-b border-line/60 px-1.5 py-1">
+                <button onClick={() => update({ clientsOpen: false })} aria-label="Kundenliste einklappen" title="Kundenliste einklappen" className="flex h-7 w-7 items-center justify-center rounded-full text-muted hover:bg-pill hover:text-ink"><PanelLeftClose size={15} /></button>
+              </div>
+              <ul className="min-h-0 flex-1 overflow-y-auto py-1.5">
+                {clients.map((c) => {
+                  const s = topSignal(c.ref)
+                  const severity = s?.severity ?? (c.errors ? 'risk' : c.warnings ? 'warn' : null)
+                  return (
+                    <li key={c.ref}>
+                      <button onClick={() => select(c.ref)} title={s?.title ?? c.profile} className={`flex w-full items-center gap-2.5 px-4 py-2 text-left text-[13px] transition-colors duration-200 ${c.ref === ref ? 'bg-brand-soft/40 text-ink' : 'text-ink/75 hover:bg-brand-soft/20'}`}>
+                        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${severity === 'risk' ? 'bg-risk' : severity === 'warn' ? 'bg-warn' : 'bg-transparent'}`} />
+                        <span className="min-w-0 flex-1 truncate">{c.name}</span>
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+              <div className="flex shrink-0 items-center gap-1 border-t border-line/60 px-2 py-1.5">
+                <button onClick={() => setSettingsOpen(true)} className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] text-muted hover:bg-pill hover:text-ink">
+                  <SettingsIcon size={14} className="shrink-0" /><span className="truncate">KI: {providerLabel[activeProvider(settings, status) ?? 'beispiel']}</span>
+                </button>
+                <button onClick={onSimulateCall} aria-label="Anruf simulieren" title="Anruf simulieren" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-pill hover:text-ink"><PhoneCall size={14} /></button>
+              </div>
+            </>
+          )}
         </aside>
 
         <div ref={split} className={`flex min-w-0 flex-1 ${settings.dragSplit ? '' : 'gap-2.5'} ${dragging ? 'select-none' : ''}`}>
@@ -213,7 +227,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
           )}
         </section>
 
-        {settings.dragSplit && (
+        {settings.dragSplit && settings.chatOpen && (
           <div role="separator" aria-orientation="vertical" aria-label="Aufteilung zwischen Gesprächsassistent und Berater-Chat" aria-valuenow={settings.focus} tabIndex={0}
             onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); setDragging(true) }}
             onPointerMove={(e) => { if (dragging) dragTo(e.clientX) }}
@@ -230,7 +244,16 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
           <div className="min-h-0 flex-1 overflow-hidden rounded-xl bg-white/75 shadow-card ring-1 ring-black/5 backdrop-blur-md [&>section]:bg-transparent [&>section]:shadow-none">{proposal && <CardView card={proposal} />}</div>
         </div>
 
+        {!settings.chatOpen ? (
+          <button onClick={() => update({ chatOpen: true })} aria-label="Chat öffnen" title="Chat öffnen"
+            className="anim-rise flex w-11 shrink-0 flex-col items-center gap-2.5 rounded-xl bg-white/75 py-4 text-muted shadow-card ring-1 ring-black/5 transition-colors hover:bg-white hover:text-ink">
+            <MessageSquare size={16} strokeWidth={1.5} />
+            {unseen > 0 && <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-[10px] tabular-nums text-white">{unseen}</span>}
+            <span className="text-[11px] [writing-mode:vertical-rl]">Chat</span>
+          </button>
+        ) : (
         <Pane grow={base.chat} still={dragging} icon={MessageSquare} title="Chat"
+          actions={<button onClick={() => update({ chatOpen: false })} aria-label="Chat einklappen" title="Chat einklappen" className="flex h-7 w-7 items-center justify-center rounded-full text-muted hover:bg-pill hover:text-ink"><PanelRightClose size={15} /></button>}
           footer={
             <form onSubmit={(e) => { e.preventDefault(); const f = e.currentTarget.elements.namedItem('q') as HTMLInputElement; ask(f.value); f.value = '' }} className="flex items-center gap-2 border-t border-line/70 p-2 text-xs">
               <input name="q" autoComplete="off" placeholder={`Frage zu ${client.name} …`} className="min-w-0 flex-1 rounded-full bg-stripe px-3.5 py-2 outline-none focus:ring-1 focus:ring-brand" />
@@ -244,6 +267,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
           )}
           <ChatLog chat={chat} busy={busy} detail={settings.detail} onShow={(id) => setChat((c) => c.map((e) => (e.id === id && e.role === 'ki' && e.offered ? { ...e, module: e.offered.spec, offered: undefined } : e)))} />
         </Pane>
+        )}
         </div>
       </div>
 

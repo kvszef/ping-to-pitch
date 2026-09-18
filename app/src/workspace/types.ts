@@ -12,6 +12,8 @@ export type Settings = {
   detail: Detail
   autoModules: boolean
   confidence: number // Schwelle 0–100, ab der ein Grafikmodul automatisch erscheint
+  chatOpen: boolean // chat pane expanded or folded into a slim strip
+  clientsOpen: boolean // client list expanded or folded into a slim strip
 }
 
 export type Bar = { label: string; value: number; min?: number; max?: number }
