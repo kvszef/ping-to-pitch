@@ -1,0 +1,3 @@
+# Von `npm run setup` geschrieben: merkt sich die Assistenten-ID, damit ein erneuter
+# Lauf den bestehenden Assistenten aktualisiert statt einen zweiten anzulegen.
+vapi-state.json
