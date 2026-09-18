@@ -29,10 +29,10 @@ export function NewsFeed({ feed, clientRef }: { feed: NewsItem[]; clientRef: str
   const fresh = new Set(feed.slice(hidden, START_HIDDEN).map((n) => n.id))
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col bg-white shadow-card">
+    <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-white/75 shadow-card ring-1 ring-black/5 backdrop-blur-md">
       <div className="flex shrink-0 items-center gap-2 px-3.5 pb-2 pt-3.5">
         <h3 className="flex items-center gap-1.5 text-[13px]"><Newspaper size={15} strokeWidth={1.5} /> Nachrichten</h3>
-        <span className="flex items-center gap-1 rounded-sm bg-risk/10 px-1.5 py-px text-[10px] uppercase tracking-wide text-risk"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-risk" /> Live</span>
+        <span className="flex items-center gap-1 rounded-full bg-risk/10 px-1.5 py-px text-[10px] uppercase tracking-wide text-risk"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-risk" /> Live</span>
         <button onClick={() => setAll((a) => !a)} title={all ? 'Nur relevante anzeigen' : 'Alle Meldungen anzeigen'} className="ml-auto text-[11px] tabular-nums text-muted hover:text-brand">
           <span className="text-ink">{relevant.length}</span> von {arrived.length}
         </button>
@@ -47,7 +47,7 @@ export function NewsFeed({ feed, clientRef }: { feed: NewsItem[]; clientRef: str
               <button onClick={() => setExpanded(isOpen ? null : n.id)} className="flex w-full items-center gap-2 px-3 py-2 text-left">
                 <span className="shrink-0 text-[11px] tabular-nums text-muted">{n.time}</span>
                 <span className="min-w-0 flex-1 truncate text-xs">{n.title}</span>
-                {hit && <span className="flex shrink-0 items-center gap-1 rounded-sm bg-pill px-1.5 py-px text-[10px]"><SeverityIcon severity={hit.severity} size={10} /> {hit.tag}</span>}
+                {hit && <span className="flex shrink-0 items-center gap-1 rounded-full bg-pill px-1.5 py-px text-[10px]"><SeverityIcon severity={hit.severity} size={10} /> {hit.tag}</span>}
               </button>
               {isOpen && (
                 <div className="anim-rise space-y-0.5 px-3 pb-2 pl-[52px] text-[11px] leading-snug text-muted">

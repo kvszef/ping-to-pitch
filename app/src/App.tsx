@@ -130,7 +130,7 @@ export default function App() {
         <aside className="flex w-[300px] shrink-0 flex-col gap-2.5">
           {loading('instant') && !side.length && <MetricsSkeleton />}
           {side.map((card, i) => <CardView key={`${client.ref}-s${i}`} card={card} />)}
-          {!live && <ChatDock client={withBriefing} className="min-h-0 flex-1" />}
+          {!live && <ChatDock client={withBriefing} className="min-h-0 flex-1 overflow-hidden rounded-xl bg-white/75 shadow-card ring-1 ring-black/5 backdrop-blur-md" />}
         </aside>
       </div>
 

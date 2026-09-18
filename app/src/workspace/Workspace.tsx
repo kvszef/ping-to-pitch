@@ -1,4 +1,4 @@
-import { ArrowRight, BarChart3, Headset, MessageSquare, Mic, MicOff, Phone, PhoneCall, PhoneOff, Settings as SettingsIcon, Users } from 'lucide-react'
+import { ArrowRight, BarChart3, MessageSquare, Mic, MicOff, Phone, PhoneCall, PhoneOff, Settings as SettingsIcon, Users } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { SeverityIcon } from '../cards/ui'
 import { Pill } from '../components/Chrome'
@@ -112,6 +112,20 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
   const proposal = client.briefing.find((c) => c.type === 'proposal') ?? client.briefing.find((c) => c.type === 'flags')
   const shown = hints.find((h) => h.id === activeHint) ?? hints[0]
 
+  // Flow: arrow keys walk through the points without reaching for the mouse (ignored while typing).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLElement && e.target.closest('input, textarea, [role=separator]')) return
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
+      const list = hints.slice(0, 6)
+      const at = Math.max(0, list.findIndex((h) => h.id === shown?.id))
+      const next = list[(at + (e.key === 'ArrowRight' ? 1 : list.length - 1)) % list.length]
+      if (next) setActiveHint(next.id)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [hints, shown])
+
   const base = { assistent: 1 + (100 - settings.focus) / 50, chat: 1 + settings.focus / 50 }
 
   // Trennlinie von Hand ziehen: die Zeigerposition bestimmt den Anteil des Berater-Chats (25–75 %).
@@ -127,29 +141,25 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
 
   return (
     <>
-      <div className="flex shrink-0 items-center justify-between bg-band px-3 py-3">
-        <div>
-          <div className="text-[17px]">Anrufe &amp; Signale</div>
-          <div className="mt-1 text-[11px]">KI: {providerLabel[activeProvider(settings, status) ?? 'beispiel']} <span className="mx-1 text-muted">|</span> Aufzeichnung: {settings.record ? 'ein' : 'aus'}</div>
-        </div>
-        <div className="flex gap-2">
+      <div className="flex shrink-0 items-center justify-between px-4 py-2.5">
+        <div className="text-[17px]">Anrufe &amp; Signale</div>
+        <div className="flex items-center gap-1">
           <Pill icon={PhoneCall} onClick={onSimulateCall}>Anruf simulieren</Pill>
-          <Pill icon={SettingsIcon} onClick={() => setSettingsOpen(true)}>Einstellungen</Pill>
+          <button onClick={() => setSettingsOpen(true)} aria-label="Einstellungen" title={`Einstellungen · KI: ${providerLabel[activeProvider(settings, status) ?? 'beispiel']}`} className="flex h-7 w-7 items-center justify-center rounded-full text-muted hover:bg-pill hover:text-ink"><SettingsIcon size={15} /></button>
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 gap-2.5 p-2">
-        <aside className="flex w-[230px] shrink-0 flex-col bg-white shadow-card">
-          <PaneTitle icon={Users} title="Kunden" />
-          <ul className="min-h-0 flex-1 overflow-y-auto">
-            {clients.map((c, i) => {
+      <div className="flex min-h-0 flex-1 gap-2.5 bg-gradient-to-br from-brand-soft/25 via-transparent to-transparent p-2">
+        <aside className={`flex w-[196px] shrink-0 flex-col overflow-hidden rounded-xl bg-white/60 transition-opacity duration-500 ${inCall ? 'opacity-40 hover:opacity-100' : ''}`}>
+          <ul className="min-h-0 flex-1 overflow-y-auto py-1.5">
+            {clients.map((c) => {
               const s = topSignal(c.ref)
+              const severity = s?.severity ?? (c.errors ? 'risk' : c.warnings ? 'warn' : null)
               return (
                 <li key={c.ref}>
-                  <button onClick={() => select(c.ref)} title={s?.title} className={`flex w-full items-center gap-2 border-l-[3px] px-3 py-2.5 text-left transition-colors duration-200 ${c.ref === ref ? 'border-brand bg-brand-soft/30' : `border-transparent hover:bg-brand-soft/20 ${i % 2 ? 'bg-stripe' : ''}`}`}>
-                    {s ? <SeverityIcon severity={s.severity} size={12} /> : c.errors + c.warnings > 0 ? <SeverityIcon severity={c.errors ? 'risk' : 'warn'} size={12} /> : <span className="block w-3" />}
+                  <button onClick={() => select(c.ref)} title={s?.title ?? c.profile} className={`flex w-full items-center gap-2.5 px-4 py-2 text-left text-[13px] transition-colors duration-200 ${c.ref === ref ? 'bg-brand-soft/40 text-ink' : 'text-ink/75 hover:bg-brand-soft/20'}`}>
+                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${severity === 'risk' ? 'bg-risk' : severity === 'warn' ? 'bg-warn' : 'bg-transparent'}`} />
                     <span className="min-w-0 flex-1 truncate">{c.name}</span>
-                    <span className="shrink-0 text-[11px] text-muted">{c.profile}</span>
                   </button>
                 </li>
               )
@@ -158,41 +168,50 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
         </aside>
 
         <div ref={split} className={`flex min-w-0 flex-1 ${settings.dragSplit ? '' : 'gap-2.5'} ${dragging ? 'select-none' : ''}`}>
-        <Pane grow={base.assistent} still={dragging} icon={Headset} title="Gesprächsassistent"
-          actions={<>
-            {inCall && settings.record && canListen(status.elevenlabs) && <button onClick={() => setMic((m) => !m)} className={`flex items-center gap-1 rounded-sm px-2 py-1 text-[11px] ${mic ? 'bg-risk text-white' : 'bg-pill hover:bg-track'}`}>{mic ? <Mic size={12} /> : <MicOff size={12} />} Mikrofon</button>}
-            <button onClick={() => setInCall((v) => !v)} className={`flex items-center gap-1 rounded-sm px-2 py-1 text-[11px] text-white ${inCall ? 'bg-risk' : 'bg-brand hover:bg-brand-dark'}`}>{inCall ? <><PhoneOff size={12} /> Gespräch beenden</> : <><Phone size={12} /> Gespräch starten</>}</button>
-          </>}>
-          <div className="mb-3 flex items-center gap-2 text-[11px] text-muted">
-            <span className={`h-2 w-2 rounded-full ${inCall ? 'animate-pulse bg-risk' : 'bg-track'}`} />
-            {inCall ? 'Gespräch läuft' : 'Vorbereitung'}
-            <button onClick={() => onOpenBriefing(client.ref)} className="ml-auto inline-flex items-center gap-1 text-brand hover:underline">Briefing <ArrowRight size={11} /></button>
+        <section style={{ flexGrow: base.assistent }} className={`flex min-w-0 basis-0 flex-col overflow-hidden rounded-xl bg-white shadow-card motion-reduce:transition-none ${dragging ? '' : 'transition-[flex-grow] duration-[650ms] ease-[cubic-bezier(.22,1,.36,1)]'}`}>
+          <div className="flex shrink-0 items-center gap-2 px-6 pt-5">
+            <div className="min-w-0">
+              <div className="truncate text-[17px]">{client.name}</div>
+              <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted">
+                <span className={`h-1.5 w-1.5 rounded-full ${inCall ? 'animate-pulse bg-risk' : 'bg-track'}`} />
+                {inCall ? 'Gespräch läuft' : 'Vorbereitung'}
+                <button onClick={() => onOpenBriefing(client.ref)} className="ml-1 inline-flex items-center gap-0.5 hover:text-brand">Briefing <ArrowRight size={10} /></button>
+              </div>
+            </div>
+            <div className="ml-auto flex shrink-0 gap-1.5">
+              {inCall && settings.record && canListen(status.elevenlabs) && <button onClick={() => setMic((m) => !m)} aria-label="Mikrofon" title="Mikrofon" className={`flex h-8 w-8 items-center justify-center rounded-full ${mic ? 'bg-risk text-white' : 'bg-pill hover:bg-track'}`}>{mic ? <Mic size={14} /> : <MicOff size={14} />}</button>}
+              <button onClick={() => setInCall((v) => !v)} className={`flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs text-white transition-colors ${inCall ? 'bg-risk' : 'bg-brand hover:bg-brand-dark'}`}>{inCall ? <><PhoneOff size={13} /> Beenden</> : <><Phone size={13} /> Anrufen</>}</button>
+            </div>
+          </div>
+
+          <div className="flex min-h-0 flex-1 flex-col justify-center px-6 py-4">
+            {shown && (
+              <div key={shown.id} title={`${shown.why}\n${originLabel[shown.origin]} · ${shown.trigger}`} className="anim-rise">
+                <div className="mb-2 flex items-center gap-1.5 text-[11px] text-muted"><SeverityIcon severity={shown.severity} size={11} /> {shown.label}</div>
+                <p className="text-[22px] leading-snug">{shown.text}</p>
+              </div>
+            )}
           </div>
 
           {hints.length > 1 && (
-            <div className="mb-2 flex flex-wrap gap-1">
-              {hints.slice(0, 6).map((h) => (
-                <button key={h.id} onClick={() => setActiveHint(h.id)} title={h.text} aria-pressed={h.id === shown?.id}
-                  className={`flex items-center gap-1 rounded-sm px-1.5 py-1 text-[11px] transition-colors ${h.id === shown?.id ? 'bg-brand text-white' : 'bg-pill hover:bg-brand-soft'}`}>
-                  <SeverityIcon severity={h.severity} size={11} /> {h.label}
+            <nav aria-label="Gesprächspunkte" className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 px-6 pb-4 text-xs">
+              {hints.slice(0, 6).map((h, n) => (
+                <button key={h.id} onClick={() => setActiveHint(h.id)} aria-pressed={h.id === shown?.id} title={h.text}
+                  className={`border-b-2 pb-0.5 transition-colors ${h.id === shown?.id ? 'border-brand text-ink' : 'border-transparent text-muted hover:text-ink'}`}>
+                  <span className="mr-1 text-[10px] tabular-nums text-muted">{n + 1}</span>{h.label}
                 </button>
               ))}
-            </div>
+              <span className="ml-auto hidden text-[10px] text-muted xl:inline">← → blättern</span>
+            </nav>
           )}
-          {shown && (
-            <div key={shown.id} title={`${shown.why}
-${originLabel[shown.origin]} · ${shown.trigger}`} className="anim-rise border-l-4 border-brand bg-brand-soft/25 p-4">
-              <div className="mb-1.5 flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted"><SeverityIcon severity={shown.severity} size={11} /> {shown.label}</div>
-              <p className="text-[19px] leading-snug">{shown.text}</p>
-            </div>
-          )}
+
           {(note || (settings.record && lines.length > 0)) && (
-            <div className="mt-4 border-t border-line pt-3">
+            <div className="shrink-0 border-t border-line/60 px-6 py-3">
               {note && <p className="mb-2 flex items-start gap-1.5 text-[11px] leading-snug text-risk"><SeverityIcon severity="risk" size={11} /> {note}</p>}
-              <ul className="space-y-1 text-xs">{lines.slice(-3).map((l, i) => <li key={lines.length - i} title={l.text} className="anim-rise truncate text-muted"><span className={`mr-1.5 text-[10px] uppercase ${l.speaker === 'Kunde' ? 'text-brand-dark' : ''}`}>{l.speaker}</span>{l.text}</li>)}</ul>
+              <ul className="space-y-1 text-xs">{lines.slice(-2).map((l, i) => <li key={lines.length - i} title={l.text} className="anim-rise truncate text-muted"><span className={`mr-1.5 text-[10px] ${l.speaker === 'Kunde' ? 'text-brand-dark' : ''}`}>{l.speaker}</span>{l.text}</li>)}</ul>
             </div>
           )}
-        </Pane>
+        </section>
 
         {settings.dragSplit && (
           <div role="separator" aria-orientation="vertical" aria-label="Aufteilung zwischen Gesprächsassistent und Berater-Chat" aria-valuenow={settings.focus} tabIndex={0}
@@ -206,21 +225,21 @@ ${originLabel[shown.origin]} · ${shown.trigger}`} className="anim-rise border-l
           </div>
         )}
 
-        <div className={`compact flex shrink-0 flex-col gap-2.5 ${settings.dragSplit ? 'mr-2.5' : ''}`} style={{ width: MID_WIDTH }}>
-          <div className="flex min-h-0 flex-[45] flex-col overflow-hidden"><NewsFeed key={client.ref} feed={newsFeed} clientRef={client.ref} /></div>
-          <div className="min-h-0 flex-[55] overflow-hidden bg-white shadow-card [&>section]:shadow-none">{proposal && <CardView card={proposal} />}</div>
+        <div className={`compact flex shrink-0 flex-col gap-2.5 transition-opacity duration-500 ${settings.dragSplit ? 'mr-2.5' : ''} ${inCall ? 'opacity-50 hover:opacity-100' : ''}`} style={{ width: MID_WIDTH }}>
+          <div className="flex max-h-[45%] min-h-0 shrink-0 flex-col overflow-hidden"><NewsFeed key={client.ref} feed={newsFeed} clientRef={client.ref} /></div>
+          <div className="min-h-0 flex-1 overflow-hidden rounded-xl bg-white/75 shadow-card ring-1 ring-black/5 backdrop-blur-md [&>section]:bg-transparent [&>section]:shadow-none">{proposal && <CardView card={proposal} />}</div>
         </div>
 
-        <Pane grow={base.chat} still={dragging} icon={MessageSquare} title="Berater-Chat"
+        <Pane grow={base.chat} still={dragging} icon={MessageSquare} title="Chat"
           footer={
-            <form onSubmit={(e) => { e.preventDefault(); const f = e.currentTarget.elements.namedItem('q') as HTMLInputElement; ask(f.value); f.value = '' }} className="flex border-t border-line text-xs">
-              <input name="q" autoComplete="off" placeholder={`Frage zu ${client.name} stellen …`} className="min-w-0 flex-1 px-3 py-2.5 outline-none" />
-              <button className="bg-brand px-4 text-white hover:bg-brand-dark">Senden</button>
+            <form onSubmit={(e) => { e.preventDefault(); const f = e.currentTarget.elements.namedItem('q') as HTMLInputElement; ask(f.value); f.value = '' }} className="flex items-center gap-2 border-t border-line/70 p-2 text-xs">
+              <input name="q" autoComplete="off" placeholder={`Frage zu ${client.name} …`} className="min-w-0 flex-1 rounded-full bg-stripe px-3.5 py-2 outline-none focus:ring-1 focus:ring-brand" />
+              <button aria-label="Senden" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand text-white hover:bg-brand-dark"><ArrowRight size={14} /></button>
             </form>
           }>
           {open.length > 0 && (
-            <div className="mb-3 flex flex-wrap gap-1.5">
-              {open.map((t) => <button key={t.id} onClick={() => ask(t.label)} className="rounded-sm bg-pill px-2 py-1 text-[11px] transition-colors hover:bg-brand hover:text-white">{t.label}</button>)}
+            <div className="mb-3 space-y-1">
+              {open.map((t) => <button key={t.id} onClick={() => ask(t.label)} className="block text-left text-[11px] text-muted transition-colors hover:text-brand">{t.label}</button>)}
             </div>
           )}
           <ChatLog chat={chat} busy={busy} detail={settings.detail} onShow={(id) => setChat((c) => c.map((e) => (e.id === id && e.role === 'ki' && e.offered ? { ...e, module: e.offered.spec, offered: undefined } : e)))} />
@@ -247,7 +266,7 @@ function Pane({ grow, still, icon, title, actions, footer, children }: { grow: n
   return (
     <section
       style={{ flexGrow: grow }}
-      className={`flex min-w-0 basis-0 flex-col bg-white shadow-card motion-reduce:transition-none ${still ? '' : 'transition-[flex-grow] duration-[650ms] ease-[cubic-bezier(.22,1,.36,1)]'}`}>
+      className={`flex min-w-0 basis-0 flex-col overflow-hidden rounded-xl bg-white/75 shadow-card ring-1 ring-black/5 backdrop-blur-md motion-reduce:transition-none ${still ? '' : 'transition-[flex-grow] duration-[650ms] ease-[cubic-bezier(.22,1,.36,1)]'}`}>
       <PaneTitle icon={icon} title={title} actions={actions} />
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">{children}</div>
       {footer}

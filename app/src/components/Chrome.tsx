@@ -59,7 +59,7 @@ export function InfoBand({ fields, total, children }: { fields: { label: string;
 
 export function Pill({ icon: Icon, active, children, onClick }: { icon: LucideIcon; active?: boolean; children: ReactNode; onClick?: () => void }) {
   return (
-    <button onClick={onClick} className={`flex items-center gap-1.5 rounded-sm px-2.5 py-1 text-xs ${active ? 'bg-brand text-white' : 'bg-pill hover:bg-track'}`}>
+    <button onClick={onClick} className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs transition-colors ${active ? 'bg-brand text-white' : 'bg-pill hover:bg-track'}`}>
       <Icon size={13} /> {children}
     </button>
   )
