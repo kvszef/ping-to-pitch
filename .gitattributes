@@ -1,0 +1,16 @@
+# One line-ending policy for everyone, whatever their OS or core.autocrlf says.
+# Without this, a Windows checkout can turn a one-line change into a whole-file diff and a merge conflict.
+* text=auto eol=lf
+
+# Organizer data is committed with CRLF. Leave the bytes alone, otherwise git wants to rewrite 18 MB.
+core-case/portfolio-data/*.json -text
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.wav binary
+*.webm binary
+*.sqlite binary

@@ -1,0 +1,38 @@
+# Secrets and machine-local config. API keys live in app/.env.local and never get committed.
+.env
+.env.*
+!.env.example
+*.local
+
+# Dependencies and build output
+node_modules/
+dist/
+dist-ssr/
+coverage/
+*.tsbuildinfo
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Runtime data we generate (call memory, imported statements). Seed it from code, not from a committed file.
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# OS and editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# Personal agent settings
+.claude/settings.local.json
