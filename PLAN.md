@@ -135,7 +135,7 @@ Each track owns its own files, so agents running in parallel do not collide. Own
 | **E2** | Contradiction + fix | Arash | `engine/checks/contradiction-*`, `engine/fix/` | Wishes (notes, ESG, risk profile) vs holdings, smallest fix as a draft proposal, re-check that the fix breaks nothing else |
 | **E3** | Context | Arash | `engine/checks/context-*` | Stale notes as questions, this client's own worst months, peers ("just this portfolio or the whole market?"), "clients like this did X" (aggregated, never naming anyone) |
 | **E4** | Client profile | Arash | `engine/checks/profile-*` | Tone and behaviour from what the client said and did (section 2): persona line, tone setting, call-reason guess |
-| **A1** | Briefing writer | Ahmet | `server/ai/briefing*` | Findings → the four 60-second blocks, likely questions, 3–5 next actions, in the client's tone (E4). Works without an LLM too (fallback) |
+| **A1** | Briefing writer | Arash | `server/ai/briefing*` | Findings → the four 60-second blocks, likely questions, 3–5 next actions, in the client's tone (E4). Works without an LLM too (fallback) |
 | **A2** | Live call copilot | Ahmet | `server/ai/call*`, `src/workspace/useCallAudio.ts` | Listening already works (ElevenLabs). Add only: to-dos the client asked for, and "show the data being talked about". Scripted call stays one click away. Biggest stage risk, so no more than that |
 | **A3** | Memory | Ahmet | `server/memory*` | Post-call draft → one-tap confirm → SQLite → read by the engine. Seeded from rejected proposals |
 | **A4** | Ask-the-data chat | Kaushik | `server/ai/chat*`, `src/components/ChatDock.tsx` | The on-demand twin of the live copilot: the advisor asks, the chat answers from the client's data, including niche questions no check covers (a single transaction, a fee, one position's history). The LLM only picks a tool and phrases the result; tools over the engine's data index do the lookup and the arithmetic, and every answer names its source. Says so when the data does not support an answer. Stretch, off by default: a fast outside search for things the data cannot hold (what a company does, a term), always labelled "outside source", never mixed into client numbers, and no client name or identifier in the query |
@@ -151,8 +151,8 @@ Integration is continuous and Claude's job. Everything plugs into a registry, so
 ### Start now, nobody waits
 
 - **Kaushik**: keep building against `src/data/mock.ts`. Its shape is the API shape; when the engine lands only the import changes. New cards can be built against hand-written findings in the `Finding` shape above. A4 starts from the existing `/api/chat` and `ChatDock.tsx`; its tools can read `clients.json` directly until the engine's data index lands.
-- **Ahmet**: A1 and A3 only need `Finding[]` and `CallNote`. Until fixtures land, hand-write three findings from section 2 and build against them. A2 needs nothing from anyone.
-- **Arash**: P0, then E1–E4 in parallel agents. N1 (news matching with embeddings) whenever he wants to start it; it depends on nothing but a sample news file.
+- **Ahmet**: A3 only needs `Finding[]` and `CallNote`. Until fixtures land, hand-write three findings from section 2 and build against them. A2 needs nothing from anyone.
+- **Arash**: P0, then E1–E4 in parallel agents, then A1 on top of the real findings (he knows what the engine shows). N1 (news matching with embeddings) whenever he wants to start it; it depends on nothing but a sample news file.
 
 ## 5. Milestones
 
