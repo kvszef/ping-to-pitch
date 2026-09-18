@@ -79,6 +79,41 @@ export const clients: Client[] = [
         { q: 'Soll ich meine Technologieaktien verkaufen?', a: 'Der Rückgang betrifft den ganzen Sektor und liegt innerhalb des Mandats. Reduzieren nur dort, wo Klumpenlimiten verletzt sind.' },
         { q: 'Ist mein Portfolio nachhaltig?', a: 'Teilweise – ESG-Aufteilung zeigen und die zwei Fondsalternativen vorstellen.' },
       ] },
+      { type: 'contradiction', title: 'Wunsch gegen Bestand', wish: { quote: 'Keine Anlagen in fossile Energien.', date: '12.06.2026', source: 'Kundennotiz' }, verdict: 'In der Positionsliste unsichtbar: Der Energieanteil steckt nur in zwei Fonds.', exposure: { label: 'Energie (fossil)', total: 3.4, direct: 0, viaFunds: 3.4 }, source: 'Fonds-Durchsicht', holdings: [
+        { name: 'ETF Aktien Welt', weight: 18.0, exposure: 2.2, via: 'Fonds' },
+        { name: 'Dividendenfonds Global', weight: 9.0, exposure: 1.2, via: 'Fonds' },
+      ], fix: { summary: 'Beide Fonds durch Varianten ohne fossile Energien ersetzen.', source: 'Simulation, Regeln neu geprüft', trades: [
+        { side: 'Verkauf', name: 'ETF Aktien Welt', amount: "CHF 223'200", share: '-18.0 Pkt.' },
+        { side: 'Kauf', name: 'ETF Aktien Welt ex fossile Energien (Empfehlungsliste)', amount: "CHF 223'200", share: '+18.0 Pkt.' },
+        { side: 'Verkauf', name: 'Dividendenfonds Global', amount: "CHF 111'600", share: '-9.0 Pkt.' },
+        { side: 'Kauf', name: 'Nachhaltiger Aktienfonds Welt (Empfehlungsliste)', amount: "CHF 111'600", share: '+9.0 Pkt.' },
+      ], effects: [
+        { label: 'Energie (fossil)', before: '3.4%', after: '0.0%', ok: true },
+        { label: 'Aktienquote (Band 65–95%)', before: '88%', after: '88%', ok: true },
+        { label: 'Grösste Einzelposition', before: '13.4%', after: '13.4%', ok: false },
+        { label: 'USD-Anteil (Band 30–50%)', before: '61%', after: '61%', ok: false },
+      ] } },
+      { type: 'lookthrough', title: 'Fonds-Durchsicht', dimension: 'Sektor', note: 'Energie ist nur über Fonds gehalten. Technologie liegt mit Fonds bei 34% statt 29.5%.', source: 'Positionen + Fondszusammensetzung', rows: [
+        { label: 'Technologie', direct: 29.5, viaFunds: 4.5 },
+        { label: 'Konsum', direct: 5.4, viaFunds: 6.0 },
+        { label: 'Gesundheit', direct: 6.0, viaFunds: 4.1 },
+        { label: 'Finanzwerte', direct: 4.0, viaFunds: 5.2 },
+        { label: 'Industrie', direct: 3.1, viaFunds: 4.4 },
+        { label: 'Energie', direct: 0, viaFunds: 3.4, flag: 'Widerspricht dem Kundenwunsch «Keine Anlagen in fossile Energien»' },
+        { label: 'Übrige Sektoren', direct: 2.0, viaFunds: 10.4 },
+      ] },
+      { type: 'peers', title: 'Vergleich mit ähnlichen Kunden', profile: 'Dynamisch', n: 11, note: 'Klumpenrisiko höher als bei allen Vergleichskunden, Liquidität am unteren Rand.', source: 'Kundenbestand, Stand heute', metrics: [
+        { label: 'Aktienquote', unit: '%', min: 72, median: 84, max: 93, value: 88 },
+        { label: 'Liquidität', unit: '%', min: 1, median: 5, max: 12, value: 3 },
+        { label: 'Grösste Position', unit: '%', min: 4.1, median: 7.6, max: 11.8, value: 13.4 },
+        { label: '12-Monats-Entwicklung', unit: '%', signed: true, min: 3.9, median: 9.6, max: 14.2, value: 8.3 },
+      ] },
+      { type: 'todos', title: 'Offene Zusagen und Pendenzen', items: [
+        { text: 'ESG-Aufteilung des Portfolios zustellen', owner: 'Berater', due: '26.08.2026', done: false, overdue: true, source: 'Gespräch 19.08.2026' },
+        { text: 'Zwei nachhaltige Aktienfonds vorschlagen', owner: 'Berater', due: '30.09.2026', done: false, source: 'Gespräch 19.08.2026' },
+        { text: 'Entscheid zur USD-Absicherung', owner: 'Kunde', due: '25.09.2026', done: false, source: 'Gespräch 02.09.2026' },
+        { text: 'Risikoprofil erneuern', owner: 'Berater', due: '08.05.2026', done: true, source: 'Profiling 08.05.2026' },
+      ] },
     ],
   },
   {
@@ -144,6 +179,33 @@ export const clients: Client[] = [
       { type: 'questions', title: 'Wahrscheinliche Fragen', items: [
         { q: 'Warum liege ich zurück?', a: 'Allokation, nicht Titelauswahl: zu wenig Europa, zu viel Liquidität.' },
       ] },
+      { type: 'profile', title: 'Kundenprofil', source: 'Aus 3 Notizen und 7 Vorschlägen abgeleitet', persona: 'Entscheidet nach Zahlen und liest abends nach: schriftlich vorlegen, Benchmark-Vergleich mitbringen.', said: [
+        { date: '10.09.2026', text: 'Wünscht schriftliche Zusammenfassung nach jedem Gespräch' },
+        { date: '25.08.2026', text: 'Erreichbar nach 18 Uhr' },
+        { date: '14.03.2026', text: 'Nur E-Mail, keine Anrufe tagsüber' },
+      ], done: [
+        { label: 'Vorschläge angenommen', value: '5 von 7', source: 'Vorschlagshistorie' },
+        { label: 'Liquidität gehalten', value: '9% · Soll 5%', source: 'Konten, SAA' },
+        { label: 'In den 3 schwächsten Monaten', value: 'keine Verkäufe', source: 'Transaktionen' },
+      ] },
+      { type: 'peers', title: 'Vergleich mit ähnlichen Kunden', profile: 'Ausgeglichen', n: 14, note: 'Liquidität doppelt so hoch wie der Median, Entwicklung darunter.', source: 'Kundenbestand, Stand heute', metrics: [
+        { label: 'Aktienquote', unit: '%', min: 38, median: 46, max: 54, value: 44 },
+        { label: 'Liquidität', unit: '%', min: 2, median: 4.5, max: 10, value: 9 },
+        { label: 'Grösste Position', unit: '%', min: 3.2, median: 5.9, max: 9.5, value: 6.8 },
+        { label: '12-Monats-Entwicklung', unit: '%', signed: true, min: 1.8, median: 4.6, max: 7.4, value: 3.1 },
+      ] },
+      { type: 'callnote', title: 'Gesprächsnotiz bestätigen', source: 'Transkript, 24 Min.', note: { id: 'CN-B-0919', clientRef: 'CASE-B', date: '19.09.2026', confirmed: false, proposed: [
+        { findingId: 'allocation.region:CASE-B:europe', text: "CHF 34'000 aus Liquidität in Aktienfonds Europa", reaction: 'accepted' },
+        { text: 'Nachhaltige Variante des Europa-Fonds', reaction: 'open', why: 'Will zuerst das Factsheet lesen.' },
+        { text: 'Obligationenanteil um 5 Punkte senken', reaction: 'rejected', why: 'Will den laufenden Ertrag behalten.' },
+      ], promises: [
+        { text: 'Factsheet nachhaltiger Aktienfonds Europa senden', due: '22.09.2026', done: false },
+        { text: 'Vergleich zur Zielallokation per E-Mail zustellen', due: '26.09.2026', done: false },
+      ], factUpdates: [
+        { note: 'Erreichbar nach 18 Uhr', status: 'confirmed' },
+        { note: 'ESG-Profil: nicht erfasst', status: 'changed', newValue: 'Interesse bestätigt – Profil nachführen' },
+        { note: 'Wünscht Vergleich mit der Benchmark', status: 'outdated', newValue: 'Im Gespräch gezeigt' },
+      ] } },
     ],
   },
   {
@@ -208,6 +270,22 @@ export const clients: Client[] = [
       ] },
       { type: 'questions', title: 'Wahrscheinliche Fragen', items: [
         { q: 'Ist mein Geld für den Kauf sicher?', a: 'Noch nicht vollständig – der Plan oben reserviert es dafür.' },
+      ] },
+      { type: 'stalenote', title: 'Abgelaufene Notiz', note: { quote: 'Plant einen Immobilienkauf, Liquiditätsbedarf innert 12 Monaten.', date: '14.10.2024', source: 'Kundennotiz' }, age: '23 Monate', expired: '14.10.2025', reason: 'Das Zeitfenster ist seit 11 Monaten zu. Am 03.07.2026 unverändert übernommen, nie bestätigt.', question: 'Hat der Immobilienkauf stattgefunden?', followUps: ['Wenn ja: Hypothek und neue Liquiditätsreserve erfassen', 'Wenn nein: neuer Zeitpunkt und Betrag'] },
+      { type: 'profile', title: 'Kundenprofil', source: 'Aus 3 Notizen und 5 Vorschlägen abgeleitet', persona: 'Entscheidet langsam und lehnt 4 von 5 Vorschlägen ab: eine defensive Option bringen, Bedenkzeit lassen.', said: [
+        { date: '03.07.2026', text: 'Unterlagen per Post, keine Fachbegriffe' },
+        { date: '23.06.2026', text: 'Seit dem letzten Rückgang sehr risikoscheu' },
+        { date: '23.06.2026', text: 'Telefonisch, vormittags' },
+      ], done: [
+        { label: 'Vorschläge angenommen', value: '1 von 5', source: 'Vorschlagshistorie' },
+        { label: 'Liquidität gehalten', value: '6% · Soll 10%', source: 'Konten, SAA' },
+        { label: 'In den 3 schwächsten Monaten', value: '2 Verkäufe', source: 'Transaktionen' },
+      ] },
+      { type: 'todos', title: 'Offene Zusagen und Pendenzen', items: [
+        { text: 'Betrag und Zeitpunkt des Immobilienkaufs klären', owner: 'Berater', due: '03.08.2026', done: false, overdue: true, source: 'Gespräch 03.07.2026' },
+        { text: 'Finanzierungsbestätigung der Bank einreichen', owner: 'Kunde', due: '31.07.2026', done: false, overdue: true, source: 'Gespräch 03.07.2026' },
+        { text: 'Ersatz für den beanstandeten Obligationenfonds vorschlagen', owner: 'Berater', due: '22.09.2026', done: false, source: 'Regelverletzung' },
+        { text: 'Anlageprofil erneuern', owner: 'Berater', due: '23.06.2026', done: true, source: 'Profiling 23.06.2026' },
       ] },
     ],
   },
