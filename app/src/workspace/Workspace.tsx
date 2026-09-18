@@ -21,7 +21,6 @@ type Props = {
   onOpenBriefing: (ref: string) => void
 }
 
-type PaneId = 'assistent' | 'chat'
 const originLabel: Record<Origin, string> = { gespraech: 'Aus dem Gespräch', chat: 'Aus dem Berater-Chat', kundendaten: 'Aus den Kundendaten' }
 const rank = { risk: 0, warn: 1, info: 2, ok: 3 }
 const providerLabel = { openai: 'OpenAI', apertus: 'Apertus', beispiel: 'Beispielmodus' }
@@ -38,7 +37,6 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
   const [hints, setHints] = useState<Hint[]>([])
   const [chat, setChat] = useState<ChatEntry[]>([])
   const [busy, setBusy] = useState(false)
-  const [hovered, setHovered] = useState<PaneId | null>(null)
   const client = clients.find((c) => c.ref === ref) ?? clients[0]
   const [customerSlot, setCustomerSlot] = useState<Slot | null>(null)
   const [advisorSlot, setAdvisorSlot] = useState<Slot | null>(null)
@@ -103,7 +101,16 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
   const open = useMemo(() => (topicData[client.ref] ?? []).filter((t) => !chat.some((e) => e.role === 'ki' && e.text === t.insight[settings.detail])), [client.ref, chat, settings.detail])
 
   const base = { assistent: 1 + (100 - settings.focus) / 50, chat: 1 + settings.focus / 50 }
-  const grow = (id: PaneId) => base[id] * (hovered === id ? 1.7 : 1)
+
+  // Trennlinie von Hand ziehen: die Zeigerposition bestimmt den Anteil des Berater-Chats (25–75 %).
+  const split = useRef<HTMLDivElement>(null)
+  const [dragging, setDragging] = useState(false)
+  const dragTo = (x: number) => {
+    const box = split.current?.getBoundingClientRect()
+    if (!box) return
+    const share = (box.right - x) / box.width
+    update({ focus: Math.round(Math.max(0, Math.min(100, (share * 4 - 1) * 50))) })
+  }
 
   return (
     <>
@@ -152,7 +159,8 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
           </section>
         </aside>
 
-        <Pane id="assistent" grow={grow('assistent')} dim={hovered === 'chat'} setHovered={setHovered} icon={Headset} title="Gesprächsassistent" sub="Was Sie dem Kunden sagen können"
+        <div ref={split} className={`flex min-w-0 flex-1 ${settings.dragSplit ? '' : 'gap-2.5'} ${dragging ? 'select-none' : ''}`}>
+        <Pane grow={base.assistent} still={dragging} icon={Headset} title="Gesprächsassistent" sub="Was Sie dem Kunden sagen können"
           actions={<>
             {inCall && settings.record && canListen(status.elevenlabs) && <button onClick={() => setMic((m) => !m)} className={`flex items-center gap-1 rounded-sm px-2 py-1 text-[11px] ${mic ? 'bg-risk text-white' : 'bg-pill hover:bg-track'}`}>{mic ? <Mic size={12} /> : <MicOff size={12} />} Mikrofon</button>}
             <button onClick={() => setInCall((v) => !v)} className={`flex items-center gap-1 rounded-sm px-2 py-1 text-[11px] text-white ${inCall ? 'bg-risk' : 'bg-brand hover:bg-brand-dark'}`}>{inCall ? <><PhoneOff size={12} /> Gespräch beenden</> : <><Phone size={12} /> Gespräch starten</>}</button>
@@ -191,7 +199,19 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
           </div>
         </Pane>
 
-        <Pane id="chat" grow={grow('chat')} dim={hovered === 'assistent'} setHovered={setHovered} icon={MessageSquare} title="Berater-Chat" sub="Einblicke für Sie, mit Zugriff auf die Kundendaten"
+        {settings.dragSplit && (
+          <div role="separator" aria-orientation="vertical" aria-label="Aufteilung zwischen Gesprächsassistent und Berater-Chat" aria-valuenow={settings.focus} tabIndex={0}
+            onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); setDragging(true) }}
+            onPointerMove={(e) => { if (dragging) dragTo(e.clientX) }}
+            onPointerUp={() => setDragging(false)} onPointerCancel={() => setDragging(false)}
+            onDoubleClick={() => update({ focus: 50 })}
+            onKeyDown={(e) => { if (e.key === 'ArrowLeft') update({ focus: Math.min(100, settings.focus + 5) }); if (e.key === 'ArrowRight') update({ focus: Math.max(0, settings.focus - 5) }) }}
+            className="group flex w-2.5 shrink-0 cursor-col-resize touch-none items-center justify-center outline-none">
+            <span className={`h-10 w-[3px] rounded-full transition-all duration-200 group-hover:h-16 group-hover:bg-brand group-focus-visible:h-16 group-focus-visible:bg-brand ${dragging ? 'h-16 bg-brand' : 'bg-track'}`} />
+          </div>
+        )}
+
+        <Pane grow={base.chat} still={dragging} icon={MessageSquare} title="Berater-Chat" sub="Einblicke für Sie, mit Zugriff auf die Kundendaten"
           footer={
             <form onSubmit={(e) => { e.preventDefault(); const f = e.currentTarget.elements.namedItem('q') as HTMLInputElement; ask(f.value); f.value = '' }} className="flex border-t border-line text-xs">
               <input name="q" autoComplete="off" placeholder={`Frage zu ${client.name} stellen …`} className="min-w-0 flex-1 px-3 py-2.5 outline-none" />
@@ -205,6 +225,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
           )}
           <ChatLog chat={chat} busy={busy} detail={settings.detail} onShow={(id) => setChat((c) => c.map((e) => (e.id === id && e.role === 'ki' && e.offered ? { ...e, module: e.offered.spec, offered: undefined } : e)))} />
         </Pane>
+        </div>
       </div>
 
       {inCall && <LiveIsland key={client.ref} client={client} recording={settings.record} customer={customerSlot} advisor={advisorSlot} onEnd={() => setInCall(false)} />}
@@ -222,12 +243,11 @@ function PaneTitle({ icon: Icon, title, sub, actions }: { icon: typeof Users; ti
   )
 }
 
-function Pane({ id, grow, dim, setHovered, icon, title, sub, actions, footer, children }: { id: PaneId; grow: number; dim: boolean; setHovered: (p: PaneId | null) => void; icon: typeof Users; title: string; sub: string; actions?: ReactNode; footer?: ReactNode; children: ReactNode }) {
+function Pane({ grow, still, icon, title, sub, actions, footer, children }: { grow: number; still: boolean; icon: typeof Users; title: string; sub: string; actions?: ReactNode; footer?: ReactNode; children: ReactNode }) {
   return (
     <section
-      onMouseEnter={() => setHovered(id)} onMouseLeave={() => setHovered(null)}
       style={{ flexGrow: grow }}
-      className={`flex min-w-0 basis-0 flex-col bg-white shadow-card transition-[flex-grow,opacity,box-shadow] duration-[650ms] ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none ${dim ? 'opacity-70' : 'hover:shadow-[0_2px_14px_rgba(0,0,0,0.22)]'}`}>
+      className={`flex min-w-0 basis-0 flex-col bg-white shadow-card motion-reduce:transition-none ${still ? '' : 'transition-[flex-grow] duration-[650ms] ease-[cubic-bezier(.22,1,.36,1)]'}`}>
       <PaneTitle icon={icon} title={title} sub={sub} actions={actions} />
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">{children}</div>
       {footer}
