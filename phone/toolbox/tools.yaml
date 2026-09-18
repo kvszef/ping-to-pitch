@@ -1,0 +1,581 @@
+# Werkzeuge des Telefon-Copiloten, gelesen von MCP Toolbox for Databases (googleapis/mcp-toolbox).
+#
+#   npm run toolbox:get   laedt das Binary nach bin/
+#   npm run toolbox       startet es mit dieser Datei
+#
+# Format: eine Ressource je YAML-Dokument, getrennt durch ---, jede mit `kind:`. Die aelteren
+# Anleitungen mit verschachtelten sources:/tools:-Maps und --tools-file sind ueberholt.
+#
+# Die neun Werkzeugnamen sind der Vertrag mit src/copilot/types.ts (TOOL_NAMES). Wer hier
+# umbenennt, bricht die Anwendung.
+#
+# Zwei Dinge, die das Ergebnis besser machen, als es aussieht:
+#  * Toolbox parst Zeichenketten in Ergebniszellen, die gueltiges JSON sind, automatisch auf.
+#    `raw_json AS profil` liefert dem Modell deshalb verschachteltes JSON, keinen maskierten Text.
+#  * SQLite bindet `?` der Reihe nach. Die Reihenfolge der `?` im statement muss also exakt der
+#    Reihenfolge unter parameters: entsprechen. Wo ein Wert mehrfach gebraucht wird, bindet ihn
+#    eine `WITH q AS (SELECT ? AS ref)`-Zeile einmal und der Rest joint dagegen.
+#
+# templateParameters kommen bewusst nirgends vor: sie werden textuell ins Statement gesetzt und
+# waeren SQL-Injection aus dem Telefongespraech heraus. Das Schema steht fest, wir brauchen sie nicht.
+#
+# Wer das Binary von Hand startet: `--enable-api` nicht vergessen. Ohne den Schalter antwortet
+# /api/tool/{name}/invoke mit 410, und genau diese Schnittstelle nutzt der ToolboxClient aus
+# src/copilot/types.ts. npm run toolbox setzt ihn. Ein einzelner Aufruf ohne Server geht auch:
+#   bin/toolbox.exe --config toolbox/tools.yaml invoke get_saa_gap '{"client_ref":"CASE-038"}'
+
+kind: source
+name: unrisk-db
+type: sqlite
+database: ${UNRISK_DB:./data/unrisk.db}
+
+---
+# --------------------------------------------------------------------- Identifikation
+
+kind: tool
+name: find_client_by_phone
+type: sqlite-sql
+source: unrisk-db
+description: |
+  Findet den Kunden zu einer Telefonnummer. Das ist der erste Aufruf jedes Anrufs, sobald die
+  Rufnummer bekannt ist. Die Nummer wird im Format E.164 erwartet, also mit Laendervorwahl und
+  fuehrendem Plus, zum Beispiel +41791234567; Leerzeichen, Bindestriche und Klammern werden
+  ignoriert. Zurueck kommen client_ref (die Kundenkennung, die alle anderen Werkzeuge brauchen),
+  der Name und das Label des Anschlusses (mobil, geschaeft, ...). Ein leeres Ergebnis heisst:
+  Nummer unbekannt. Dann nach dem Namen fragen und search_clients_by_name nehmen.
+annotations:
+  readOnlyHint: true
+parameters:
+  - name: phone_e164
+    type: string
+    description: Rufnummer in E.164, zum Beispiel +41791234567.
+statement: |
+  WITH q AS (
+    SELECT REPLACE(REPLACE(REPLACE(REPLACE(TRIM(?), ' ', ''), '-', ''), '(', ''), ')', '') AS nummer
+  )
+  SELECT p.client_ref, c.name, p.label
+  FROM q
+  JOIN phone_map p
+    ON REPLACE(REPLACE(REPLACE(REPLACE(p.phone_e164, ' ', ''), '-', ''), '(', ''), ')', '') = q.nummer
+  JOIN clients c ON c.client_ref = p.client_ref
+
+---
+kind: tool
+name: search_clients_by_name
+type: sqlite-sql
+source: unrisk-db
+description: |
+  Sucht Kunden nach Namen, unscharf und ohne Ruecksicht auf Gross- und Kleinschreibung. Gedacht
+  fuer den Fall, dass find_client_by_phone nichts geliefert hat und der Anrufer seinen Namen
+  nennt; ein Teilstueck genuegt ("Burgun" findet "Ron Burgundy"). Durchsucht Vor-, Nach- und
+  Firmennamen. Zurueck kommen bis zu zehn Treffer mit client_ref, Name, Kundentyp, Waehrung,
+  Risikoprofil und Vermoegen, die besten zuerst; bei mehreren Treffern mit einer Rueckfrage
+  abgrenzen, statt zu raten.
+annotations:
+  readOnlyHint: true
+parameters:
+  - name: query
+    type: string
+    description: Namensteil, zum Beispiel "Burgundy" oder "Muster AG".
+statement: |
+  WITH q AS (SELECT TRIM(?) AS suche)
+  SELECT c.client_ref,
+         c.name,
+         c.client_type    AS kundentyp,
+         c.reporting_ccy  AS waehrung,
+         c.risk_profile   AS risikoprofil,
+         ROUND(c.aum, 2)  AS vermoegen
+  FROM clients c, q
+  WHERE COALESCE(c.name, '') || ' ' || COALESCE(c.first_name, '') || ' ' ||
+        COALESCE(c.last_name, '') || ' ' || COALESCE(c.company, '')
+        LIKE '%' || q.suche || '%'
+  ORDER BY CASE WHEN c.name LIKE q.suche || '%' THEN 0 ELSE 1 END,
+           LENGTH(c.name),
+           c.name
+  LIMIT 10
+
+---
+# --------------------------------------------------------------------- Ueberblick
+
+kind: tool
+name: get_client_overview
+type: sqlite-sql
+source: unrisk-db
+description: |
+  Die Stammdaten eines Kunden auf einen Blick: Name, Kundentyp, Referenzwaehrung, Risiko- und
+  ESG-Profil, Geburtstag, Datum der letzten Profilierung, Vermoegen und Liquiditaet. Dazu die
+  Grenzwerte des Risikoprofils (Risikostufe, maximale Volatilitaet, maximale
+  Produktrisikoklasse, Aktienquote) und die Interessengebiete aus den Tags, sowie Zaehler fuer
+  Portfolios, offene Verstoesse, ausgesetzte Regeln und offene Anlagevorschlaege. Vier Kunden
+  haben kein Risikoprofil und neunzehn kein ESG-Profil, diese Felder koennen also leer sein.
+  ist_mitarbeiter = 1 heisst Mitarbeitergeschaeft, das ist am Telefon relevant. Das Feld profil
+  enthaelt den Kundensatz als verschachteltes JSON. Erster Aufruf nach der Identifikation,
+  Grundlage des Briefings.
+annotations:
+  readOnlyHint: true
+parameters:
+  - name: client_ref
+    type: string
+    description: Kundenkennung, zum Beispiel CASE-001. Kommt aus find_client_by_phone.
+statement: |
+  SELECT c.client_ref,
+         c.name,
+         c.client_type          AS kundentyp,
+         c.is_company           AS ist_firma,
+         c.is_employee          AS ist_mitarbeiter,
+         c.reporting_ccy        AS waehrung,
+         c.risk_profile         AS risikoprofil,
+         c.esg_profile          AS esg_profil,
+         c.tags                 AS interessen,
+         c.birthday             AS geburtstag,
+         c.profiling_date       AS profiliert_am,
+         ROUND(c.aum, 2)        AS vermoegen,
+         ROUND(c.liquidity, 2)  AS liquiditaet,
+         rp.risk_level          AS profil_risikostufe,
+         rp.max_vola            AS profil_max_volatilitaet,
+         rp.max_prc             AS profil_max_prc,
+         rp.equity_quote_pct    AS profil_aktienquote,
+         (SELECT COUNT(*) FROM portfolios p
+           WHERE p.client_ref = c.client_ref)                       AS anzahl_portfolios,
+         (SELECT COUNT(*) FROM violations v
+           WHERE v.client_ref = c.client_ref AND v.is_override = 0)  AS anzahl_verstoesse,
+         (SELECT COUNT(*) FROM violations v
+           WHERE v.client_ref = c.client_ref AND v.is_override = 1)  AS anzahl_ausgesetzter_regeln,
+         (SELECT COUNT(*) FROM proposals pr
+           WHERE pr.client_ref = c.client_ref
+             AND COALESCE(pr.status, '') <> 'Abgelehnt')            AS anzahl_offene_vorschlaege,
+         -- Der Lader haelt clients.raw_json schon schlank: Portfolios, Proposals,
+         -- Transactions, SuitabilityViolations und ClientNotes haben eigene Tabellen und
+         -- fehlen hier. Was bleibt, sind Tags und IndividualRuleOverrides.
+         c.raw_json             AS profil
+  FROM clients c
+  LEFT JOIN risk_profiles rp ON rp.id = c.risk_profile_id
+  WHERE c.client_ref = ?
+
+---
+kind: tool
+name: get_portfolio_summary
+type: sqlite-sql
+source: unrisk-db
+description: |
+  Alle Portfolios eines Kunden, das groesste zuerst. Je Portfolio: Nummer, Name, Waehrung,
+  Dienstleistung (zum Beispiel Depotberatung), Strategie, hinterlegte Zielallokation (SAA),
+  Vermoegen, Liquiditaet und die Kennzahlen der Risikorechnung - Volatilitaet, erwartete
+  Rendite und Value at Risk, alle als Bruch von 0 bis 1, also 0.0825 gleich 8,25 Prozent. Dazu
+  die Anzahl Wertschriftenpositionen und Konten und das Datum der letzten Berechnung.
+  Zwei Warnungen, beide zaehlen am Telefon. Erstens: wertentwicklung_ytd und
+  wertentwicklung_12m sind KEINE Renditen, sondern die Veraenderung des Portfoliowerts, und in
+  der stecken Ein- und Auszahlungen. Reine Vorsorgekonten zeigen so bis zu +16 Prozent, die
+  eingezahlt und nicht verdient sind. Also als "das Vermoegen ist von ... auf ... gewachsen"
+  formulieren, nie als "Rendite von x Prozent". Zweitens: ein Portfolio mit "Konsolidierte" im
+  Namen fasst die anderen zusammen, seine Betraege duerfen nicht dazugezaehlt werden.
+annotations:
+  readOnlyHint: true
+parameters:
+  - name: client_ref
+    type: string
+    description: Kundenkennung, zum Beispiel CASE-001.
+statement: |
+  SELECT p.portfolio_id,
+         p.portfolio_nr,
+         p.name                 AS portfolio,
+         p.currency             AS waehrung,
+         p.service_name         AS dienstleistung,
+         p.strategy_name        AS strategie,
+         (SELECT t.saa_name FROM saa_targets t
+           WHERE t.saa_id = p.saa_id LIMIT 1)                       AS saa,
+         ROUND(p.aum, 2)        AS vermoegen,
+         ROUND(p.liquidity, 2)  AS liquiditaet,
+         p.volatility           AS volatilitaet,
+         p.expected_return      AS erwartete_rendite,
+         p.value_at_risk        AS value_at_risk,
+         -- Wertveraenderung, keine Rendite: enthaelt Ein- und Auszahlungen. Siehe description
+         -- und den Kommentar an portfolios.performance_ytd in schema.sql. Der Name sagt es
+         -- hier mit, damit niemand es unterwegs zur Rendite macht.
+         p.performance_ytd      AS wertentwicklung_ytd,
+         p.performance_12m      AS wertentwicklung_12m,
+         ROUND(p.nav_latest, 2) AS portfoliowert,
+         p.nav_date             AS portfoliowert_per,
+         p.factory_date         AS berechnet_am,
+         (SELECT COUNT(*) FROM positions x
+           WHERE x.portfolio_id = p.portfolio_id)                   AS anzahl_positionen,
+         (SELECT COUNT(*) FROM accounts a
+           WHERE a.portfolio_id = p.portfolio_id)                   AS anzahl_konten
+  FROM portfolios p
+  WHERE p.client_ref = ?
+  ORDER BY p.aum DESC
+
+---
+kind: tool
+name: get_positions_top
+type: sqlite-sql
+source: unrisk-db
+description: |
+  Die groessten Einzelpositionen eines Kunden ueber alle Portfolios hinweg, absteigend nach
+  Betrag. Wertschriften und Konten zusammen, die Spalte art unterscheidet "Wertschrift",
+  "Konto" und "Kryptokonto" - ein hoher Kontobestand ist genauso ein Klumpen wie eine grosse
+  Aktienposition, und acht Portfolios bestehen ueberhaupt nur aus Konten. Je Zeile: Portfolio,
+  Bezeichnung, ISIN, Titelart, Waehrung, Betrag in Portfoliowaehrung, Anteil am Portfolio
+  (Bruch 0 bis 1), feine Anlageklasse und die groebere SAA-Kategorie, gegen die get_saa_gap
+  vergleicht. Bei Kryptokonten steht im Feld waehrung ein Ticker wie BTC, der Betrag ist
+  trotzdem echtes Geld in Portfoliowaehrung. Nutze es, wenn der Kunde nach einem bestimmten
+  Titel fragt oder du wissen willst, woraus das Vermoegen wirklich besteht.
+annotations:
+  readOnlyHint: true
+parameters:
+  - name: client_ref
+    type: string
+    description: Kundenkennung, zum Beispiel CASE-001.
+  - name: limit
+    type: integer
+    description: Wie viele Positionen hoechstens. Vorgabe 10.
+    default: 10
+statement: |
+  WITH q AS (SELECT ? AS ref),
+  alle AS (
+    SELECT pos.portfolio_id, 'Wertschrift' AS art, pos.security_name AS bezeichnung, pos.isin,
+           pos.security_type, pos.currency, pos.amount, pos.weight,
+           pos.asset_class, pos.saa_asset_class
+    FROM q JOIN positions pos ON pos.client_ref = q.ref
+    UNION ALL
+    SELECT a.portfolio_id,
+           CASE WHEN a.is_crypto = 1 THEN 'Kryptokonto' ELSE 'Konto' END,
+           a.account_name, NULL, NULL,
+           a.currency, a.amount, a.weight, 'Liquidität', 'Liquidity'
+    FROM q JOIN accounts a ON a.client_ref = q.ref
+  )
+  SELECT pf.portfolio_nr,
+         alle.art,
+         alle.bezeichnung          AS titel,
+         alle.isin,
+         alle.security_type        AS titelart,
+         alle.currency             AS waehrung,
+         ROUND(alle.amount, 2)     AS betrag,
+         ROUND(alle.weight, 4)     AS anteil,
+         alle.asset_class          AS anlageklasse,
+         alle.saa_asset_class      AS saa_kategorie
+  FROM alle
+  LEFT JOIN portfolios pf ON pf.portfolio_id = alle.portfolio_id
+  ORDER BY alle.amount DESC
+  LIMIT ?
+
+---
+# --------------------------------------------------------------------- Soll gegen Ist
+
+kind: tool
+name: get_saa_gap
+type: sqlite-sql
+source: unrisk-db
+description: |
+  Soll-Ist-Vergleich der Anlageklassen je Portfolio - das wichtigste Werkzeug fuer die Frage,
+  ob ein Portfolio sein Mandat verlaesst. Je Portfolio und Kategorie (Shares, Bonds, Liquidity,
+  Real estate, Specialties andCommodities) stehen nebeneinander: ist_betrag und ist_anteil,
+  dann min_anteil, ziel_anteil und max_anteil aus der Zielallokation des Portfolios, dazu
+  abweichung (ist_anteil minus ziel_anteil) und abweichung_betrag (derselbe Unterschied in
+  Waehrung, also der Betrag, den eine Umschichtung bewegen muesste). Alle Anteile sind Brueche
+  von 0 bis 1. Die Spalte status sagt kurz "im Band", "unter Minimum", "ueber Maximum" oder
+  "keine Vorgabe"; sortiert ist nach Portfolio und darin Verletzungen zuerst, die groesste
+  Abweichung oben. Kontobestaende zaehlen als Liquidity, sonst summiert sich die Ist-Allokation
+  nicht auf 100 Prozent. Nenne dem Berater zuerst die Zeilen, die nicht "im Band" stehen.
+  Steht "keine Vorgabe", hat dieses Portfolio ueberhaupt kein Zielband - das betrifft
+  Execution-only-, Vorsorge- und Standarddepots und die konsolidierte Sicht. Dann ist die
+  Ist-Allokation weiterhin aussagekraeftig, eine Abweichung gibt es aber nicht; sprich in dem
+  Fall nicht von Zielverfehlung, sondern hoechstens von einem Klumpen.
+annotations:
+  readOnlyHint: true
+parameters:
+  - name: client_ref
+    type: string
+    description: Kundenkennung, zum Beispiel CASE-001.
+statement: |
+  WITH pf AS (
+    SELECT p.portfolio_id, p.saa_id, p.portfolio_nr, p.name AS pf_name, p.currency
+    FROM portfolios p
+    WHERE p.client_ref = ?
+  ),
+  ist_roh AS (
+    SELECT pf.portfolio_id AS pid,
+           COALESCE(NULLIF(TRIM(pos.saa_asset_class), ''), 'Nicht klassifiziert') AS kat,
+           SUM(COALESCE(pos.amount, 0)) AS betrag
+    FROM pf JOIN positions pos ON pos.portfolio_id = pf.portfolio_id
+    GROUP BY 1, 2
+    UNION ALL
+    SELECT pf.portfolio_id, 'Liquidity', SUM(COALESCE(a.amount, 0))
+    FROM pf JOIN accounts a ON a.portfolio_id = pf.portfolio_id
+    GROUP BY 1
+  ),
+  ist   AS (SELECT pid, kat, SUM(betrag) AS betrag FROM ist_roh GROUP BY 1, 2),
+  basis AS (SELECT pid, SUM(betrag) AS gesamt FROM ist GROUP BY 1),
+  -- Baender gibt es nur fuer dimension = 'AssetClass'; bei CurrencyGroup, CountryGroup und
+  -- Industry sind min_pct und max_pct durchgaengig leer.
+  --
+  -- Und: vier Strategien ohne Anlageprofil ("Keine Strategie", "Execution only", "Standard
+  -- Portfolio", "Vorsorgeprodukte") fuehren ueber alle fuenf Kategorien 0 / 0 / 1. Das ist das
+  -- Fehlen einer Vorgabe, nicht "Ziel 0 Prozent". Wer es als Band liest, meldet jede gehaltene
+  -- Anlageklasse als riesige Abweichung vom Ziel null - lauter Falschalarme im Gespraech.
+  -- Solche Zeilen kommen deshalb ohne Band durch und landen unten als "keine Vorgabe".
+  -- target_pct = 0 allein ist sehr wohl eine Vorgabe, etwa 0 / 0 / 0.2 bei Rohstoffen.
+  ziel AS (
+    SELECT pf.portfolio_id AS pid, t.category AS kat,
+           MAX(CASE WHEN t.min_pct = 0 AND t.target_pct = 0 AND t.max_pct = 1
+                    THEN NULL ELSE t.min_pct    END) AS min_pct,
+           MAX(CASE WHEN t.min_pct = 0 AND t.target_pct = 0 AND t.max_pct = 1
+                    THEN NULL ELSE t.target_pct END) AS ziel_pct,
+           MAX(CASE WHEN t.min_pct = 0 AND t.target_pct = 0 AND t.max_pct = 1
+                    THEN NULL ELSE t.max_pct    END) AS max_pct
+    FROM pf JOIN saa_targets t ON t.saa_id = pf.saa_id AND t.dimension = 'AssetClass'
+    GROUP BY 1, 2
+  ),
+  kat AS (
+    SELECT pid, kat FROM ist
+    UNION
+    SELECT pid, kat FROM ziel
+  ),
+  zeile AS (
+    SELECT pf.portfolio_nr, pf.pf_name, pf.currency, k.kat,
+           COALESCE(i.betrag, 0) AS ist_betrag,
+           COALESCE(i.betrag, 0) / NULLIF(b.gesamt, 0) AS ist_anteil,
+           b.gesamt, z.min_pct, z.ziel_pct, z.max_pct
+    FROM kat k
+    JOIN pf ON pf.portfolio_id = k.pid
+    LEFT JOIN ist   i ON i.pid = k.pid AND i.kat = k.kat
+    LEFT JOIN ziel  z ON z.pid = k.pid AND z.kat = k.kat
+    LEFT JOIN basis b ON b.pid = k.pid
+  )
+  -- Strategie und SAA-Name stehen bewusst nicht in jeder Zeile: sie sind je Portfolio gleich,
+  -- wuerden die Antwort bei drei Portfolios um die Haelfte aufblaehen und stehen ohnehin in
+  -- get_portfolio_summary, verbunden ueber portfolio_nr.
+  SELECT portfolio_nr,
+         pf_name                 AS portfolio,
+         currency                AS waehrung,
+         kat                     AS kategorie,
+         ROUND(ist_betrag, 2)    AS ist_betrag,
+         ROUND(ist_anteil, 4)    AS ist_anteil,
+         min_pct                 AS min_anteil,
+         ziel_pct                AS ziel_anteil,
+         max_pct                 AS max_anteil,
+         ROUND(ist_anteil - ziel_pct, 4)           AS abweichung,
+         ROUND(ist_betrag - ziel_pct * gesamt, 2)  AS abweichung_betrag,
+         CASE
+           WHEN ziel_pct IS NULL OR min_pct IS NULL OR max_pct IS NULL THEN 'keine Vorgabe'
+           WHEN ist_anteil < min_pct  THEN 'unter Minimum'
+           WHEN ist_anteil > max_pct  THEN 'ueber Maximum'
+           ELSE 'im Band'
+         END                     AS status
+  FROM zeile
+  ORDER BY portfolio_nr,
+           CASE WHEN ziel_pct IS NOT NULL
+                 AND (ist_anteil < min_pct OR ist_anteil > max_pct) THEN 0 ELSE 1 END,
+           ABS(COALESCE(ist_anteil - ziel_pct, 0)) DESC
+
+---
+# --------------------------------------------------------------------- Pendenzen
+
+kind: tool
+name: get_open_proposals
+type: sqlite-sql
+source: unrisk-db
+description: |
+  Die noch nicht erledigten Anlagevorschlaege eines Kunden, der neueste zuerst. Offen heisst
+  hier: nicht abgelehnt. In den Daten kommen genau drei Status vor - "Entwurf" (noch nicht
+  fertig), "Final" (fertig, Auftraege duerfen uebermittelt werden) und "Abgelehnt" (archiviert,
+  wird hier weggelassen). Je Vorschlag: Nummer, Portfolio, Status, Beratungsart, Datum von
+  Vorschlag und Auftragsuebermittlung, Anlass, Notiz, Anzahl vorgeschlagener Positionen sowie
+  erwartete Rendite und Volatilitaet des Vorschlags. Hoechstens zehn Vorschlaege. Ein Vorschlag
+  mit Status Final ohne uebermittelt_am wartet auf die Zustimmung des Kunden - genau der
+  Aufhaenger, den der Berater im Gespraech braucht; in den Daten sind das 65 der 125 finalen
+  Vorschlaege. Eine leere portfolio_nr heisst: der Vorschlag haengt an einem Portfolio, das
+  nicht mitgeliefert wurde.
+annotations:
+  readOnlyHint: true
+parameters:
+  - name: client_ref
+    type: string
+    description: Kundenkennung, zum Beispiel CASE-001.
+statement: |
+  -- Knapp gehalten: die Live-Schleife ruft mehrere Werkzeuge hintereinander, und ein Kunde
+  -- hat bis zu zehn offene Vorschlaege. raw_json des Vorschlags mit allen vorgeschlagenen
+  -- Positionen bliebe deshalb draussen, position_count sagt, wie umfangreich er ist.
+  SELECT pr.proposal_id,
+         -- Ein Vorschlag zeigt auf ein Portfolio, das nicht mehr geliefert wird: LEFT JOIN,
+         -- sonst verschwindet er stillschweigend.
+         pf.portfolio_nr,
+         pr.status,
+         pr.advisory_type     AS beratungsart,
+         pr.position_count    AS anzahl_positionen,
+         pr.proposed_at       AS vorgeschlagen_am,
+         pr.submitted_at      AS uebermittelt_am,
+         pr.reason            AS anlass,
+         pr.notes             AS notiz,
+         pr.expected_return   AS erwartete_rendite,
+         pr.volatility        AS volatilitaet
+  FROM proposals pr
+  LEFT JOIN portfolios pf ON pf.portfolio_id = pr.portfolio_id
+  WHERE pr.client_ref = ?
+    AND COALESCE(pr.status, '') <> 'Abgelehnt'
+  ORDER BY COALESCE(pr.proposed_at, '') DESC
+  LIMIT 10
+
+---
+kind: tool
+name: get_violations
+type: sqlite-sql
+source: unrisk-db
+description: |
+  Verstoesse gegen die Anlagerichtlinien, eine Zeile je Regel, die schwerwiegendsten zuerst:
+  erst Severity "Error", dann "Warning", innerhalb davon das juengste Ereignis oben. Dieselbe
+  Regel bricht oft in mehreren Portfolios gleichzeitig; solche Treffer sind hier
+  zusammengefasst. Je Zeile: Regelkuerzel, Beschreibung im Klartext, Schweregrad, wie oft die
+  Regel bricht, die betroffenen Portfolionummern als Liste, gegebenenfalls die ISIN der
+  ausloesenden Titel und das Datum der letzten Verletzung. Zwei Eigenheiten der Daten: bei
+  Warnungen ist zuletzt_verletzt immer leer, das ist kein Fehler, und steht unter portfolios
+  "unbekannt", haengt der Verstoss an einem Portfolio, das nicht mitgeliefert wurde. Ein leeres
+  Ergebnis heisst: keine offenen Verstoesse, das ist bei 21 der 47 Kunden so. Individuell
+  ausgesetzte Regeln sind hier bewusst nicht enthalten, sie sind kein Verstoss;
+  get_client_overview zaehlt sie unter anzahl_ausgesetzter_regeln.
+annotations:
+  readOnlyHint: true
+parameters:
+  - name: client_ref
+    type: string
+    description: Kundenkennung, zum Beispiel CASE-001.
+statement: |
+  -- Eine Zeile je Regel statt je Portfolio: CASE-038 hat 18 Verstoesse, aber nur sieben
+  -- verschiedene Regeln. raw_json bleibt bewusst draussen - die Auswertungsspur darin waere
+  -- ein Vielfaches der ganzen uebrigen Antwort und wird in der Live-Schleife bei jeder
+  -- Kundenaussage neu bezahlt. Wer sie braucht, nimmt dev_violation_details.
+  SELECT v.rule_code                            AS regel,
+         MAX(NULLIF(v.rule_description, ''))    AS beschreibung,
+         CASE MIN(CASE v.severity WHEN 'Error' THEN 0 WHEN 'Warning' THEN 1 ELSE 2 END)
+           WHEN 0 THEN 'Error' WHEN 1 THEN 'Warning' ELSE NULL END AS schweregrad,
+         COUNT(*)                               AS anzahl,
+         -- 27 der 183 Verstoesse haengen an einem Portfolio, das die Lieferung nicht enthaelt.
+         -- Ohne COALESCE kaeme dort ein blankes null an und das Modell haette nichts zu sagen.
+         GROUP_CONCAT(DISTINCT COALESCE(pf.portfolio_nr, 'unbekannt')) AS portfolios,
+         GROUP_CONCAT(DISTINCT v.security_isin) AS isins,
+         -- Tag genuegt: die Uhrzeit ist der Zeitpunkt des Regellaufs und in allen Zeilen
+         -- dieselbe. Vorgelesen wird ohnehin nur das Datum.
+         SUBSTR(MAX(v.last_violated_at), 1, 10) AS zuletzt_verletzt
+  FROM violations v
+  LEFT JOIN portfolios pf ON pf.portfolio_id = v.portfolio_id
+  -- is_override = 1 sind Regeln, die fuer diesen Kunden ausgesetzt wurden. Sie erklaeren,
+  -- warum ein Verstoss fehlt, sind aber selbst keiner - hier also raus.
+  WHERE v.client_ref = ? AND v.is_override = 0
+  GROUP BY v.rule_code
+  ORDER BY MIN(CASE v.severity WHEN 'Error' THEN 0 WHEN 'Warning' THEN 1 ELSE 2 END),
+           MAX(COALESCE(v.last_violated_at, '')) DESC
+
+---
+kind: tool
+name: get_recent_notes
+type: sqlite-sql
+source: unrisk-db
+description: |
+  Die juengsten Beraternotizen zu einem Kunden, die neueste zuerst, mit Datum. Freitext aus
+  frueheren Gespraechen, deutsch oder franzoesisch. Gut, um an das letzte Gespraech anzuknuepfen
+  oder ein Vorhaben aufzugreifen, das der Kunde damals erwaehnt hat. Vorgabe sind fuenf Notizen;
+  mehr nur anfordern, wenn die Vorgeschichte wirklich gebraucht wird.
+annotations:
+  readOnlyHint: true
+parameters:
+  - name: client_ref
+    type: string
+    description: Kundenkennung, zum Beispiel CASE-001.
+  - name: limit
+    type: integer
+    description: Wie viele Notizen hoechstens. Vorgabe 5.
+    default: 5
+statement: |
+  SELECT n.created_at AS erstellt_am,
+         n.text       AS notiz
+  FROM notes n
+  WHERE n.client_ref = ?
+  ORDER BY COALESCE(n.created_at, '') DESC
+  LIMIT ?
+
+---
+# --------------------------------------------------------------------- Entwicklung
+
+kind: tool
+name: dev_violation_details
+type: sqlite-sql
+source: unrisk-db
+description: |
+  Nur fuer die Entwicklung und die Nachschau: die Einzelfaelle zu einer Regel, samt der
+  Auswertungsspur aus dem Regelwerk. Im Feld details steht ViolationPath als verschachteltes
+  JSON, je Schritt mit LeftValue (gemessener Wert) und RightValue (Schwelle) - damit laesst
+  sich beziffern, wie weit eine Grenze verfehlt wird. Die Spur ist gross und gehoert deshalb
+  nicht in get_violations, das in der Live-Schleife bei jeder Kundenaussage laeuft.
+annotations:
+  readOnlyHint: true
+parameters:
+  - name: client_ref
+    type: string
+    description: Kundenkennung, zum Beispiel CASE-001.
+  - name: rule_code
+    type: string
+    description: Regelkuerzel aus der Spalte regel von get_violations.
+statement: |
+  SELECT v.rule_code         AS regel,
+         pf.portfolio_nr,
+         v.severity          AS schweregrad,
+         v.error_level,
+         v.security_isin     AS isin,
+         v.last_violated_at  AS zuletzt_verletzt,
+         v.raw_json          AS details
+  FROM violations v
+  LEFT JOIN portfolios pf ON pf.portfolio_id = v.portfolio_id
+  WHERE v.client_ref = ? AND v.rule_code = ? AND v.is_override = 0
+  ORDER BY COALESCE(v.last_violated_at, '') DESC
+
+---
+kind: tool
+name: dev_list_tables
+type: sqlite-sql
+source: unrisk-db
+description: |
+  Nur fuer die Entwicklung: zaehlt die Zeilen je Tabelle. Zeigt auf einen Blick, ob
+  scripts/load-data.ts durchgelaufen ist. Gehoert nicht ins Toolset call_copilot.
+annotations:
+  readOnlyHint: true
+statement: |
+  SELECT 'clients' AS tabelle, COUNT(*) AS zeilen FROM clients
+  UNION ALL SELECT 'phone_map',     COUNT(*) FROM phone_map
+  UNION ALL SELECT 'portfolios',    COUNT(*) FROM portfolios
+  UNION ALL SELECT 'positions',     COUNT(*) FROM positions
+  UNION ALL SELECT 'accounts',      COUNT(*) FROM accounts
+  UNION ALL SELECT 'proposals',     COUNT(*) FROM proposals
+  UNION ALL SELECT 'transactions',  COUNT(*) FROM transactions
+  UNION ALL SELECT 'violations',    COUNT(*) FROM violations
+  UNION ALL SELECT 'notes',         COUNT(*) FROM notes
+  UNION ALL SELECT 'securities',    COUNT(*) FROM securities
+  UNION ALL SELECT 'saa_targets',   COUNT(*) FROM saa_targets
+  UNION ALL SELECT 'risk_profiles', COUNT(*) FROM risk_profiles
+
+---
+# --------------------------------------------------------------------- Toolsets
+
+# Was die Anwendung laedt: erreichbar unter /mcp/call_copilot, ausschliesslich lesend.
+kind: toolset
+name: call_copilot
+tools:
+  - find_client_by_phone
+  - search_clients_by_name
+  - get_client_overview
+  - get_portfolio_summary
+  - get_positions_top
+  - get_saa_gap
+  - get_open_proposals
+  - get_violations
+  - get_recent_notes
+
+---
+# Getrennt davon, damit Werkzeuge ausserhalb des Gespraechs nie im Kontext des Modells landen.
+# Ein sqlite-execute-sql mit freiem SQL steht bewusst nicht darin: die SQLite-Quelle kennt keinen
+# readOnly-Schalter, ein solches Werkzeug waere also ein Schreibrecht auf die Kundendatenbank,
+# und ueber /api/tool/{name}/invoke auch ohne Toolset erreichbar.
+kind: toolset
+name: dev
+tools:
+  - dev_list_tables
+  - dev_violation_details

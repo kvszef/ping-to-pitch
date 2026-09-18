@@ -2,12 +2,17 @@ import { createServer } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { page } from './page.ts'
 import { push, reset, status, subscribe } from './live.ts'
+import { subscribe as copilotSubscribe, unsubscribe as copilotUnsubscribe } from './copilot/bus.ts'
+import { ask, callEnded, callStarted, pruefeDienste, transcript } from './copilot/session.ts'
+import { copilotPage } from './ui/copilot.ts'
 
-// Vier Routen, keine Abhängigkeiten:
-//   POST /vapi  Vapis Server-Webhook mit den Transkript-Ereignissen
-//   POST /llm   der Assistent fragt nach einer Antwort und bekommt eine leere – so schweigt er
-//   GET  /events  Server-Sent Events mit dem laufenden Transkript
-//   GET  /        Prüfstand-Seite
+// Die Routen:
+//   POST /vapi       Vapis Server-Webhook mit den Transkript-Ereignissen
+//   POST /llm        der Assistent fragt nach einer Antwort und bekommt eine leere – so schweigt er
+//   POST /api/ask    Rückfrage des Beraters; die Antwort kommt über /events zurück
+//   GET  /events     Server-Sent Events: rohes Transkript und Copilot-Ereignisse in einem Strom
+//   GET  /           die Seite des Beraters
+//   GET  /pruefstand die schlichte Seite für die Telefonie allein
 
 const PORT = Number(process.env.PORT || 3100)
 
@@ -35,19 +40,24 @@ type VapiMessage = {
 function handleVapi(message: VapiMessage) {
   if (message.type === 'transcript') {
     const speaker = message.role === 'assistant' ? 'assistant' : 'user'
-    push(speaker, message.transcript ?? '', message.transcriptType === 'final')
-    if (message.transcriptType === 'final') console.log(`  ${speaker === 'assistant' ? 'Assistent' : 'Anrufer '} │ ${message.transcript}`)
+    const text = message.transcript ?? ''
+    const final = message.transcriptType === 'final'
+    // Zwei Empfänger: live.ts bedient die schlichte Prüfstand-Seite mit der rohen Zeile,
+    // der Copilot ordnet sie erst einer Rolle zu und reagiert dann darauf.
+    push(speaker, text, final)
+    transcript(text, final)
+    if (final) console.log(`  Gehört │ ${text}`)
     return
   }
   if (message.type === 'status-update') {
     if (message.status === 'in-progress') {
-      const from = message.call?.customer?.number
-      console.log(`\n☎ Anruf angenommen${from ? ` von ${from}` : ''}`)
       reset('Anruf läuft')
+      callStarted(message.call?.customer?.number ?? '')
     }
     if (message.status === 'ended') {
-      console.log(`✓ Anruf beendet${message.endedReason ? ` (${message.endedReason})` : ''}\n`)
+      console.log(`✓ Anruf beendet${message.endedReason ? ` (${message.endedReason})` : ''}`)
       status('Anruf beendet')
+      callEnded(message.endedReason)
     }
   }
 }
@@ -77,12 +87,33 @@ function handleLlm(res: ServerResponse, stream: boolean) {
 const server = createServer(async (req, res) => {
   const url = (req.url ?? '/').split('?')[0]
   try {
-    if (req.method === 'GET' && url === '/') {
+    if (req.method === 'GET' && (url === '/' || url === '/copilot')) {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+      return res.end(copilotPage)
+    }
+    if (req.method === 'GET' && url === '/pruefstand') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
       return res.end(page)
     }
-    if (req.method === 'GET' && url === '/events') return subscribe(res)
+    // Ein Strom für beide Seiten: live.ts schreibt die Kopfzeilen und die rohen Zeilen,
+    // der Copilot legt seine Ereignisse unter eigenen Namen daneben. Wer einen Namen nicht
+    // kennt, überliest ihn.
+    if (req.method === 'GET' && url === '/events') {
+      subscribe(res)
+      copilotSubscribe(res)
+      res.on('close', () => copilotUnsubscribe(res))
+      return
+    }
     if (req.method === 'GET' && url === '/health') return json(res, 200, { ok: true })
+
+    if (req.method === 'POST' && url === '/api/ask') {
+      const payload = JSON.parse((await body(req)) || '{}') as { question?: string }
+      const frage = (payload.question ?? '').trim()
+      if (!frage) return json(res, 400, { error: 'Feld question fehlt' })
+      // Die Antwort kommt über /events zurück, nicht hier: der Berater soll nicht warten.
+      void ask(frage)
+      return json(res, 202, { angenommen: true })
+    }
 
     if (req.method === 'POST' && url === '/vapi') {
       const payload = JSON.parse((await body(req)) || '{}') as { message?: VapiMessage }
@@ -105,8 +136,10 @@ const server = createServer(async (req, res) => {
 })
 
 server.listen(PORT, () => {
-  console.log(`Prüfstand:  http://localhost:${PORT}`)
+  console.log(`Berater:    http://localhost:${PORT}          (Vorführmodus: /?demo=1)`)
+  console.log(`Prüfstand:  http://localhost:${PORT}/pruefstand`)
   console.log(`Webhook:    POST /vapi`)
+  void pruefeDienste()
   console.log(process.env.PUBLIC_URL
     ? `Öffentlich: ${process.env.PUBLIC_URL}`
     : 'Öffentlich: noch keine PUBLIC_URL – Tunnel starten, dann `npm run setup`')
