@@ -6,29 +6,26 @@ import { page } from './page.ts'
 import { push, reset, status, subscribe } from './live.ts'
 import { mulawZuPcm16 } from './bridge/mulaw.ts'
 import { oeffneScribe, type Scribe } from './bridge/scribe.ts'
-import { antwortXml, starteStrom } from './bridge/plivo.ts'
+import { antwortXml } from './bridge/cxml.ts'
 
 // Die Brücke sitzt zwischen Kunde und Berater:
 //
-//   Kunde ──PSTN──▶ Plivo-Nummer ──▶ POST /answer ──▶ <Dial> auf das Handy des Beraters
-//                        │                              (beide sprechen miteinander)
-//                        └── Stream-API ──▶ wss://…/media ──▶ ElevenLabs ──▶ /events
+//   Kunde ──PSTN──▶ Nummer ──▶ POST /answer ──▶ <Dial> auf das Handy des Beraters
+//                      │                          (beide sprechen miteinander)
+//                      └── <Start><Stream> ──▶ wss://…/media ──▶ ElevenLabs ──▶ /events
 //
 // Die Spur trennt die Sprecher: inbound ist der Anrufer, outbound das, was er hört.
+// Funktioniert bei SignalWire wie bei Twilio – beide sprechen dasselbe cXML/TwiML.
 // Ausgelegt auf ein Gespräch zur Zeit – für die Demo genug.
 
 const PORT = Number(process.env.BRIDGE_PORT || 3200)
 const PUBLIC_URL = (process.env.BRIDGE_PUBLIC_URL ?? '').trim().replace(/\/+$/, '')
-const PLIVO_AUTH_ID = (process.env.PLIVO_AUTH_ID ?? '').trim()
-const PLIVO_AUTH_TOKEN = (process.env.PLIVO_AUTH_TOKEN ?? '').trim()
 const BERATER_NUMMER = (process.env.ADVISOR_NUMBER ?? '').trim()
 const ELEVENLABS_KEY = (process.env.ELEVENLABS_API_KEY ?? '').trim()
 const SPRACHE = (process.env.LANGUAGE ?? 'de').trim()
 
 const fehlend = [
   !PUBLIC_URL && 'BRIDGE_PUBLIC_URL',
-  !PLIVO_AUTH_ID && 'PLIVO_AUTH_ID',
-  !PLIVO_AUTH_TOKEN && 'PLIVO_AUTH_TOKEN',
   !BERATER_NUMMER && 'ADVISOR_NUMBER',
   !ELEVENLABS_KEY && 'ELEVENLABS_API_KEY',
 ].filter(Boolean)
@@ -121,24 +118,15 @@ const server = createServer(async (req, res) => {
 
     if (req.method === 'POST' && url === '/answer') {
       const f = felder(await koerper(req), req.headers['content-type'] ?? '')
-      const callUuid = f.CallUUID ?? f.call_uuid ?? ''
       const von = f.From ?? '', an = f.To ?? ''
       console.log(`\n☎ Anruf von ${von} auf ${an} – verbinde mit ${BERATER_NUMMER}`)
       reset(`Anruf von ${von}`)
-
-      // Erst antworten, damit Plivo sofort wählt; der Strom wird danach angehängt.
       res.writeHead(200, { 'Content-Type': 'text/xml; charset=utf-8' })
-      res.end(antwortXml({ beraterNummer: BERATER_NUMMER, anruferId: an || von }))
-
-      if (!callUuid) return console.error('Kein CallUUID im Webhook – Strom kann nicht angehängt werden.')
-      const r = await starteStrom({
-        authId: PLIVO_AUTH_ID,
-        authToken: PLIVO_AUTH_TOKEN,
-        callUuid,
-        serviceUrl: `${PUBLIC_URL.replace(/^https:/, 'wss:')}/media`,
-      })
-      if (r.ok) console.log('♪ Audiostrom angefordert')
-      else { console.error(`Strom konnte nicht angehängt werden: ${r.fehler}`); status(`Strom fehlgeschlagen: ${r.fehler}`) }
+      res.end(antwortXml({
+        beraterNummer: BERATER_NUMMER,
+        anruferId: an || von,
+        stromUrl: `${PUBLIC_URL.replace(/^https:/, 'wss:')}/media`,
+      }))
       return
     }
 
