@@ -123,7 +123,7 @@ export default function App() {
           {main.map((card, i) => <div key={cardKey(main, i)} className="anim-rise"><CardView card={card} /></div>)}
           {loading('instant') && <><CardSkeleton lines={4} label="Kundendaten werden geladen" /><CardSkeleton lines={3} /></>}
           {loading('slow') && <CardSkeleton lines={4} label="Marktumfeld wird abgeglichen" />}
-          {briefing.pending.length === 0 && !briefing.cards.some((c) => c.type === 'headline' || c.type === 'talktrack') && (
+          {briefing.pending.length === 0 && !briefing.cards.some((c) => c.type === 'headline') && (
             <p className="px-1 text-[11px] leading-snug text-muted">Für diesen Kunden liegen nur die Angaben aus der Kundendatei vor. Einschätzung, Gesprächsvorschläge und Marktumfeld folgen, sobald die Analyse angebunden ist – es wird nichts vermutet.</p>
           )}
         </main>
