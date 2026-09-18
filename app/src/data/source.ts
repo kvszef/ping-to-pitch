@@ -31,13 +31,15 @@ export type UploadResult = { ok: true; count: number; message: string; refs: str
 const tierOf: Record<Card['type'], Tier> = {
   metrics: 'instant', flags: 'instant', allocation: 'instant', context: 'instant', drivers: 'instant',
   headline: 'fast', actions: 'fast', questions: 'fast', proposal: 'fast',
+  contradiction: 'fast', lookthrough: 'fast', stalenote: 'fast', todos: 'fast', callnote: 'fast',
   split: 'slow', // compares the portfolio with market news and the CIO view
+  profile: 'slow', peers: 'slow', // need the whole history or the whole client base
 }
 const localDelay: Record<Tier, number> = { instant: 0, fast: 600, slow: 1500 }
 const timeout: Record<Tier, number> = { instant: 4000, fast: 20000, slow: 60000 }
 
 // Reading order on the page, independent of the order in which tiers arrive.
-const cardOrder: Card['type'][] = ['headline', 'metrics', 'split', 'allocation', 'drivers', 'proposal', 'context', 'flags', 'actions', 'questions']
+const cardOrder: Card['type'][] = ['headline', 'metrics', 'split', 'allocation', 'drivers', 'contradiction', 'proposal', 'lookthrough', 'stalenote', 'context', 'profile', 'peers', 'flags', 'actions', 'todos', 'questions', 'callnote']
 export function sortCards(cards: Card[]): Card[] {
   const rank = (c: Card) => { const i = cardOrder.indexOf(c.type); return i < 0 ? cardOrder.length : i }
   return cards.map((card, i) => ({ card, i })).sort((a, b) => rank(a.card) - rank(b.card) || a.i - b.i).map((x) => x.card)
