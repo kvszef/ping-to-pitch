@@ -4,10 +4,10 @@ import type { Kind, Severity } from '../types'
 
 export function Panel({ title, icon: Icon, aside, children, className = '' }: { title?: string; icon?: LucideIcon; aside?: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <section className={`bg-white p-5 shadow-card [.compact_&]:p-3.5 ${className}`}>
+    <section className={`rounded-2xl bg-white p-6 shadow-card [.compact_&]:rounded-xl [.compact_&]:p-4 ${className}`}>
       {title && (
-        <h3 className="mb-3 flex items-center gap-1.5 text-[15px] [.compact_&]:mb-2 [.compact_&]:text-[13px]">
-          {Icon && <Icon size={16} strokeWidth={1.5} />} {title}
+        <h3 className="mb-4 flex items-center gap-2 text-[16px] [.compact_&]:mb-2.5 [.compact_&]:text-[13px]">
+          {Icon && <Icon size={18} strokeWidth={1.5} />} {title}
           {aside && <span className="ml-auto">{aside}</span>}
         </h3>
       )}

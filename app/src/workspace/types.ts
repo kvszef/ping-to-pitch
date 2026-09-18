@@ -6,8 +6,6 @@ export type Provider = 'openai' | 'apertus'
 
 export type Settings = {
   provider: Provider
-  focus: number // 0 = ganz Gesprächsassistent, 100 = ganz Berater-Chat
-  dragSplit: boolean // Trennlinie zwischen den Modulen von Hand ziehbar
   record: boolean
   detail: Detail
   autoModules: boolean

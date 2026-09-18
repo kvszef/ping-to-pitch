@@ -118,7 +118,7 @@ export default function App() {
       </InfoBand>
 
       <div className="flex min-h-0 flex-1 gap-2.5 p-2">
-        <main className="min-w-0 flex-1 space-y-2.5 overflow-y-auto pb-2 pr-0.5">
+        <main className="min-w-0 flex-1 space-y-4 overflow-y-auto pb-2 pr-0.5">
           {loading('fast') && <CardSkeleton lines={2} label="Einschätzung wird erstellt" />}
           {main.map((card, i) => <div key={cardKey(main, i)} className="anim-rise"><CardView card={card} /></div>)}
           {loading('instant') && <><CardSkeleton lines={4} label="Kundendaten werden geladen" /><CardSkeleton lines={3} /></>}
@@ -127,7 +127,7 @@ export default function App() {
             <p className="px-1 text-[11px] leading-snug text-muted">Für diesen Kunden liegen nur die Angaben aus der Kundendatei vor. Einschätzung, Gesprächsvorschläge und Marktumfeld folgen, sobald die Analyse angebunden ist – es wird nichts vermutet.</p>
           )}
         </main>
-        <aside className="flex w-[300px] shrink-0 flex-col gap-2.5">
+        <aside className="flex w-[300px] shrink-0 flex-col gap-4">
           {loading('instant') && !side.length && <MetricsSkeleton />}
           {side.map((card, i) => <CardView key={`${client.ref}-s${i}`} card={card} />)}
         </aside>

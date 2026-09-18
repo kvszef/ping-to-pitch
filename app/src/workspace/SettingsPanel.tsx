@@ -56,13 +56,6 @@ export function SettingsPanel({ open, settings, status, update, onClose }: { ope
             <div className={`mt-1 text-[11px] ${status[settings.provider] ? 'text-ok' : 'text-risk'}`}>{status[settings.provider] ? 'Eingerichtet und aktiv.' : 'Nicht eingerichtet – Beispielmodus aktiv.'}</div>
           </Row>
 
-          <Row title="Schwerpunkt" hint="Welches Modul erhält standardmässig mehr Platz.">
-            <input type="range" min={0} max={100} step={5} value={settings.focus} onChange={(e) => update({ focus: +e.target.value })} className="w-full accent-brand" />
-            <div className="mt-1 flex justify-between text-[11px] text-muted"><span>Gesprächsassistent</span><span>ausgeglichen</span><span>Berater-Chat</span></div>
-            <div className="mt-3"><Toggle on={settings.dragSplit} onChange={(dragSplit) => update({ dragSplit })} label="Trennlinie von Hand ziehen" /></div>
-            {settings.dragSplit && <div className="mt-1 text-[11px] leading-snug text-muted">Ziehen Sie die Linie zwischen den Modulen. Doppelklick setzt sie in die Mitte.</div>}
-          </Row>
-
           <Row title="Gespräch aufzeichnen" hint="Eingeschaltet: Das Gespräch wird transkribiert, der Gesprächsassistent reagiert auf das Gesagte. Ausgeschaltet: Es wird nichts aufgezeichnet, der Gesprächsassistent stützt sich nur auf Berater-Chat und Kundendaten.">
             <Toggle on={settings.record} onChange={(record) => update({ record })} label={settings.record ? 'Aufzeichnung und Transkription ein' : 'Keine Aufzeichnung'} />
           </Row>
