@@ -75,7 +75,7 @@ export default function App() {
           { label: '', icon: Menu },
         ]} />
         {page === 'kunden'
-          ? <Dashboard clients={clients} onOpen={open} onUploaded={refresh} />
+          ? <Dashboard clients={clients} onUploaded={refresh} />
           : <Workspace key={session.n} clients={clients} signals={signals} initialRef={session.ref} initialCall={session.call} onSimulateCall={() => setCall(sampleCall)} onOpenBriefing={open} />}
         {banner}
       </div>

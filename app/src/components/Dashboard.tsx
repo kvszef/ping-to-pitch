@@ -9,7 +9,7 @@ const columns = ['KundenNr.', 'Name', 'Kundenprofil', 'Anlass', 'Geburtstag', 'L
 
 const PAGE_SIZE = 10
 
-export function Dashboard({ clients, onOpen, onUploaded }: { clients: Client[]; onOpen: (ref: string) => void; onUploaded: () => void }) {
+export function Dashboard({ clients, onUploaded }: { clients: Client[]; onUploaded: () => void }) {
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(0)
   const q = query.trim().toLowerCase()
@@ -60,7 +60,7 @@ export function Dashboard({ clients, onOpen, onUploaded }: { clients: Client[]; 
             </thead>
             <tbody>
               {rows.map((c, i) => (
-                <tr key={c.ref} onClick={() => onOpen(c.ref)} className={`cursor-pointer hover:bg-brand-soft/30 ${i % 2 ? 'bg-stripe' : ''}`}>
+                <tr key={c.ref} className={i % 2 ? 'bg-stripe' : ''}>
                   <td className="py-2.5 pl-3">{c.errors > 0 && <SeverityIcon severity="risk" size={12} />}</td>
                   <td>{c.warnings > 0 && <SeverityIcon severity="warn" size={12} />}</td>
                   <td>{c.ref}</td>
