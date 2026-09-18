@@ -1,4 +1,5 @@
-import { ArrowRight, Check, FileText, TrendingUp, UserRound, X } from 'lucide-react'
+import { ArrowRight, Check, ChevronDown, FileText, TrendingUp, UserRound, X } from 'lucide-react'
+import { useState } from 'react'
 import type { CardOf } from '../types'
 import { Panel } from './ui'
 
@@ -51,15 +52,24 @@ export function Context({ card }: { card: CardOf<'context'> }) {
 const sideStyle = { Kauf: 'bg-brand text-white', Verkauf: 'bg-ink text-white', Absicherung: 'bg-teal/60 text-ink' }
 
 export function Proposal({ card }: { card: CardOf<'proposal'> }) {
+  // Im schmalen Berater-Chat-Layout ist die Zusammenfassung eingeklappt; ein Klick zeigt sie und bleibt an, bis erneut geklickt wird.
+  const [expanded, setExpanded] = useState(false)
   return (
-    <Panel title={card.title} icon={FileText} aside={<span title={[card.summary, card.open].filter(Boolean).join(' ')} className="rounded-sm bg-pill px-1.5 py-px text-[10px]">{card.status}</span>}>
-      <p className="mb-2 text-xs leading-snug [.compact_&]:hidden">{card.summary}</p>
+    <Panel title={card.title} icon={FileText} aside={
+      <span className="flex items-center gap-1.5">
+        <span title={[card.summary, card.open].filter(Boolean).join(' ')} className="rounded-sm bg-pill px-1.5 py-px text-[10px]">{card.status}</span>
+        <button onClick={() => setExpanded((e) => !e)} title={expanded ? 'Weniger anzeigen' : 'Mehr anzeigen'} className="hidden items-center rounded-sm p-0.5 text-muted hover:bg-pill hover:text-ink [.compact_&]:flex">
+          <ChevronDown size={13} className={`transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />
+        </button>
+      </span>
+    }>
+      <p className={`mb-2 text-xs leading-snug ${expanded ? '' : '[.compact_&]:hidden'}`}>{card.summary}</p>
       <ul className="text-xs">
         {card.trades.map((t, i) => (
           <li key={t.name} className={`flex items-start gap-2 px-2 py-1.5 ${i % 2 ? '' : 'bg-stripe'}`}>
             <span className={`mt-px w-[74px] shrink-0 rounded-sm py-px text-center text-[10px] ${sideStyle[t.side]}`}>{t.side}</span>
-            <span title={t.name} className="min-w-0 flex-1 leading-snug [.compact_&]:line-clamp-2">{t.name}</span>
-            <span className="shrink-0 whitespace-nowrap text-right tabular-nums leading-snug">{t.amount}<span className="block text-[11px] text-muted [.compact_&]:hidden">{t.share}</span></span>
+            <span title={t.name} className={`min-w-0 flex-1 leading-snug ${expanded ? '' : '[.compact_&]:line-clamp-2'}`}>{t.name}</span>
+            <span className="shrink-0 whitespace-nowrap text-right tabular-nums leading-snug">{t.amount}<span className={`block text-[11px] text-muted ${expanded ? '' : '[.compact_&]:hidden'}`}>{t.share}</span></span>
           </li>
         ))}
       </ul>
@@ -73,7 +83,7 @@ export function Proposal({ card }: { card: CardOf<'proposal'> }) {
           </li>
         ))}
       </ul>
-      {card.open && <p className="mt-3 border-t border-line pt-2 text-[11px] leading-snug text-muted [.compact_&]:hidden">{card.open}</p>}
+      {card.open && <p className={`mt-3 border-t border-line pt-2 text-[11px] leading-snug text-muted ${expanded ? '' : '[.compact_&]:hidden'}`}>{card.open}</p>}
     </Panel>
   )
 }

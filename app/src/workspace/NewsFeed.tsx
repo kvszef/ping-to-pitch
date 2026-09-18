@@ -14,6 +14,7 @@ const MAX_ALL = 7
 export function NewsFeed({ feed, clientRef }: { feed: NewsItem[]; clientRef: string }) {
   const [hidden, setHidden] = useState(Math.min(START_HIDDEN, feed.length))
   const [all, setAll] = useState(false)
+  const [expanded, setExpanded] = useState<string | null>(null)
 
   useEffect(() => {
     if (hidden <= 0) return
@@ -40,12 +41,20 @@ export function NewsFeed({ feed, clientRef }: { feed: NewsItem[]; clientRef: str
         {shown.length === 0 && <li className="px-3.5 text-[11px] text-muted">Keine Meldung zu diesem Kunden.</li>}
         {shown.map((n, i) => {
           const hit = n.affects[clientRef]
+          const isOpen = expanded === n.id
           return (
-            <li key={n.id} title={hit ? `${n.title}\n${hit.position} · ${hit.meaning}\n${n.source}` : `${n.title}\n${n.source}`}
-              className={`${fresh.has(n.id) ? 'news-in' : ''} flex items-center gap-2 border-l-[3px] px-3 py-2 ${hit ? 'border-brand' : 'border-transparent opacity-55'} ${i % 2 ? '' : 'bg-stripe'}`}>
-              <span className="shrink-0 text-[11px] tabular-nums text-muted">{n.time}</span>
-              <span className="min-w-0 flex-1 truncate text-xs">{n.title}</span>
-              {hit && <span className="flex shrink-0 items-center gap-1 rounded-sm bg-pill px-1.5 py-px text-[10px]"><SeverityIcon severity={hit.severity} size={10} /> {hit.tag}</span>}
+            <li key={n.id} className={`${fresh.has(n.id) ? 'news-in' : ''} border-l-[3px] ${hit ? 'border-brand' : 'border-transparent opacity-55'} ${i % 2 ? '' : 'bg-stripe'}`}>
+              <button onClick={() => setExpanded(isOpen ? null : n.id)} className="flex w-full items-center gap-2 px-3 py-2 text-left">
+                <span className="shrink-0 text-[11px] tabular-nums text-muted">{n.time}</span>
+                <span className="min-w-0 flex-1 truncate text-xs">{n.title}</span>
+                {hit && <span className="flex shrink-0 items-center gap-1 rounded-sm bg-pill px-1.5 py-px text-[10px]"><SeverityIcon severity={hit.severity} size={10} /> {hit.tag}</span>}
+              </button>
+              {isOpen && (
+                <div className="anim-rise space-y-0.5 px-3 pb-2 pl-[52px] text-[11px] leading-snug text-muted">
+                  {hit && <div><span className="text-ink">{hit.position}</span> · {hit.meaning}</div>}
+                  <div>{n.source}</div>
+                </div>
+              )}
             </li>
           )
         })}
