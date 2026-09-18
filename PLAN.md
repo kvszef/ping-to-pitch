@@ -30,6 +30,34 @@ What the real data already proves (checked against `clients.json` / `reference.j
 
 Framing that matters with these judges (a suitability and compliance vendor): we do not "maximise revenue per client", we **never miss a suitable opportunity**. Same features (opportunity radar, ex-custody import to win outside assets, life events from notes), but every suggestion passes mandate, risk profile, ESG preference and the client's stated wishes first.
 
+Two lines for the pitch:
+
+- **The call note is not a gimmick, it is a legal duty.** Swiss law (FIDLEG) makes advisors document every piece of advice. We draft that document for them, they confirm with one tap.
+- **Client data can stay in Switzerland.** The LLM layer already runs on Apertus, the Swiss open model, as an alternative to OpenAI. Fits the Swiss AI Weeks and answers the bank's first question.
+
+### The 60-second briefing, taken literally
+
+The briefing is a talk track with a reading-time budget, not a report. Four blocks, about 150 words in total, with a visible reading-time bar:
+
+| Block | Content |
+|---|---|
+| **Open with** | The one sentence to start the call, in this client's tone |
+| **Must mention** | Violations, contradictions, the smallest fix with before and after |
+| **Ask** | Expired notes turned into questions, open promises from the last call |
+| **Don't bring up** | Ideas the client already rejected, topics the notes say to avoid |
+
+Every statement is clickable down to its source: the position, the rule, the note with its date. On an inbound call the top of the screen also guesses **why the client is calling** (biggest loser, new violation, news hit), ranked from the findings.
+
+### Client profile: tone and behaviour
+
+Wording adapts to the person. Built only from what the client said and did, never invented:
+
+- **Said**: contact preferences and style from the notes ("email only", "after 6pm", "detailed written summary", "very risk-averse since the last downturn").
+- **Did**: share of proposals accepted vs rejected and what kind, whether they traded during their worst months, how much cash they really hold vs what their risk profile would allow, actual portfolio risk vs the ceiling of their profile.
+- **Result**: a short persona line for the advisor ("decides alone, rejects 12 of 14 proposals: bring two options, not a recommendation") and a tone setting for every LLM-phrased sentence.
+
+Guardrails: it is always labelled an interpretation, always shows its evidence, describes behaviour and never diagnoses a person. It is for the advisor's eyes only.
+
 ## 3. Architecture
 
 ```
@@ -105,17 +133,18 @@ Each track owns its own files, so agents running in parallel do not collide. Own
 | **P0** | Foundation | Arash + Claude | `app/engine/{types,data,run}.ts`, fixtures, CI | Contracts, null-safe data index with fund look-through, check runner, fixtures, test harness |
 | **E1** | Portfolio facts | Arash | `engine/checks/portfolio-*` | Performance and drivers, allocation vs SAA bands (asset class, currency, region, sector) with look-through, concentration, violations decoded, pending and rejected proposals |
 | **E2** | Contradiction + fix | Arash | `engine/checks/contradiction-*`, `engine/fix/` | Wishes (notes, ESG, risk profile) vs holdings, smallest fix as a draft proposal, re-check that the fix breaks nothing else |
-| **E3** | Context | Arash | `engine/checks/context-*` | Stale notes as questions, communication profile, worst months, peers, "clients like this did X" |
-| **A1** | Briefing writer | Ahmet | `server/ai/briefing*` | Findings → headline, likely questions, 3–5 next actions. Works without an LLM too (fallback) |
-| **A2** | Live call copilot | Ahmet | `server/ai/call*`, `src/workspace/useCallAudio.ts` | Fast transcript, client to-dos, "show the data being talked about". Scripted call as fallback |
+| **E3** | Context | Arash | `engine/checks/context-*` | Stale notes as questions, this client's own worst months, peers ("just this portfolio or the whole market?"), "clients like this did X" (aggregated, never naming anyone) |
+| **E4** | Client profile | Arash | `engine/checks/profile-*` | Tone and behaviour from what the client said and did (section 2): persona line, tone setting, call-reason guess |
+| **A1** | Briefing writer | Ahmet | `server/ai/briefing*` | Findings → the four 60-second blocks, likely questions, 3–5 next actions, in the client's tone (E4). Works without an LLM too (fallback) |
+| **A2** | Live call copilot | Ahmet | `server/ai/call*`, `src/workspace/useCallAudio.ts` | Listening already works (ElevenLabs). Add only: to-dos the client asked for, and "show the data being talked about". Scripted call stays one click away. Biggest stage risk, so no more than that |
 | **A3** | Memory | Ahmet | `server/memory*` | Post-call draft → one-tap confirm → SQLite → read by the engine. Seeded from rejected proposals |
 | **A4** | Follow-up chat | Ahmet | `server/ai/chat*` | Tool-using chat over engine data. Says so when the data does not support an answer |
-| **N1** | News + CIO view | free hands | `server/market/` | Mock and live source behind one interface → `Signal[]` matched to holdings. "Similar events before, and what markets did next" |
-| **N2** | Outbound mode | free hands | `server/alerts*` | Triggers from rules and news, "who to call today" ranking, prep workspace |
+| **N1** | News + CIO view | Arash | `server/market/` | News items matched to each client's holdings with embeddings (including what sits inside funds) → `Signal[]`. Sample news file and a live source behind one interface. "This happened before, and here is what markets did next": decide when this track starts, it needs outside price data |
+| **N2** | Outbound mode | free hands | `server/alerts*` | Light version: rank all clients by their findings and news hits into "who to call today", shown on the existing Anrufe & Signale page. No background watcher |
 | **N3** | Ex-custody PDF | free hands | `server/import*` | PDF → virtual portfolio → same engine path (bonus points) |
 | **U1** | Real data in the UI | Kaushik | `src/` | Mock replaced by the API, skeleton loading per tier, client-file upload |
-| **U2** | New cards | Kaushik | `src/cards/` | Contradiction + fix (before/after), look-through, stale note, communication profile, peers, to-dos, post-call confirm |
-| **U3** | 60-second format | Kaushik | `src/` | The creative briefing format (bonus points) |
+| **U2** | New cards | Kaushik | `src/cards/` | Contradiction + fix (before/after), look-through, stale note, client profile, peers, to-dos, post-call confirm, click any statement to see its source |
+| **U3** | 60-second format | Kaushik | `src/` | The four blocks with a reading-time bar, plus "why is the client calling" on inbound calls (section 2, bonus points) |
 
 Integration is continuous and Claude's job. Everything plugs into a registry, so there is no big-bang merge at the end.
 
@@ -123,13 +152,13 @@ Integration is continuous and Claude's job. Everything plugs into a registry, so
 
 - **Kaushik**: keep building against `src/data/mock.ts`. Its shape is the API shape; when the engine lands only the import changes. New cards can be built against hand-written findings in the `Finding` shape above.
 - **Ahmet**: A1, A3 and A4 only need `Finding[]` and `CallNote`. Until fixtures land, hand-write three findings from section 2 and build against them. A2 needs nothing from anyone.
-- **Arash**: P0, then E1–E3 in parallel agents.
+- **Arash**: P0, then E1–E4 in parallel agents. N1 (news matching with embeddings) whenever he wants to start it; it depends on nothing but a sample news file.
 
 ## 5. Milestones
 
 1. **M1 Real data.** Any of the 47 clients, and any uploaded file, renders a real briefing in the existing UI. Until this works nothing else counts.
-2. **M2 Differentiators.** Contradiction + fix, look-through, stale notes, communication profile, history, peers.
-3. **M3 Enrichment.** Live call copilot, post-call memory, chat, news and outbound mode, PDF import.
+2. **M2 Differentiators.** Contradiction + fix, look-through, stale notes, client profile and tone, the 60-second format, worst months, peers.
+3. **M3 Enrichment.** Post-call memory, chat, news matching, "who to call today", call to-dos, PDF import.
 4. **M4 Freeze.** Demo script on three hero clients, every live dependency rehearsed with its fallback, README explains mock vs production.
 
 `main` is always demo-able. Rehearse the demo from a fresh clone before every milestone.
@@ -150,3 +179,20 @@ Integration is continuous and Claude's job. Everything plugs into a registry, so
 - Engine is TypeScript in `app/engine/`: shares types with the UI, runs in the same process, works on uploaded files. The repo is TypeScript only.
 - Everyone pushes to `main`. CI is advisory. No hooks, no branch protection.
 - UI text and LLM output in German (Swiss spelling). Code, commits and docs in English.
+
+## 8. Finance words in plain language
+
+| Word | Means |
+|---|---|
+| **Mandate** | The contract between client and bank: how the money may be invested ("balanced, in CHF"). |
+| **SAA** (strategic asset allocation) | The target mix that mandate translates into, with a minimum and maximum per bucket: "40–60% shares". Outside the band is a problem to fix. |
+| **Suitability** | The bank's legal duty to check that an investment fits this client: their risk appetite, wishes and mandate. A suitability violation is a broken rule. The judges sell this software. |
+| **Risk profile** | How much up and down the client agreed to live with, measured by a questionnaire. Sets a ceiling on portfolio risk. |
+| **Volatility** | How strongly a value swings. The usual number for "risk". |
+| **ESG** | Sustainability preference: environment, social, governance. Here a yes/no flag plus a minimum score per holding. |
+| **Look-through** | A fund is a basket of many shares. The position list shows the basket; look-through opens it and shows what is inside. |
+| **Concentration / cluster risk** | Too much money in one share, sector or currency. |
+| **Proposal** | A concrete set of trades the advisor suggests. Status in the data: final, rejected (`Abgelehnt`), draft. |
+| **CIO view / house view** | The bank's official opinion on markets ("prefer European shares"). Advisors are expected to follow it. |
+| **Ex-custody** | Assets the client keeps at another bank. Importing that statement shows the whole picture, and is how the bank wins those assets. |
+| **FIDLEG** | The Swiss law that makes advisors document every piece of advice. |
