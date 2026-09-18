@@ -49,6 +49,11 @@ async function complete(env: Env, provider: Provider, fast: boolean, messages: M
 const RULES = `Du unterstützt einen Kundenberater einer Schweizer Bank. Antworte ausschliesslich auf Deutsch in Schweizer Schreibweise (ss statt ß).
 Verwende NUR die Fakten aus dem Abschnitt KUNDENKONTEXT. Erfinde keine Zahlen, Titel, Kurse oder Nachrichten. Wenn die Fakten eine Aussage nicht stützen, sage das ausdrücklich.
 Trenne Fakten von Einschätzungen. Gib keine Anlageempfehlung ab, die das Mandat verletzt.
+Sei KONKRET: Jeder Satz nennt mindestens eine Zahl, eine Position, eine Bandbreite oder ein Datum aus dem Kontext. Nenne Positionen beim Namen und Abweichungen in Prozentpunkten.
+Verboten sind Floskeln ohne Inhalt, etwa «es ist wichtig», «wir sollten besprechen», «ich verstehe Ihre Sorge», «gerne schauen wir uns das an», «langfristig denken».
+Schlecht: «Ihr Portfolio ist etwas unter Druck, wir sollten die Strategie anschauen.» Gut: «Von den 4.2% Verlust stammen 3.1 Punkte aus drei US-Technologietiteln; mit einem Verkauf von CHF 67'000 liegt der USD-Anteil wieder im Band.» (Die Zahlen im Beispiel NICHT übernehmen.)
+Sätze, die der Berater zum Kunden sagt: höchstens 25 Wörter, Sie-Form, eine Kernzahl, und wenn der Kontext einen Vorschlag oder eine Massnahme enthält, genau diese nennen.
+Nächste Schritte beginnen mit einem Verb und nennen Gegenstand und Grösse («Verkauf von … über CHF … vorschlagen»).
 Antworte als ein einziges JSON-Objekt ohne weiteren Text.`
 
 const DETAIL: Record<string, string> = {
@@ -62,9 +67,9 @@ function chatPrompt(p: { context: unknown; modules: unknown; question: string; h
     { role: 'system', content: `${RULES}
 Schema: {"supported": boolean, "text": string, "sources": string[], "module": {"id": string, "confidence": number} | null, "hint": {"text": string, "why": string} | null, "next": string | null}
 - "text": Einblick FÜR DEN BERATER, Umfang: ${DETAIL[p.detail] ?? DETAIL.standard}.
-- "sources": Namen der verwendeten Quellen aus dem Kontext.
+- "sources": die verwendeten Quellen so, wie sie im Kontext heissen (Feld "source"/"quelle" oder Kartentitel), nie das Wort «Kontext».
 - "module": höchstens eine Grafik aus VERFÜGBARE GRAFIKEN, mit Konfidenz 0–100, wie gut sie die Frage beantwortet; sonst null.
-- "hint": ein Satz, den der Berater wörtlich ZUM KUNDEN sagen kann, in Sie-Form, mit kurzer Begründung; sonst null.
+- "hint": ein Satz, den der Berater wörtlich ZUM KUNDEN sagen kann: nennt die Ursache mit ihrer Zahl UND, falls im Kontext vorhanden, die konkrete Massnahme mit Betrag und Wirkung. Nicht die Schlagzeile wiederholen. "why" = die Zahlen dahinter; sonst null.
 - "next": der sinnvollste nächste Schritt für den Berater; sonst null.
 - "supported": false, wenn der Kontext die Frage nicht beantwortet. Dann erklärt "text" kurz, was fehlt, und alle übrigen Felder sind null bzw. leer.` },
     { role: 'user', content: `KUNDENKONTEXT:\n${JSON.stringify(p.context)}\n\nVERFÜGBARE GRAFIKEN:\n${JSON.stringify(p.modules)}\n\nBISHERIGER CHAT:\n${JSON.stringify(p.history)}\n\nFRAGE DES BERATERS:\n${p.question}` },
@@ -77,7 +82,7 @@ function analysePrompt(p: { context: unknown; modules: unknown; transcript: unkn
 Du hörst ein Telefongespräch zwischen Berater und Kunde mit. NEUE ABSCHNITTE stammen aus einer automatischen Transkription mit Sprecher-Kennungen, die nur innerhalb dieser Lieferung gelten.
 Schema: {"segments": [{"speaker": "Kunde" | "Berater", "text": string}], "customer": {"heard": string, "text": string, "why": string, "topic": string} | null, "advisor": {"heard": string, "text": string, "topic": string} | null, "insight": {"text": string, "sources": string[], "module": {"id": string, "confidence": number} | null} | null}
 - "segments": die neuen Abschnitte in Reihenfolge, jeder der Rolle zugeordnet. Der Berater erklärt, ordnet ein und schlägt vor; der Kunde fragt und schildert Anliegen. Transkriptionsfehler behutsam korrigieren, nichts hinzufügen.
-- "customer": nur wenn der KUNDE in den neuen Abschnitten ein Anliegen geäussert hat, das der Kontext abdeckt. "heard" = seine Aussage, "text" = ein Satz, den der Berater wörtlich antworten kann (Sie-Form), "why" = Begründung mit Zahlen, "topic" = Stichwort.
+- "customer": nur wenn der KUNDE in den neuen Abschnitten ein Anliegen geäussert hat, das der Kontext abdeckt. "heard" = seine Aussage, "text" = ein Satz, den der Berater wörtlich antworten kann (Sie-Form): Ursache mit Zahl und, falls im Kontext vorhanden, die konkrete Massnahme mit Betrag, "why" = Begründung mit Zahlen, "topic" = Stichwort.
 - "advisor": nur wenn der BERATER in den neuen Abschnitten ein Thema angesprochen hat. "heard" = seine Aussage, "text" = der vorausschauend nächste Schritt für ihn, "topic" = Stichwort.
 - "insight": Einblick für den Berater zum Anliegen des Kunden, Umfang: ${DETAIL[p.detail] ?? DETAIL.standard}; Grafik wie beschrieben höchstens eine aus VERFÜGBARE GRAFIKEN mit Konfidenz 0–100.
 Bei Begrüssungen und Belanglosem sind "customer", "advisor" und "insight" null.` },
