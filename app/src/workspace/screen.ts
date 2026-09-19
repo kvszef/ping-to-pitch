@@ -51,15 +51,19 @@ const CLASS: Record<string, string> = { Shares: 'Aktien', Bonds: 'Obligationen',
 const CURRENCY: Record<string, string> = { 'Swiss francs': 'CHF', 'US-Dollar': 'USD', Euro: 'EUR', Andere: 'Andere' }
 
 function engineCharts(findings: EngineFinding[]): Chart[] {
-  const alloc = findings.find((f) => f.check === 'portfolio.allocation' && f.numbers && Object.keys(f.numbers).some((k) => k.startsWith('AssetClass.')))?.numbers
+  const splits = findings.filter((f) => f.check === 'portfolio.allocation' && f.numbers && Object.keys(f.numbers).some((k) => k.startsWith('AssetClass.')))
+  const alloc = splits[0]?.numbers
   if (!alloc) return []
+  // Several portfolios: the split is the first portfolio's, not the client's, and the graph says so.
+  const portfolio = splits.length > 1 ? /^([^:]{3,40}-\d{2}):/.exec(splits[0].title)?.[1] : undefined
+  const note = `${portfolio ? `Portfolio ${portfolio}. ` : ''}Mit Durchsicht in Fonds.`
   const bars = (prefix: string, names: Record<string, string>) => Object.entries(alloc).filter(([k, v]) => k.startsWith(prefix) && v > 0.004)
     .map(([k, v]) => ({ label: names[k.slice(prefix.length)] ?? k.slice(prefix.length), value: pct(v) })).sort((a, b) => b.value - a.value)
   const out: Chart[] = []
   const classes = bars('AssetClass.', CLASS)
-  if (classes.length) out.push({ id: 'anlageklassen', title: 'Anlageklassen', note: 'Mit Durchsicht in Fonds.', spec: { type: 'balken', title: 'Anlageklassen', unit: '%', note: 'Mit Durchsicht in Fonds.', bars: classes } })
+  if (classes.length) out.push({ id: 'anlageklassen', title: 'Anlageklassen', note, spec: { type: 'balken', title: 'Anlageklassen', unit: '%', note, bars: classes } })
   const currencies = bars('CurrencyGroup.', CURRENCY)
-  if (currencies.length) out.push({ id: 'waehrungen', title: 'Währungen', note: 'Mit Durchsicht in Fonds.', spec: { type: 'balken', title: 'Währungen', unit: '%', note: 'Mit Durchsicht in Fonds.', bars: currencies } })
+  if (currencies.length) out.push({ id: 'waehrungen', title: 'Währungen', note, spec: { type: 'balken', title: 'Währungen', unit: '%', note, bars: currencies } })
   return out
 }
 
@@ -88,7 +92,10 @@ export function tilesFor(client: Client, charts: Chart[], news: NewsItem[] = [])
   const proposal = client.briefing.find((c) => c.type === 'proposal')
   if (proposal?.type === 'proposal') tiles.push({ id: 'proposal', group: 'Anlagevorschlag', topics: [], words: `${proposal.summary} ${proposal.trades.map((t) => t.name).join(' ')}`, seconds: 6, card: proposal })
   for (const t of tiles) {
-    const byTopic = charts.find((c) => t.topics.includes(c.id)) ?? (t.topics.includes('waehrungen') || t.topics.includes('konzentration') ? charts.find((c) => c.id === 'waehrungen') : undefined)
+    // The tile's own topic decides, most specific first: a tile about the asset mix or a single position
+    // must not open the currency graph just because that one is first in the list.
+    const wanted = [...(t.topics.includes('allocation') && !/währung|currency|USD|EUR/i.test(t.words) ? ['anlageklassen'] : []), ...(t.topics.includes('concentration') ? ['konzentration'] : []), ...t.topics]
+    const byTopic = wanted.map((id) => charts.find((c) => c.id === id)).find((c) => !!c) ?? (t.topics.includes('konzentration') ? charts.find((c) => c.id === 'waehrungen') : undefined)
     t.chart = byTopic?.id
   }
   return usefulTiles(tiles)
@@ -145,22 +152,28 @@ export function localPlan(tiles: Tile[], said: string[], focusText?: string, foc
   }
 }
 
+// The figures in a text, as plain digit strings ("15.6", "80000"), whatever the sign or the thousands mark.
+const figures = (text: string) => (text.match(/\d[\d'’.,]*\d|\d/g) ?? []).map((n) => n.replace(/['’]/g, '').replace(/[.,]$/, ''))
+// A shorter wording for a tile may only carry that tile's own figures, not a number that is true elsewhere.
+const ownFigures = (tile: Tile | undefined, text: string) => { const have = new Set(figures(tile?.words ?? '')); return figures(text).every((n) => have.has(n)) }
+
 // The agent's plan, checked: unknown ids are dropped, missing tiles are appended, texts with a number
 // that is not in the data are dropped (`grounded` decides), and the three talking points are topped up.
 export function checkPlan(raw: unknown, tiles: Tile[], charts: Chart[], grounded: (t: string) => boolean, fallback: Plan): Plan {
   const r = (typeof raw === 'object' && raw ? raw : {}) as Record<string, unknown>
   const ids = new Set(tiles.map((t) => t.id))
-  const picked = (Array.isArray(r.tiles) ? r.tiles : []).map((x) => (typeof x === 'string' ? { id: x } : x as { id?: string; text?: string })).filter((x) => x?.id && ids.has(x.id))
+  const picked = (Array.isArray(r.tiles) ? r.tiles : []).map((x) => (typeof x === 'string' ? { id: x } : x as { id?: string; text?: string })).filter((x) => typeof x?.id === 'string' && ids.has(x.id))
   const order = [...new Set([...picked.map((x) => x.id!), ...fallback.order])]
   const texts: Record<string, string> = {}
-  for (const x of picked) if (x.text && x.text.length < 140 && grounded(x.text)) texts[x.id!] = x.text
+  for (const x of picked) if (typeof x.text === 'string' && x.text && x.text.length < 140 && grounded(x.text) && ownFigures(tiles.find((t) => t.id === x.id), x.text)) texts[x.id!] = x.text
   const focus = typeof r.focus === 'string' && ids.has(r.focus) ? r.focus : fallback.focus
   const widgets = (Array.isArray(r.widgets) ? r.widgets : []).map((w) => (typeof w === 'string' ? w : typeof w === 'object' && w ? ('chart' in w ? `chart:${(w as { chart: string }).chart}` : `tile:${(w as { tile: string }).tile}`) : ''))
     .filter((w) => (w.startsWith('chart:') && charts.some((c) => `chart:${c.id}` === w)) || (w.startsWith('tile:') && ids.has(w.slice(5)))).slice(0, 3)
   const suggestions = (Array.isArray(r.suggestions) ? r.suggestions : []).map((s) => s as { label?: string; text?: string; tile?: string })
-    .filter((s) => s.text && grounded(s.text)).slice(0, 3)
-    .map((s, n) => ({ id: `${s.tile ?? 'x'}:${n}:${s.text!.slice(0, 24)}`, label: s.label || 'Vorschlag', text: s.text!.replace(/\.$/, ''), tile: s.tile && ids.has(s.tile) ? s.tile : undefined }))
-  const answer = r.answer && typeof r.answer === 'object' && (r.answer as { text?: string }).text && grounded((r.answer as { text: string }).text) ? r.answer as Plan['answer'] : fallback.answer
+    .filter((s) => typeof s?.text === 'string' && s.text && grounded(s.text)).slice(0, 3)
+    .map((s, n) => ({ id: `${s.tile ?? 'x'}:${n}:${s.text!.slice(0, 24)}`, label: typeof s.label === 'string' && s.label ? s.label : 'Vorschlag', text: s.text!.replace(/\.$/, ''), tile: s.tile && ids.has(s.tile) ? s.tile : undefined }))
+  const a = r.answer as { heard?: unknown; text?: unknown } | null
+  const answer = a && typeof a === 'object' && typeof a.text === 'string' && typeof a.heard === 'string' && a.text && grounded(a.text) ? { heard: a.heard, text: a.text } : fallback.answer
   return {
     order, texts, focus, widgets: widgets.length ? widgets : fallback.widgets,
     suggestions: [...suggestions, ...fallback.suggestions.filter((f) => !suggestions.some((s) => s.tile && s.tile === f.tile))].slice(0, 3),
