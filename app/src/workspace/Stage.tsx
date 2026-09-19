@@ -2,6 +2,7 @@ import { BarChart3, Ear, FileText, LayoutList, PanelRightClose, PanelRightOpen, 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { SeverityIcon } from '../cards/ui'
 import type { Client } from '../types'
+import { tr } from '../data/i18n-static'
 import { isTranslated, useTranslated, type Language } from '../data/useTranslate'
 import type { Screen } from './brain'
 import { Wave } from './CallIsland'
@@ -89,7 +90,7 @@ function Profile({ client, compact = false, language, loading = false }: { clien
   const fact = (label: string) => context?.type === 'context' ? context.facts.find((f) => f.label === label)?.value : undefined
   const facts = [
     ['Profil', client.profile], ['Strategie', client.strategy], ['Dienstleistung', client.service],
-    ['Alter', fact('Alter')], ['ESG', fact('ESG-Profil')], ['Letzte Beratung', client.lastConsultation], ['Regelverletzungen', client.errors + client.warnings ? `${client.errors} Fehler · ${client.warnings} Warnungen` : undefined],
+    ['Alter', fact('Alter')], ['ESG', fact('ESG-Profil')], ['Letzte Beratung', client.lastConsultation], ['Regelverletzungen', client.errors + client.warnings ? tr(`${client.errors} Fehler · ${client.warnings} Warnungen`, language) : undefined],
   ].filter((f): f is [string, string] => !!f[1] && f[1] !== '–')
   const notes = context?.type === 'context' ? context.notes.slice(0, 2) : []
   const reasons = (client.findings ?? []).filter((f) => (f.check === 'profile.call-reason' || (f.check === 'cio.house-view' && !!f.numbers?.changed))).map((f) => f.title).slice(0, 2)

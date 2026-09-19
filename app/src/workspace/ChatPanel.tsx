@@ -1,5 +1,6 @@
 import { ArrowRight, BarChart3, ChevronDown, MessageSquare, Pin } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { tr } from '../data/i18n-static'
 import { useTranslated, type Language } from '../data/useTranslate'
 import { ModuleView } from './modules'
 import { Smooth } from './motion'
@@ -38,7 +39,7 @@ export function ChatPanel({ above, name, chat, busy, detail, suggestions, pinned
   const send = (text: string) => { if (text.trim()) { onAsk(text); setOpen(true) } }
   const [suggestionsT, lastQT, lastAT] = [useTranslated(suggestions, language), useTranslated([lastQ?.text ?? ''], language)[0], useTranslated([lastA?.role === 'ki' ? lastA.text : ''], language)[0]]
   const [chrome, followUps] = [
-    useTranslated(['Nachfragen', 'Quellen:', 'Grafik', 'Lösen', 'Rechts anheften', 'Angeheftet', 'Anheften', `Nachfragen zu ${name} …  /`], language),
+    useTranslated(['Nachfragen', 'Quellen:', 'Grafik', 'Lösen', 'Rechts anheften', 'Angeheftet', 'Anheften'], language),
     useTranslated(FOLLOW_UPS.map((f) => f.label), language),
   ]
 
@@ -82,7 +83,7 @@ export function ChatPanel({ above, name, chat, busy, detail, suggestions, pinned
       </Smooth>
       <form onSubmit={(e) => { e.preventDefault(); send(input.current?.value ?? ''); if (input.current) input.current.value = '' }} className="flex items-center gap-2 p-1.5">
         <MessageSquare size={14} className="ml-2 shrink-0 text-muted" />
-        <input ref={input} onFocus={() => setOpen(true)} autoComplete="off" placeholder={`Nachfragen zu ${name} …  /`} className="min-w-0 flex-1 bg-transparent py-1.5 text-[13px] outline-none placeholder:text-muted" />
+        <input ref={input} onFocus={() => setOpen(true)} autoComplete="off" placeholder={tr(`Nachfragen zu ${name} …  /`, language)} className="min-w-0 flex-1 bg-transparent py-1.5 text-[13px] outline-none placeholder:text-muted" />
         <button aria-label="Fragen" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand text-white hover:bg-brand-dark"><ArrowRight size={14} /></button>
       </form>
     </div>
