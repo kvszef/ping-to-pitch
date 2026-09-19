@@ -2,7 +2,7 @@ import { Mic, MicOff, PanelLeftClose, Phone, PhoneCall, PhoneOff, Settings as Se
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useBriefing } from '../data/useBriefing'
 import { transcripts } from '../data/workspace'
-import type { Client, Signal } from '../types'
+import type { Card, Client, Signal } from '../types'
 import { activeProvider, agentStep, answer, fetchStatus, question, screenFor, topicsFor, type AgentEvent, type Segment, type Status } from './brain'
 import { localPlan, type Plan, type Suggestion } from './screen'
 import { SettingsPanel } from './SettingsPanel'
@@ -25,6 +25,8 @@ type Props = {
 }
 
 const rank = { risk: 0, warn: 1, info: 2, ok: 3 }
+// Cards the engine builds from E2–E4 findings (contradiction + fix, stale notes, client profile, promises).
+const E2_E4_CARDS: Card['type'][] = ['contradiction', 'stalenote', 'profile', 'todos', 'callnote']
 const providerLabel = { openai: 'OpenAI', apertus: 'Apertus', beispiel: 'Beispielmodus' }
 
 export function Workspace({ clients, signals, initialRef, initialCall, onSimulateCall }: Props) {
@@ -43,9 +45,12 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
   // The client, enriched with the engine's briefing once the server answered.
   const listed = clients.find((c) => c.ref === ref) ?? clients[0]
   const engine = useBriefing(listed.ref)
-  const client = useMemo(() => (engine.findings.length || engine.cards.length
-    ? { ...listed, briefing: engine.cards.length ? engine.cards : listed.briefing, findings: engine.findings.length ? engine.findings : undefined }
-    : listed), [listed, engine.cards, engine.findings])
+  // Only E1 (portfolio facts) from the engine; E2–E4 (contradiction, context, profile) stay out for now.
+  const client = useMemo(() => {
+    const findings = engine.findings.filter((f) => f.check.startsWith('portfolio.'))
+    const cards = engine.cards.filter((c) => !E2_E4_CARDS.includes(c.type))
+    return findings.length || cards.length ? { ...listed, briefing: cards.length ? cards : listed.briefing, findings: findings.length ? findings : undefined } : listed
+  }, [listed, engine.cards, engine.findings])
   // The elements the agent can show for this client, and its current plan.
   const screen = useMemo(() => screenFor(client), [client])
   const [plan, setPlan] = useState<Plan>(() => localPlan(screen.tiles, []))
