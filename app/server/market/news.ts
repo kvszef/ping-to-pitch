@@ -72,8 +72,13 @@ export function pushArticle(a: { title: string; source?: string; snippet?: strin
 
 export const norm = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
 export const mentions = (a: Pick<Article, 'title' | 'snippet'>, query: string) => norm(`${a.title} ${a.snippet}`).includes(norm(query))
-// Price pages and fund fact sheets are not news.
-export const isQuotePage = (title: string) => /^(Kurs|Aktien?|Chart|Fondsporträt|Factsheet)\b(?!ziel)|\bUCITS ETF\b|\bETF\b.*\b(acc|dist|CHF|USD|EUR)$/i.test(title.trim())
+// Price pages, fund fact sheets, intraday tickers and product adverts are not news.
+const NOT_NEWS = /^(Kurs|Aktien?|Chart|Fondsporträt|Factsheet)\b(?!ziel)|\bUCITS ETF\b|\bETF\b.*\b(acc|dist|CHF|USD|EUR)$|\bFonds$|\bAktie News$|\bam (Mittag|Vormittag|Nachmittag|Morgen)\b|^Börsen-Ticker\b|\bPortfolio-Tracker\b|\bBRCs?\b|\bmit Coupons?\b/i
+export const isQuotePage = (title: string) => NOT_NEWS.test(title.trim())
+// A headline that is only the company's name ("LONZA GROUP AG") is a profile page, not a story.
+export const isBareName = (title: string, h: Pick<Holding, 'query' | 'names'>) => [h.query, ...h.names].some((n) => norm(n) === norm(title))
+// What the offline snapshot may still use: a story older than this is no reason to call today.
+const OFFLINE_DAYS = 30
 
 export function recent(a: Article, now: Date, days = RECENT_DAYS) {
   if (!a.published) return true
@@ -87,7 +92,7 @@ export async function candidates(holdings: Holding[], now: Date, search?: (q: st
   await pool(holdings, 4, async (h) => {
     const f = await articlesFor(h.query, search, maxAgeMs)
     const own = [...pushed, ...f.articles]
-      .filter((a) => mentions(a, h.query) && !isQuotePage(a.title) && (f.offline || recent(a, now)))
+      .filter((a) => mentions(a, h.query) && !isQuotePage(a.title) && recent(a, now, f.offline ? OFFLINE_DAYS : RECENT_DAYS) && !isBareName(a.title, h))
       .sort((a, b) => (b.published ?? '').localeCompare(a.published ?? ''))
     const seen = new Set<string>()
     for (const a of own) {
@@ -108,11 +113,11 @@ async function pool<T>(items: T[], size: number, work: (t: T) => Promise<void>) 
 
 // ---- judging --------------------------------------------------------------------------------------
 
-const RISK = /gewinnwarnung|einbruch|bricht ein|stürzt|sturz|verlust|klage|busse|strafe|rückruf|herabstuf|downgrade|abschreibung|wertberichtigung|beschlagnahm|enteign|sinkt|fällt|fallen|stellenabbau|warnt|senkt|kürzt|skandal|ermittl|untersuch|sanktion|russland|schlag gegen|kämpft|droht|verlust des|profit warning|plunge|lawsuit|fine|cut/i
+const RISK = /gewinnwarnung|einbruch|bricht ein|stürzt|sturz|verlust|klage|busse|strafe|rückruf|herabstuf|downgrade|abschreibung|wertberichtigung|beschlagnahm|enteign|sinkt|fällt|fallen|stellenabbau|warnt|senkt|kürzt|skandal|ermittl|untersuch|sanktion|russland|schlag gegen|droht|verlust des/i
 // English headlines (US names): whole words only, so they never fire inside a German word.
-const RISK_EN = /\b(drops|slumps?|tumbles?|plummets?|sinks|warns|layoffs|scandal|recall|sanctions|probe into|misses)\b/i
-const CHANCE_EN = /\b(rises|surges|jumps|soars|takeover|acquires|dividend|wins|tops estimates)\b/i
-const CHANCE = /übernahm|übernimmt|rekord|steigt|steigen|hebt|erhöht|dividende|rückkauf|aufstuf|upgrade|kaufempfehlung|übertrifft|zulassung|auftrag|gewinnt|wachstum|beat|raises|record|buyback|approval/i
+const RISK_EN = /\b(drops|slumps?|tumbles?|plummets?|plunges?|sinks|warns|layoffs|scandal|recall|sanctions|probe into|misses|profit warning|lawsuit|fined?|cuts?|downgraded?)\b/i
+const CHANCE_EN = /\b(rises|surges|jumps|soars|takeover|acquires|dividend|wins|tops estimates|beats?|raises|record|buyback|approval|upgraded?)\b/i
+const CHANCE = /übernahm|übernimmt|rekord|steigt|steigen|hebt|erhöht|dividende|rückkauf|aufstuf|upgrade|kaufempfehlung|übertrifft|zulassung|auftrag|gewinnt|wachstum/i
 
 export function ruleJudgement(a: Pick<Article, 'title' | 'snippet'>, query: string): Judgement {
   if (!mentions(a, query)) return { relevant: false, importance: 0, direction: 'neutral', meaning: '', meaningEn: '', by: 'rules' }
@@ -136,7 +141,8 @@ export const JUDGE_RULES = `You screen news for a Swiss private banker. Each ite
 Decide for each item:
 - relevant: true only if the article is really about this investment (not a namesake, not a passing mention) and could matter to someone holding it.
 - importance: 0 none, 1 routine, 2 worth mentioning to a client who holds it, 3 the client may call about it today (big price move, profit warning, takeover, scandal, sanctions, rating change).
-- direction: "risk" if it is bad for a holder, "opportunity" if it is good for a holder, else "neutral".
+- Intraday price tickers ("falls in the morning"), product adverts, fund or ETF roundups and pages that only name the company are importance 0 or 1, never more.
+- direction: "risk" if it is bad for a holder, "opportunity" if it is good for a holder, else "neutral". A falling price is never an "opportunity".
 - meaning: ONE sentence in German (Swiss spelling, ss not ß), max 18 words, what it means for someone holding this investment. Use no number that is not in the headline or snippet. No advice to buy or sell.
 - meaning_en: the same sentence in English (British spelling), max 18 words, same rules. The headline itself is never translated or quoted in another language.
 Answer as JSON: {"items":[{"i":number,"relevant":boolean,"importance":0|1|2|3,"direction":"risk"|"opportunity"|"neutral","meaning":string,"meaning_en":string}]}`

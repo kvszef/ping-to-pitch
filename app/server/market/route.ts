@@ -13,7 +13,8 @@ import { langOf, pick, type Lang } from '../../engine/lang.ts'
 import type { Finding } from '../../engine/types.ts'
 import { clientsWithFindings } from '../ai/briefing-route.ts'
 import { holdingsOf, type Holding } from './holdings.ts'
-import { CACHE_MS, newsFindings, newsHits, pushArticle, saveSnapshot, severityOf, toNewsItems, hitScore, pctText, type Complete, type Hit, type NewsItemOut, type Severity } from './news.ts'
+import { engineReasons, newsPoints, weigh, type Reason } from './score.ts'
+import { CACHE_MS, newsFindings, newsHits, pushArticle, saveSnapshot, severityOf, toNewsItems, hitScore, pctText, type Complete, type Hit, type NewsItemOut } from './news.ts'
 
 const INBOUND = { maxAgeMs: 60_000, judgeWithinMs: 4000 }
 let lastRefresh: string | undefined
@@ -77,43 +78,40 @@ export function startNewsWatcher(complete: Complete | null) {
 
 export const newsStatus = () => ({ watching: !!watcher, lastRefresh })
 
-type Reason = { kind: 'risk' | 'opportunity'; title: string; severity: Severity; findingId?: string; newsId?: string; url?: string; points: number }
-
 // An opportunity is only a reason to call if it does not touch a holding the client wants out of
 // (a contradiction finding quotes that position).
 function blockedByWish(h: Hit, findings: Finding[]) {
   return findings.some((f) => f.check.startsWith('contradiction') && f.evidence.some((ev) => ev.quote !== undefined && h.holding.names.includes(ev.quote)))
 }
 
-const ENGINE_POINTS = { risk: 1, warn: 0.3 } as const
-const MAX_ENGINE = 3
-
 export async function outbound(complete: Complete | null, lang: Lang = 'en') {
   const now = new Date()
   const entries = await withFindings(now, lang)
   const all = await hitsForAll(entries, now, complete)
-  const ranked = entries.map((e) => {
-    const reasons: Reason[] = []
+  // A reason to call is worth less the more clients share the same article (score.ts).
+  const counts = (h: Hit) => h.judgement.direction !== 'neutral' && h.judgement.importance >= 2
+  const own = entries.map((e) => ownHits(e, all))
+  const sharedBy = new Map<string, number>()
+  for (const hits of own) for (const id of new Set(hits.filter(counts).map((h) => h.article.id))) sharedBy.set(id, (sharedBy.get(id) ?? 0) + 1)
+  const ranked = entries.map((e, n) => {
+    const news: Reason[] = []
     const counted = new Set<string>() // one story per holding: three papers on the same news count once
-    for (const h of ownHits(e, all)) {
-      if (h.judgement.direction === 'neutral' || h.judgement.importance < 2 || counted.has(h.holding.query)) continue
+    for (const h of own[n]) {
+      if (!counts(h) || counted.has(h.holding.query)) continue
       if (h.judgement.direction === 'opportunity' && blockedByWish(h, e.findings)) continue
       counted.add(h.holding.query)
-      reasons.push({
-        kind: h.judgement.direction, severity: severityOf(h.judgement), newsId: h.article.id, url: h.article.url || undefined, points: hitScore(h),
+      news.push({
+        kind: h.judgement.direction as Reason['kind'], severity: severityOf(h.judgement), newsId: h.article.id, url: h.article.url || undefined, points: newsPoints(hitScore(h), sharedBy.get(h.article.id) ?? 1),
         title: `${h.holding.label} (${pctText(h.holding.weight)}): ${h.article.title}`,
       })
     }
-    const engine = e.findings.filter((f) => f.severity === 'risk' || (f.severity === 'warn' && f.kind === 'action'))
-      .sort((a, b) => (a.severity === 'risk' ? 0 : 1) - (b.severity === 'risk' ? 0 : 1)).slice(0, MAX_ENGINE)
-    for (const f of engine) reasons.push({ kind: 'risk', severity: f.severity, title: f.title, findingId: f.id, points: ENGINE_POINTS[f.severity as 'risk' | 'warn'] ?? 0 })
     // House view (cio.house-view): a recent change of the view that touches this client, or an opportunity with a
     // ready, re-checked step, is a reason to call today. At most two per client.
     const view = e.findings.filter((f) => f.check === 'cio.house-view' && !f.id.endsWith(':summary') && (f.numbers?.changed || f.fix))
       .sort((a, b) => (b.numbers?.changed ?? 0) - (a.numbers?.changed ?? 0)).slice(0, 2)
-    for (const f of view) reasons.push({ kind: f.kind === 'action' ? 'opportunity' : 'risk', severity: f.severity === 'ok' ? 'ok' : 'warn', title: f.title, findingId: f.id, points: (f.numbers?.changed ? 1.2 : 0) + (f.fix ? 0.8 : 0) })
-    reasons.sort((a, b) => b.points - a.points)
-    const score = Math.round(reasons.reduce((s, r) => s + r.points, 0) * 10) / 10
+    const houseView: Reason[] = view.map((f) => ({ kind: f.kind === 'action' ? 'opportunity' : 'risk', severity: f.severity === 'ok' ? 'ok' : 'warn', title: f.title, findingId: f.id, points: (f.numbers?.changed ? 1.2 : 0) + (f.fix ? 0.8 : 0) }))
+    // The client's own file (rule breaches, missing cash, a bad month ...) weighs at least as much as the news.
+    const { score, reasons } = weigh(news, engineReasons(e.findings, lang), houseView)
     return { ref: e.ref, name: e.name, score, opportunities: reasons.filter((r) => r.kind === 'opportunity').length, reasons: reasons.slice(0, 5) }
   })
   ranked.sort((a, b) => b.score - a.score)
