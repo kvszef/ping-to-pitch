@@ -33,10 +33,28 @@ button { cursor: pointer; }
 
 @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 .anim-rise { animation: rise 0.45s cubic-bezier(.22, 1, .36, 1) both; }
-/* A brief tile (or text) that is not there yet: blurred in place, so the layout is final from the
-   start and nothing readable changes under the eyes. The element itself carries the filter transition. */
-.tile-wait { filter: blur(7px) saturate(.5); pointer-events: none; user-select: none; }
-@media (prefers-reduced-motion: reduce) { .anim-rise { animation: none; } }
+/* A brief tile (.tile-wait) or a text (.text-wait) that is not there yet: its content keeps its place
+   but is hidden, and line-shaped placeholder bars pulse over it (a skeleton; blurring the real text
+   read as censored). The layout is final from the start; the content fades in when it is there. */
+[data-tile] > * { transition: opacity .4s ease; }
+.tile-wait, .text-wait { position: relative; pointer-events: none; user-select: none; }
+.tile-wait > *, .text-wait > * { opacity: 0; }
+.text-wait { color: transparent !important; }
+.tile-wait::after, .text-wait::after {
+  content: ''; position: absolute; inset: 1.1rem 1rem 1rem 1rem;
+  /* a light sweep runs through the bars ... */
+  background: linear-gradient(90deg, var(--color-band) 25%, var(--color-stripe) 50%, var(--color-band) 75%);
+  background-size: 200% 100%;
+  /* ... which are cut out line by line ... */
+  -webkit-mask: repeating-linear-gradient(to bottom, #000 0 9px, transparent 9px 22px);
+  mask: repeating-linear-gradient(to bottom, #000 0 9px, transparent 9px 22px);
+  /* ... with the last line shorter, like the end of a paragraph */
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 22px), 62% calc(100% - 22px), 62% 100%, 0 100%);
+  animation: shimmer 1.4s linear infinite, wait-pulse 1.4s ease-in-out infinite;
+}
+.text-wait::after { inset: .6rem 0 0 0; }
+@keyframes wait-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+@media (prefers-reduced-motion: reduce) { .anim-rise { animation: none; } .tile-wait::after, .text-wait::after { animation: none; } }
 
 /* Anruf-Insel: federndes Einblenden, gestaffelter Inhalt, ruhiger Wechsel der Hinweise */
 @keyframes island-pop { 0% { opacity: 0; transform: translateY(-28px) scale(.55); filter: blur(10px); } 60% { opacity: 1; filter: blur(0); } 100% { opacity: 1; transform: none; } }

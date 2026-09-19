@@ -113,7 +113,7 @@ function Profile({ client, compact = false, language }: { client: Client; compac
         </dl>
       </div>
       {summary.text && (
-        <p className={`mt-3 border-t border-brand/15 pt-2 text-[14px] leading-snug transition-[filter] duration-500 ${summary.loading ? 'tile-wait' : ''}`} title={[persona?.type === 'profile' ? persona.persona : '', reasons.join(' · '), ...notes.map((n) => n.text)].filter(Boolean).join(' — ')}>
+        <p className={`mt-3 border-t border-brand/15 pt-2 text-[14px] leading-snug ${summary.loading ? 'text-wait' : ''}`} title={[persona?.type === 'profile' ? persona.persona : '', reasons.join(' · '), ...notes.map((n) => n.text)].filter(Boolean).join(' — ')}>
           {summary.text}
         </p>
       )}
@@ -341,7 +341,7 @@ export function Stage({ client, screen, plan, brought, thinking, inCall, recordi
             {!asText && tiles.map((t, i) => (
               // Tiles are revealed strictly top to bottom; one that is not ready yet stays blurred in place (reveal.ts).
               <article key={`${client.ref}:${t.id}`} data-tile={t.id} data-flip={t.id} onClick={() => focus(t.id)} aria-busy={i >= reveal.shown}
-                className={`${i < reveal.shown ? '' : 'tile-wait'} group relative mb-3 rounded-xl bg-white/85 p-4 shadow-card ring-1 transition-[box-shadow,filter] duration-500 ${flash === t.id ? 'ring-2 ring-brand' : 'ring-black/5'}`}>
+                className={`${i < reveal.shown ? '' : 'tile-wait'} group relative mb-3 rounded-xl bg-white/85 p-4 shadow-card ring-1 transition-[box-shadow] duration-500 ${flash === t.id ? 'ring-2 ring-brand' : 'ring-black/5'}`}>
                 <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-muted">
                   {t.severity && <SeverityIcon severity={t.severity} size={11} />}
                   <span>{groupLabels[i]}</span>
