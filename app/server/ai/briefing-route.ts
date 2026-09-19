@@ -9,6 +9,7 @@ import { resolve } from 'node:path'
 import { indexReference, run, type ReferenceIndex } from '../../engine/run.ts'
 import { composeBriefing, writeBriefing, type Briefing60 } from './briefing.ts'
 import { factCards, talkTrackCard } from './cards.ts'
+import { rankCards } from './insights.ts'
 import type { Finding } from './findings.ts'
 import { provisionalFindings } from './provisional-findings.ts'
 import { peerStats, type PeerStats } from '../../engine/peers.ts'
@@ -161,7 +162,11 @@ export async function appBriefing(url: string, llm: Llm) {
   if (!provider) return { status: 200, data: { cards: [], findings: [] } }
   let written = template
   try { written = await writeBriefing(template, findings, (m) => llm.complete(provider, m), provider) } catch { /* keep the template */ }
-  return { status: 200, data: { cards: [talkTrackCard(written, findings)], findings: [] } }
+  // Which of the optional insight cards (already built, deterministic) actually matter for this
+  // client, and in what order: decided by the model, never invented from scratch.
+  let ranking: { order: string[]; hidden: string[] } = { order: [], hidden: [] }
+  try { ranking = await rankCards(factCards(raw, reference, findings, template, now), (m) => llm.complete(provider, m), provider) } catch { /* keep every card, default order */ }
+  return { status: 200, data: { cards: [talkTrackCard(written, findings)], findings: [], order: ranking.order, hidden: ranking.hidden } }
 }
 
 /** Refs and names for the client picker. */

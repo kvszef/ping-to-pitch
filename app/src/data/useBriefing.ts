@@ -5,7 +5,7 @@ import { TIERS, loadBriefing, sortCards, type Finding, type Tier } from './sourc
 const NONE: Partial<Record<Tier, Card[]>> = {}
 const NO_FINDINGS: Finding[] = []
 
-type State = { ref: string | null; cards: Partial<Record<Tier, Card[]>>; findings: Finding[] }
+type State = { ref: string | null; cards: Partial<Record<Tier, Card[]>>; findings: Finding[]; order?: Card['type'][]; hidden?: Card['type'][] }
 
 // Requests all three tiers in parallel and hands out each tier's cards as soon as it arrives.
 export function useBriefing(ref: string | null) {
@@ -16,12 +16,13 @@ export function useBriefing(ref: string | null) {
     let stale = false
     for (const tier of TIERS) {
       loadBriefing(ref, tier)
-        .catch(() => ({ cards: [] as Card[], findings: [] as Finding[] }))
+        .catch(() => ({ cards: [] as Card[], findings: [] as Finding[], order: undefined, hidden: undefined }))
         .then((b) => {
           if (stale) return
           setState((s) => {
             const base: State = s.ref === ref ? s : { ref, cards: {}, findings: [] }
-            return { ref, cards: { ...base.cards, [tier]: b.cards }, findings: [...base.findings, ...b.findings] }
+            // A later tier's ranking (from the model) wins over an earlier one that had none yet.
+            return { ref, cards: { ...base.cards, [tier]: b.cards }, findings: [...base.findings, ...b.findings], order: b.order ?? base.order, hidden: b.hidden ?? base.hidden }
           })
         })
     }
@@ -31,7 +32,9 @@ export function useBriefing(ref: string | null) {
   // A result for another client is ignored, so switching clients shows skeletons straight away.
   // Stable references while nothing new arrived, so consumers can memoise on them.
   const current = state.ref === ref ? state.cards : NONE
-  const cards = useMemo(() => sortCards(TIERS.flatMap((t) => current[t] ?? [])), [current])
+  const order = state.ref === ref ? state.order : undefined
+  const hidden = state.ref === ref ? state.hidden : undefined
+  const cards = useMemo(() => sortCards(TIERS.flatMap((t) => current[t] ?? []), order, hidden), [current, order, hidden])
   const pending = useMemo(() => TIERS.filter((t) => !current[t]), [current])
   return { cards, findings: state.ref === ref ? state.findings : NO_FINDINGS, pending }
 }

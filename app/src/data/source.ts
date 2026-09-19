@@ -24,7 +24,7 @@ export type Finding = {
   topic?: string
 }
 
-export type Briefing = { cards: Card[]; findings: Finding[]; origin: 'engine' | 'local' }
+export type Briefing = { cards: Card[]; findings: Finding[]; origin: 'engine' | 'local'; order?: Card['type'][]; hidden?: Card['type'][] }
 export type UploadResult = { ok: true; count: number; message: string; refs: string[] } | { ok: false; message: string }
 
 // Which tier a card belongs to when the briefing comes from local data.
@@ -38,11 +38,15 @@ const tierOf: Record<Card['type'], Tier> = {
 const localDelay: Record<Tier, number> = { instant: 0, fast: 600, slow: 1500 }
 const timeout: Record<Tier, number> = { instant: 4000, fast: 20000, slow: 60000 }
 
-// Reading order on the page, independent of the order in which tiers arrive.
+// Default reading order on the page, independent of the order in which tiers arrive. The model can
+// move its ranked insight cards (see server/ai/insights.ts) ahead of this for one client; cards it
+// did not rank keep their place here, appended after the ones it did.
 const cardOrder: Card['type'][] = ['talktrack', 'headline', 'metrics', 'split', 'allocation', 'drivers', 'contradiction', 'proposal', 'lookthrough', 'stalenote', 'context', 'profile', 'peers', 'flags', 'actions', 'todos', 'questions', 'callnote']
-export function sortCards(cards: Card[]): Card[] {
-  const rank = (c: Card) => { const i = cardOrder.indexOf(c.type); return i < 0 ? cardOrder.length : i }
-  return cards.map((card, i) => ({ card, i })).sort((a, b) => rank(a.card) - rank(b.card) || a.i - b.i).map((x) => x.card)
+export function sortCards(cards: Card[], modelOrder?: Card['type'][], hidden?: Card['type'][]): Card[] {
+  const order = modelOrder?.length ? [...modelOrder, ...cardOrder.filter((t) => !modelOrder.includes(t))] : cardOrder
+  const rank = (c: Card) => { const i = order.indexOf(c.type); return i < 0 ? order.length : i }
+  const shown = hidden?.length ? cards.filter((c) => !hidden.includes(c.type)) : cards
+  return shown.map((card, i) => ({ card, i })).sort((a, b) => rank(a.card) - rank(b.card) || a.i - b.i).map((x) => x.card)
 }
 
 // ---- session store for uploaded clients -------------------------------------------------------
@@ -129,7 +133,11 @@ export async function loadBriefing(ref: string, tier: Tier): Promise<Briefing> {
   if (!isSample(ref)) {
     const data = await getJson(`/api/briefing/${encodeURIComponent(ref)}?tier=${tier}`, undefined, timeout[tier])
     if (isObj(data) && Array.isArray(data.cards)) {
-      return { cards: data.cards as Card[], findings: Array.isArray(data.findings) ? (data.findings as Finding[]) : [], origin: 'engine' }
+      return {
+        cards: data.cards as Card[], findings: Array.isArray(data.findings) ? (data.findings as Finding[]) : [], origin: 'engine',
+        order: Array.isArray(data.order) && data.order.length ? (data.order as Card['type'][]) : undefined,
+        hidden: Array.isArray(data.hidden) && data.hidden.length ? (data.hidden as Card['type'][]) : undefined,
+      }
     }
   }
   const client = localClients().find((c) => c.ref === ref) ?? listed.find((c) => c.ref === ref)
