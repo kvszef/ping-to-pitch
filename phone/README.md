@@ -98,9 +98,30 @@ sind ohne eine Zeile Anwendungscode prüfbar, über `http://127.0.0.1:5000/ui` o
 Code.
 
 ```bash
+npm install             # einmalig, zieht das Anthropic-SDK
 npm run toolbox:get     # Binary nach bin/ laden, einmalig
 npm run load-data       # data/unrisk.db aus den Case-Daten bauen
 npm run toolbox         # Toolbox auf 127.0.0.1:5000 (eigenes Terminal)
+```
+
+**Der Copilot läuft auf beiden Telefoniewegen.** Jede Transkriptzeile kommt in
+[src/live.ts](src/live.ts) an, gleich ob über Vapi oder über die Sprechbrücke; dort hängt der
+Copilot. Ein weiterer Telefonieweg muss davon nichts wissen, er schreibt einfach wie die anderen
+in `live.ts`. Die Beraterseite liegt in beiden Fällen unter `/`, die schlichte Telefonieseite
+unter `/pruefstand`.
+
+Ein Unterschied bleibt und ist sichtbar: Die Brücke trennt die Sprecher über die Audiospur und
+weiss deshalb wirklich, wer spricht. Vapi liefert alles als eine Rolle, weil beide in dasselbe
+Handy sprechen; dort bestimmt [src/copilot/roles.ts](src/copilot/roles.ts) die Rolle aus dem
+Inhalt. Bleibt sie unklar, zeigt die Oberfläche das neutral an und der Copilot hilft trotzdem.
+
+Startreihenfolge für die Demo:
+
+```bash
+npm run toolbox         # Terminal 1: Kundendaten
+npm run bridge          # Terminal 2: Sprechbrücke (oder npm run dev für den Vapi-Weg)
+cloudflared tunnel --url http://localhost:3200    # Terminal 3
+npm run twilio          # Terminal 4: Nummer kaufen und Webhook setzen
 ```
 
 **Die Anrufernummer muss zugeordnet werden.** Die 47 Case-Kunden enthalten keine Telefonnummern.
