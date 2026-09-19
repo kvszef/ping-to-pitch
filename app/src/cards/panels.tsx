@@ -3,6 +3,7 @@ import { useState } from 'react'
 import type { CardOf } from '../types'
 import { Panel, useLanguage } from './ui'
 import { useTranslated } from '../data/useTranslate'
+import { tr } from '../data/i18n-static'
 
 const POS = '#3f7fd9', NEG = '#c8662b'
 const signed = (n: number, digits = 1) => `${n > 0 ? '+' : ''}${n.toFixed(digits)}`
@@ -42,7 +43,7 @@ export function Context({ card }: { card: CardOf<'context'> }) {
   return (
     <Panel title={card.title} icon={UserRound}>
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
-        {card.facts.map((f) => <div key={f.label} className="min-w-0"><dt className="text-[10px] uppercase tracking-wide text-muted">{f.label}</dt><dd className="truncate text-xs">{f.value}</dd></div>)}
+        {card.facts.map((f) => <div key={f.label} className="min-w-0"><dt className="text-[10px] uppercase tracking-wide text-muted">{tr(f.label, language)}</dt><dd className="truncate text-xs" title={tr(f.value, language)}>{tr(f.value, language)}</dd></div>)}
       </dl>
       {card.changes.length > 0 && (
         <div className="mt-3 border-l-2 border-brand bg-brand-soft/25 px-2.5 py-2">
@@ -77,7 +78,7 @@ export function Proposal({ card }: { card: CardOf<'proposal'> }) {
       <ul className="text-xs">
         {card.trades.map((t, i) => (
           <li key={t.name} className={`flex items-start gap-2 px-2 py-1.5 ${i % 2 ? '' : 'bg-stripe'}`}>
-            <span className={`mt-px w-[74px] shrink-0 rounded-sm py-px text-center text-[10px] ${sideStyle[t.side]}`}>{t.side}</span>
+            <span className={`mt-px w-[74px] shrink-0 rounded-sm py-px text-center text-[10px] ${sideStyle[t.side]}`}>{tr(t.side, language)}</span>
             <span title={t.name} className={`min-w-0 flex-1 leading-snug ${expanded ? '' : '[.compact_&]:line-clamp-2'}`}>{t.name}</span>
             <span className="shrink-0 whitespace-nowrap text-right tabular-nums leading-snug">{t.amount}<span className={`block text-[11px] text-muted ${expanded ? '' : '[.compact_&]:hidden'}`}>{t.share}</span></span>
           </li>

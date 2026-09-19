@@ -1,6 +1,9 @@
 // Deterministic key figures from one raw client record. Pure: no clock, no network. Everything the
 // conversation workspace says about a real client starts here, so the model only phrases numbers
 // that this file computed. Account names and IBANs are never read.
+// Words (month names, the note, placeholders) come in `lang`; German when none is passed outside the browser.
+import { pick, type Lang } from '../../engine/lang.ts'
+import { uiLang } from './uiLang.ts'
 
 export type ClientFacts = {
   asOf?: string
@@ -36,7 +39,8 @@ const round = (v: number) => Math.round(v * 10) / 10
 const pct = (v: number) => round(v * 100)
 
 const MONTHS = ['Jan.', 'Feb.', 'März', 'Apr.', 'Mai', 'Juni', 'Juli', 'Aug.', 'Sept.', 'Okt.', 'Nov.', 'Dez.']
-const monthLabel = (iso: string) => `${MONTHS[Number(iso.slice(5, 7)) - 1] ?? ''} ${iso.slice(0, 4)}`.trim()
+const MONTHS_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const monthLabel = (iso: string, lang?: Lang) => `${(lang === 'en' ? MONTHS_EN : MONTHS)[Number(iso.slice(5, 7)) - 1] ?? ''} ${iso.slice(0, 4)}`.trim()
 const dayLabel = (iso: string) => `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}`
 
 // Security names in the file lead with the share class ("Namen-Aktie Swiss Life Holding AG").
@@ -58,7 +62,7 @@ function navSeries(portfolios: Raw[]): { date: string; value: number }[] {
 
 const DROP = -0.03 // a month the client notices on the statement; same threshold as the engine's performance check
 
-function incidents(portfolios: Raw[]): ClientFacts['incidents'] {
+function incidents(portfolios: Raw[], lang?: Lang): ClientFacts['incidents'] {
   const nav = navSeries(portfolios)
   const out: ClientFacts['incidents'] = []
   for (let i = 1; i < nav.length - 1; i++) {
@@ -66,12 +70,12 @@ function incidents(portfolios: Raw[]): ClientFacts['incidents'] {
     if (change > DROP) continue
     const later = nav[i + 3]
     const back = nav.slice(i + 1).findIndex((p) => p.value >= nav[i - 1].value)
-    out.push({ label: monthLabel(nav[i - 1].date), change: pct(change), after3: later ? pct(later.value / nav[i].value - 1) : undefined, recoveredMonths: back >= 0 ? back + 1 : undefined })
+    out.push({ label: monthLabel(nav[i - 1].date, lang), change: pct(change), after3: later ? pct(later.value / nav[i].value - 1) : undefined, recoveredMonths: back >= 0 ? back + 1 : undefined })
   }
   return out.reverse().slice(0, 3)
 }
 
-function performance(portfolios: Raw[]): ClientFacts['performance'] {
+function performance(portfolios: Raw[], lang?: Lang): ClientFacts['performance'] {
   const nav = navSeries(portfolios)
   if (nav.length < 2) return undefined
   const last = nav[nav.length - 1]
@@ -80,21 +84,22 @@ function performance(portfolios: Raw[]): ClientFacts['performance'] {
   let worst = { label: '', value: 0 }
   for (let i = 1; i < nav.length; i++) {
     const change = nav[i].value / nav[i - 1].value - 1
-    if (change < worst.value) worst = { label: monthLabel(nav[i - 1].date), value: change }
+    if (change < worst.value) worst = { label: monthLabel(nav[i - 1].date, lang), value: change }
   }
   const tail = nav.slice(-13)
   return {
     month: pct(last.value / nav[nav.length - 2].value - 1),
     ytd: pct(last.value / base.value - 1),
     sinceStart: pct(last.value / nav[0].value - 1),
-    startLabel: monthLabel(nav[0].date),
+    startLabel: monthLabel(nav[0].date, lang),
     worst: { label: worst.label, value: pct(worst.value) },
-    series: tail.map((p) => ({ label: monthLabel(p.date), value: round((p.value / tail[0].value) * 100) })),
-    note: 'Wertveränderung aus Monatsendwerten, nicht um Ein- und Auszahlungen bereinigt.',
+    series: tail.map((p) => ({ label: monthLabel(p.date, lang), value: round((p.value / tail[0].value) * 100) })),
+    note: pick(lang)('Wertveränderung aus Monatsendwerten, nicht um Ein- und Auszahlungen bereinigt.', 'Change in value from month-end values, not adjusted for deposits and withdrawals.'),
   }
 }
 
-export function factsFromRaw(input: unknown): ClientFacts {
+export function factsFromRaw(input: unknown, lang: Lang = uiLang()): ClientFacts {
+  const t = pick(lang)
   const raw: Raw = isObj(input) ? input : {}
   const portfolios = list(raw.Portfolios)
   const total = portfolios.reduce((n, p) => n + num(p.AssetsUnderManagementInDefaultCurrency), 0)
@@ -107,15 +112,15 @@ export function factsFromRaw(input: unknown): ClientFacts {
     const volatility = num(p.Volatility)
     for (const s of list(p.SecurityPositions)) {
       const share = num(s.PortfolioValuePercentage) * weight
-      const currency = str(s.Currency) || 'unbekannt'
+      const currency = str(s.Currency) || t('unbekannt', 'unknown')
       currencies.set(currency, (currencies.get(currency) ?? 0) + share)
       positions.push({
-        name: shortName(str(s.SecurityName) || str(s.Isin) || 'Position ohne Namen'), share: pct(share), currency,
+        name: shortName(str(s.SecurityName) || str(s.Isin) || t('Position ohne Namen', 'Unnamed position')), share: pct(share), currency,
         riskShare: portfolios.length === 1 && volatility > 0 && num(s.ContributionVolatility) > 0 ? pct(num(s.ContributionVolatility) / volatility) : undefined,
       })
     }
     for (const a of list(p.AccountPositions)) {
-      const currency = str(a.Currency) || 'unbekannt'
+      const currency = str(a.Currency) || t('unbekannt', 'unknown')
       currencies.set(currency, (currencies.get(currency) ?? 0) + num(a.PortfolioValuePercentage) * weight)
     }
   }
@@ -130,7 +135,7 @@ export function factsFromRaw(input: unknown): ClientFacts {
 
   return {
     asOf: nav.length ? dayLabel(nav[nav.length - 1].date) : undefined,
-    performance: performance(portfolios),
+    performance: performance(portfolios, lang),
     risk: main && num(main.Volatility) > 0 ? { volatility: pct(num(main.Volatility)), expectedReturn: pct(num(main.ExpectedReturn)), valueAtRisk: pct(num(main.ValueAtRisk)) } : undefined,
     positions: positions.slice(0, 5),
     allPositions: positions,
@@ -142,11 +147,11 @@ export function factsFromRaw(input: unknown): ClientFacts {
       accepted: proposals.filter((p) => status(p) === 'Final').length,
       rejected: proposals.filter((p) => status(p) === 'Abgelehnt').length,
       draft: proposals.filter((p) => status(p) === 'Entwurf').length,
-      last: lastProposal ? { date: dayLabel(str(lastProposal.ProposedDateUTC).slice(0, 10)), status: status(lastProposal) || 'ohne Status', reason: str(lastProposal.Reason) } : undefined,
+      last: lastProposal ? { date: dayLabel(str(lastProposal.ProposedDateUTC).slice(0, 10)), status: status(lastProposal) || t('ohne Status', 'no status'), reason: str(lastProposal.Reason) } : undefined,
     },
-    incidents: incidents(portfolios),
+    incidents: incidents(portfolios, lang),
     history: proposals.filter((p) => str(p.ProposedDateUTC)).sort((a, b) => str(b.ProposedDateUTC).localeCompare(str(a.ProposedDateUTC))).slice(0, 4).map((p) => ({
-      date: dayLabel(str(p.ProposedDateUTC).slice(0, 10)), status: status(p) || 'ohne Status', reason: str(p.Reason),
+      date: dayLabel(str(p.ProposedDateUTC).slice(0, 10)), status: status(p) || t('ohne Status', 'no status'), reason: str(p.Reason),
       trades: list(raw.Transactions).filter((t) => t.ProposalId === p.ProposalId && p.ProposalId !== undefined).length,
     })),
     tags: list(raw.Tags).map((t) => str(t.TagName)).filter(Boolean).slice(0, 8),

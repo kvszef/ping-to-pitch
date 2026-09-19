@@ -3,6 +3,7 @@ import { ArrowRight, Check, CircleHelp, ClipboardCheck, Layers, ListTodo, Shield
 import type { CallNote, CardOf, Effect, Trade } from '../types'
 import { KindTag, Panel, SeverityIcon, Source, useLanguage } from './ui'
 import { useTranslated } from '../data/useTranslate'
+import { tr } from '../data/i18n-static'
 import { confirmNote } from '../workspace/callNote'
 
 const DIRECT = '#3f7fd9', FUNDS = '#69d4d6'
@@ -22,11 +23,12 @@ function Quote({ quote, date, source, muted = false }: { quote: string; date: st
 const sideStyle = { Kauf: 'bg-brand text-white', Verkauf: 'bg-ink text-white', Absicherung: 'bg-teal/60 text-ink' }
 
 function Trades({ trades }: { trades: Trade[] }) {
+  const language = useLanguage()
   return (
     <ul className="text-xs">
       {trades.map((t, i) => (
         <li key={t.name} className={`flex items-start gap-2 px-2 py-1.5 ${i % 2 ? '' : 'bg-stripe'}`}>
-          <span className={`mt-px w-[74px] shrink-0 rounded-sm py-px text-center text-[10px] ${sideStyle[t.side]}`}>{t.side}</span>
+          <span className={`mt-px w-[74px] shrink-0 rounded-sm py-px text-center text-[10px] ${sideStyle[t.side]}`}>{tr(t.side, language)}</span>
           <span title={t.name} className="min-w-0 flex-1 leading-snug">{t.name}</span>
           <span className="shrink-0 whitespace-nowrap text-right tabular-nums leading-snug">{t.amount} <span className="text-[11px] text-muted">{t.share}</span></span>
         </li>

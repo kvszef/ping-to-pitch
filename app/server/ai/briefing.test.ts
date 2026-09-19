@@ -189,3 +189,29 @@ describe('with the engine', () => {
     expect(composeBriefing('CASE-012', findings).blocks.avoid[0].text).toMatch(/^Nicht erneut vorschlagen: «.+» \(abgelehnt am \d{2}\.\d{2}\.\d{4}, \d+× insgesamt\)$/)
   })
 })
+
+// English is the app's default language: same findings, same lines, English wording. Quoted data («…») stays as it is.
+describe('in English', () => {
+  const index = indexReference(reference)
+  // Words that only German uses (the idea of engine/lang.test.ts).
+  const GERMAN = /(?<![\p{L}-])(und|oder|nicht|für|mit|über|unter|vom|zum|zur|ist|sind|wird|wurde|werden|haben|keine?|noch|seit|bei|aus|auf|eine[nrms]?|dem|das|der|sich|auch|nur|mehr|durch|gegen|ohne|Kunden?|Wunsch|Vorschl[aä]ge?s?|Anteil|Grenze|Monate?n?|Gespräch|Berater|Risiko|Notiz|Verkauf|Kauf)(?![\p{L}-])/u
+  const unquoted = (text: string) => text.replace(/«[^»]*»/g, '').replace(/"[^"]*"/g, '')
+  const both = (ref: string) => {
+    const of = (lang: 'de' | 'en') => composeBriefing(ref, mergeFindings(run(client(ref), { ref: index, now: NOW, memory: [], lang }), provisionalFindings(client(ref), reference, NOW, lang)).findings, lang)
+    return { de: of('de'), en: of('en') }
+  }
+  const textsOf = (b: Briefing60) => [...allLines(b), ...b.actions, ...b.reasons].map((l) => l.text).concat(b.questions.flatMap((q) => [q.q, q.a]), b.persona ? [b.persona.text, ...b.persona.tone] : [])
+
+  it.each(['CASE-004', 'CASE-007', 'CASE-012'])('writes the same briefing in English for %s', (ref) => {
+    const { de, en } = both(ref)
+    expect(en.lang).toBe('en')
+    expect(en.blocks.open).toHaveLength(1)
+    for (const block of ['open', 'mention', 'ask', 'avoid'] as const) expect(en.blocks[block].map((l) => l.id)).toEqual(de.blocks[block].map((l) => l.id))
+    expect(en.blocks.mention.length).toBeGreaterThan(0)
+    expect(en.reasons.map((l) => l.id)).toEqual(de.reasons.map((l) => l.id))
+    expect(en.questions.map((q) => q.id)).toEqual(de.questions.map((q) => q.id))
+    expect(en.actions.map((l) => l.id)).toEqual(de.actions.map((l) => l.id))
+    const german = textsOf(en).filter((text) => GERMAN.test(unquoted(text)))
+    expect(german).toEqual([])
+  })
+})

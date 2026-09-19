@@ -1,6 +1,8 @@
 import type { Card, Client, EngineFinding, NewsItem, Severity } from '../types'
 import { briefFor, readSeconds, type BriefItem } from './brief'
 import type { Hint, ModuleSpec } from './types'
+import type { Lang } from '../../engine/lang.ts'
+import { uiLang } from '../data/uiLang'
 
 // The screen as a catalogue of elements the agent can choose from, and the plan it returns.
 // Elements carry their own numbers (computed from the data); the agent only picks, orders and
@@ -76,8 +78,8 @@ export function chartsFor(client: Client, topicCharts: { id: string; spec: Modul
 
 // ---- tiles: the brief items, today's news and the proposal ----
 
-export function tilesFor(client: Client, charts: Chart[], news: NewsItem[] = []): Tile[] {
-  const tiles: Tile[] = briefFor(client).map((item) => ({ id: item.id, group: item.group, topics: item.topics ?? [], words: `${item.figure ?? ''} ${item.text}`, seconds: readSeconds(item), severity: item.severity, item }))
+export function tilesFor(client: Client, charts: Chart[], news: NewsItem[] = [], lang: Lang = uiLang()): Tile[] {
+  const tiles: Tile[] = briefFor(client, lang).map((item) => ({ id: item.id, group: item.group, topics: item.topics ?? [], words: `${item.figure ?? ''} ${item.text}`, seconds: readSeconds(item), severity: item.severity, item }))
   // Live news on this client's biggest holdings: one tile, right after the reason for the call.
   // Only news naming a position itself (reach 'Titel'); currency, sector and fund-theme news is market
   // noise here. Biggest position first, one story per position, at most three; severity breaks ties.

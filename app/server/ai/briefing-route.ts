@@ -3,6 +3,13 @@
 //   POST /api/briefing60?phrase=…                     body { client }: one raw client from an uploaded file
 // Findings come from the engine; checks the engine does not deliver yet fall back to the stopgap.
 // The model only ever sees findings (titles and details): no names, no account data.
+//
+// Language: GET routes read ?lang=de|en, POST routes the body field `language` (or ?lang); a request that names
+// none is answered in English (langOf). The language goes into the engine run, the stopgap, the composer, the
+// model prompt and the cards, and comes back as `lang` in the response. Nothing here caches a phrased answer
+// (the loaded data and the peer statistics are numbers only), so no cache key depends on the language.
+// The helpers other routes call (templateFor, clientsWithFindings) take the language as an argument and answer
+// in German without it, like every function outside a route.
 
 import { indexReference, run, type ReferenceIndex } from '../../engine/run.ts'
 import { composeBriefing, writeBriefing, type Briefing60 } from './briefing.ts'
@@ -17,6 +24,7 @@ import { classifyNote } from '../../engine/wishes.ts'
 import { classifyNotes, type WishAnswers } from './wishes.ts'
 import { notesFor } from '../memory/store.ts'
 import { loadData } from '../database.ts'
+import { langOf, pick, type Lang } from '../../engine/lang.ts'
 
 type Provider = 'openai' | 'apertus'
 type Message = { role: 'system' | 'user'; content: string }
@@ -49,12 +57,12 @@ const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
 
 // What the page shows in its header. Stays in the browser, never goes to the model.
-function header(raw: Record<string, unknown>) {
+function header(raw: Record<string, unknown>, lang?: Lang) {
   const portfolios = Array.isArray(raw.Portfolios) ? (raw.Portfolios as Record<string, unknown>[]) : []
   const main = [...portfolios].sort((a, b) => num(b.AssetsUnderManagementInDefaultCurrency) - num(a.AssetsUnderManagementInDefaultCurrency))[0] ?? {}
   return {
     ref: str(raw.ClientRef), name: str(raw.Company) || [str(raw.FirstName), str(raw.LastName)].filter(Boolean).join(' ') || str(raw.ClientRef),
-    profile: str(raw.RiskProfileName) || 'ohne Risikoprofil', esg: str(raw.EsgProfileName), currency: str(raw.ReportingCurrency) || 'CHF',
+    profile: str(raw.RiskProfileName) || pick(lang)('ohne Risikoprofil', 'no risk profile'), esg: str(raw.EsgProfileName), currency: str(raw.ReportingCurrency) || 'CHF',
     aum: num(raw.AssetsUnderManagementInDefaultCurrency) || portfolios.reduce((n, p) => n + num(p.AssetsUnderManagementInDefaultCurrency), 0),
     strategy: str(main.StrategyName), service: str(main.InvestmentServiceName), portfolios: portfolios.length,
   }
@@ -72,37 +80,41 @@ export async function briefing60(method: string, url: string, body: Buffer | nul
   const u = new URL(url, 'http://local')
   const { clients, reference, index } = await data()
   let raw: Record<string, unknown> | undefined
+  let named: unknown = u.searchParams.get('lang') ?? undefined
   if (method === 'POST') {
     const parsed: unknown = JSON.parse(body?.toString('utf8') || '{}')
+    if (named === undefined && typeof parsed === 'object' && parsed !== null && 'client' in parsed) named = (parsed as { language?: unknown }).language
     const c = typeof parsed === 'object' && parsed !== null && 'client' in parsed ? (parsed as { client: unknown }).client : parsed
     raw = typeof c === 'object' && c !== null && !Array.isArray(c) ? (c as Record<string, unknown>) : undefined
   } else {
     const ref = decodeURIComponent(u.pathname.split('/')[3] ?? '')
     raw = uploaded.get(ref) ?? clients.find((c) => c.ClientRef === ref)
   }
-  if (!raw) return { status: 404, data: { error: 'Kunde nicht gefunden' } }
+  const lang = langOf(named)
+  const t = pick(lang)
+  if (!raw) return { status: 404, data: { error: t('Kunde nicht gefunden', 'Client not found'), lang } }
 
   const now = new Date()
   const wishes = await wishesFor(raw, index, llm)
   let engine: Finding[] = []
   let engineError: string | undefined
   try {
-    engine = run(raw, { ref: index, now, memory: notesFor(str(raw.ClientRef)), wishes, peers: peersOf(clients, index), houseView: houseView() })
+    engine = run(raw, { ref: index, now, memory: notesFor(str(raw.ClientRef)), wishes, peers: peersOf(clients, index), houseView: houseView(), lang })
   } catch (e) {
     engineError = e instanceof Error ? e.message : String(e)
   }
-  const merged = mergeFindings(engine, provisionalFindings(raw, reference, now))
-  let briefing: Briefing60 = composeBriefing(str(raw.ClientRef), merged.findings)
+  const merged = mergeFindings(engine, provisionalFindings(raw, reference, now, lang))
+  let briefing: Briefing60 = composeBriefing(str(raw.ClientRef), merged.findings, lang)
 
   const phrase = u.searchParams.get('phrase')
   let llmError: string | undefined
   if (phrase === 'openai' || phrase === 'apertus') {
-    if (!llm.ready(phrase)) llmError = `${phrase === 'openai' ? 'OpenAI' : 'Apertus'} ist nicht konfiguriert, es bleibt bei der Vorlage.`
+    if (!llm.ready(phrase)) llmError = t(`${phrase === 'openai' ? 'OpenAI' : 'Apertus'} ist nicht konfiguriert, es bleibt bei der Vorlage.`, `${phrase === 'openai' ? 'OpenAI' : 'Apertus'} is not configured, the template stays.`)
     else {
       try {
         briefing = await writeBriefing(briefing, merged.findings, (messages) => llm.complete(phrase, messages), phrase)
       } catch (e) {
-        llmError = `KI nicht erreichbar, es bleibt bei der Vorlage (${e instanceof Error ? e.message.slice(0, 120) : 'Fehler'})`
+        llmError = t(`KI nicht erreichbar, es bleibt bei der Vorlage (${e instanceof Error ? e.message.slice(0, 120) : 'Fehler'})`, `AI not reachable, the template stays (${e instanceof Error ? e.message.slice(0, 120) : 'error'})`)
       }
     }
   }
@@ -110,7 +122,7 @@ export async function briefing60(method: string, url: string, body: Buffer | nul
   return {
     status: 200,
     data: {
-      client: header(raw), briefing, findings: merged.findings,
+      lang, client: header(raw, lang), briefing, findings: merged.findings,
       origin: { engine: merged.engineChecks, stopgap: merged.stopgapChecks, engineError, failed: (engine as { failed?: unknown }).failed },
       llmError, now: now.toISOString().slice(0, 10),
     },
@@ -129,28 +141,30 @@ function peersOf(clients: Record<string, unknown>[], index: ReferenceIndex): Pee
   return peerCache
 }
 
-export function uploadClients(body: Buffer) {
+export function uploadClients(body: Buffer, lang?: Lang) {
   const data: unknown = JSON.parse(body.toString('utf8') || 'null')
+  // The body is the client file itself; a wrapper object may name the language, else the caller passes it (?lang).
+  const t = pick(lang ?? langOf(typeof data === 'object' && data !== null && !Array.isArray(data) ? (data as { language?: unknown }).language : undefined))
   const items = Array.isArray(data) ? data : typeof data === 'object' && data !== null && Array.isArray((data as { clients?: unknown }).clients) ? (data as { clients: unknown[] }).clients : [data]
   const ok = items.filter((c): c is Record<string, unknown> => typeof c === 'object' && c !== null && typeof (c as { ClientRef?: unknown }).ClientRef === 'string')
   for (const c of ok) uploaded.set(str(c.ClientRef), c)
   if (ok.length) peerCache = null
-  return { status: ok.length ? 200 : 400, data: ok.length ? { ok: true, count: ok.length, refs: ok.map((c) => str(c.ClientRef)) } : { error: 'Keine Kunden mit ClientRef in der Datei' } }
+  return { status: ok.length ? 200 : 400, data: ok.length ? { ok: true, count: ok.length, refs: ok.map((c) => str(c.ClientRef)) } : { error: t('Keine Kunden mit ClientRef in der Datei', 'No clients with a ClientRef in the file') } }
 }
 
 const providerFor = (llm: Llm): Provider | null => (llm.ready('openai') ? 'openai' : llm.ready('apertus') ? 'apertus' : null)
 
-/** The talk track (mention/ask points) and findings for one client, for server/calls.ts to draft a CallNote against once a call ends. */
-export async function templateFor(ref: string, llm: Llm): Promise<{ template: Briefing60; findings: Finding[] } | null> {
+/** The talk track (mention/ask points) and findings for one client, for server/calls.ts to draft a CallNote against once a call ends. In `lang`; German without it. */
+export async function templateFor(ref: string, llm: Llm, lang?: Lang): Promise<{ template: Briefing60; findings: Finding[] } | null> {
   const { clients, reference, index } = await data()
   const raw = uploaded.get(ref) ?? clients.find((c) => c.ClientRef === ref)
   if (!raw) return null
   const now = new Date()
   const wishes = await wishesFor(raw, index, llm)
   let engine: Finding[] = []
-  try { engine = run(raw, { ref: index, now, memory: notesFor(ref), wishes, peers: peersOf(clients, index), houseView: houseView() }) } catch { /* the stopgap still answers */ }
-  const { findings } = mergeFindings(engine, provisionalFindings(raw, reference, now))
-  return { template: composeBriefing(ref, findings), findings }
+  try { engine = run(raw, { ref: index, now, memory: notesFor(ref), wishes, peers: peersOf(clients, index), houseView: houseView(), lang }) } catch { /* the stopgap still answers */ }
+  const { findings } = mergeFindings(engine, provisionalFindings(raw, reference, now, lang))
+  return { template: composeBriefing(ref, findings, lang), findings }
 }
 
 /** Cards for the main app. Everything is instant; with a model configured, the model-written talk track follows as `fast`. */
@@ -158,31 +172,32 @@ export async function appBriefing(url: string, llm: Llm) {
   const u = new URL(url, 'http://local')
   const ref = decodeURIComponent(u.pathname.split('/')[3] ?? '')
   const tier = u.searchParams.get('tier') ?? 'instant'
+  const lang = langOf(u.searchParams.get('lang'))
   const { clients, reference, index } = await data()
   const raw = uploaded.get(ref) ?? clients.find((c) => c.ClientRef === ref)
-  if (!raw) return { status: 404, data: { error: 'Kunde nicht gefunden' } }
-  if (tier === 'slow') return { status: 200, data: { cards: [], findings: [] } } // news and peers are not built yet
+  if (!raw) return { status: 404, data: { error: pick(lang)('Kunde nicht gefunden', 'Client not found'), lang } }
+  if (tier === 'slow') return { status: 200, data: { lang, cards: [], findings: [] } } // news and peers are not built yet
 
   const now = new Date()
   const wishes = await wishesFor(raw, index, llm)
   let engine: Finding[] = []
-  try { engine = run(raw, { ref: index, now, memory: notesFor(ref), wishes, peers: peersOf(clients, index), houseView: houseView() }) } catch { /* the stopgap still answers */ }
-  const { findings } = mergeFindings(engine, provisionalFindings(raw, reference, now))
-  const template = composeBriefing(ref, findings)
+  try { engine = run(raw, { ref: index, now, memory: notesFor(ref), wishes, peers: peersOf(clients, index), houseView: houseView(), lang }) } catch { /* the stopgap still answers */ }
+  const { findings } = mergeFindings(engine, provisionalFindings(raw, reference, now, lang))
+  const template = composeBriefing(ref, findings, lang) // carries the language on to writeBriefing and the cards
   const provider = providerFor(llm)
 
   if (tier === 'instant') {
     const cards = factCards(raw, reference, findings, template, now)
-    return { status: 200, data: { cards: provider ? cards : [talkTrackCard(template, findings), ...cards], findings } }
+    return { status: 200, data: { lang, cards: provider ? cards : [talkTrackCard(template, findings), ...cards], findings } }
   }
-  if (!provider) return { status: 200, data: { cards: [], findings: [] } }
+  if (!provider) return { status: 200, data: { lang, cards: [], findings: [] } }
   let written = template
   try { written = await writeBriefing(template, findings, (m) => llm.complete(provider, m), provider) } catch { /* keep the template */ }
   // Which of the optional insight cards (already built, deterministic) actually matter for this
   // client, and in what order: decided by the model, never invented from scratch.
   let ranking: { order: string[]; hidden: string[] } = { order: [], hidden: [] }
   try { ranking = await rankCards(factCards(raw, reference, findings, template, now), (m) => llm.complete(provider, m), provider) } catch { /* keep every card, default order */ }
-  return { status: 200, data: { cards: [talkTrackCard(written, findings)], findings: [], order: ranking.order, hidden: ranking.hidden } }
+  return { status: 200, data: { lang, cards: [talkTrackCard(written, findings)], findings: [], order: ranking.order, hidden: ranking.hidden } }
 }
 
 /** One raw client (uploads first, then the case file) and the reference index, for the ask-the-data chat (A4). */
@@ -197,14 +212,14 @@ export async function briefingClients() {
   return clients.map((c) => ({ ref: str(c.ClientRef), name: header(c).name, profile: str(c.RiskProfileName) }))
 }
 
-/** Every client (case file plus uploads) with its engine findings, for the news agent and the outbound ranking. No model, no names to anyone. */
-export async function clientsWithFindings(now: Date): Promise<{ raw: Record<string, unknown>; ref: string; name: string; index: ReferenceIndex; findings: Finding[] }[]> {
+/** Every client (case file plus uploads) with its engine findings, for the news agent and the outbound ranking. No model, no names to anyone. Findings in `lang`; German without it. */
+export async function clientsWithFindings(now: Date, lang?: Lang): Promise<{ raw: Record<string, unknown>; ref: string; name: string; index: ReferenceIndex; findings: Finding[] }[]> {
   const { clients, index } = await data()
   const all = [...clients.filter((c) => !uploaded.has(str(c.ClientRef))), ...uploaded.values()]
   const peers = peersOf(clients, index)
   return all.map((raw) => {
     let findings: Finding[] = []
-    try { findings = run(raw, { ref: index, now, memory: notesFor(str(raw.ClientRef)), peers, houseView: houseView() }) } catch { /* ranked on news only */ }
+    try { findings = run(raw, { ref: index, now, memory: notesFor(str(raw.ClientRef)), peers, houseView: houseView(), lang }) } catch { /* ranked on news only */ }
     return { raw, ref: str(raw.ClientRef), name: header(raw).name, index, findings }
   })
 }

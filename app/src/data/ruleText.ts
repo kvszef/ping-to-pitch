@@ -1,5 +1,7 @@
-// The case file names suitability rules in English. The interface is German, so the finite set of
-// rule texts is translated here, deterministically. Unknown texts pass through unchanged.
+// The case file names suitability rules in English. For the German interface the finite set of rule
+// texts is translated here, deterministically. Unknown texts pass through unchanged, and in English
+// the data's own wording is the answer.
+import type { Lang } from '../../engine/lang.ts'
 
 const NAMES: Record<string, string> = {
   Energy: 'Energie', Financials: 'Finanzwesen', 'Health Care': 'Gesundheit', Healthcare: 'Gesundheit', Industrials: 'Industrie', Materials: 'Grundstoffe',
@@ -22,7 +24,8 @@ const FIXED: Record<string, string> = {
   'Knowledge of portfolio funds and mixed funds': 'Kenntnisse zu Portfolio- und Mischfonds fehlen',
 }
 
-export function ruleText(text: string): string {
+export function ruleText(text: string, lang?: Lang): string {
+  if (lang === 'en') return text
   if (FIXED[text]) return FIXED[text]
   const weight = /^(Significant )?(over|under)weight in the equity (sector|region) "(.+)"$/i.exec(text)
   if (weight) return `${weight[1] ? 'Deutliches ' : ''}${weight[2].toLowerCase() === 'over' ? 'Übergewicht' : 'Untergewicht'} ${weight[3].toLowerCase() === 'sector' ? 'im Aktiensektor' : 'in der Aktienregion'} «${NAMES[weight[4]] ?? weight[4]}»`

@@ -1,5 +1,7 @@
 import type { Briefing60 } from '../../server/ai/briefing'
 import type { Finding } from '../../engine/types'
+import type { Lang } from '../../engine/lang.ts'
+import { uiLang, withLang } from '../data/uiLang'
 
 export type { Block, Briefing60, Line } from '../../server/ai/briefing'
 export type { Finding }
@@ -24,11 +26,12 @@ async function json<T>(r: Response): Promise<T> {
 
 export const loadClients = () => fetch('/api/briefing60/clients').then((r) => json<ClientOption[]>(r))
 
-export function loadBriefing(option: ClientOption, phrase: Phrase): Promise<BriefingResponse> {
+// The briefing is written in the advisor's language: `lang` in the query, and `language` in the body of the POST.
+export function loadBriefing(option: ClientOption, phrase: Phrase, lang: Lang = uiLang()): Promise<BriefingResponse> {
   const q = phrase === 'vorlage' ? '' : `?phrase=${phrase}`
   return option.raw
-    ? fetch(`/api/briefing60${q}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ client: option.raw }) }).then((r) => json<BriefingResponse>(r))
-    : fetch(`/api/briefing60/${encodeURIComponent(option.ref)}${q}`).then((r) => json<BriefingResponse>(r))
+    ? fetch(withLang(`/api/briefing60${q}`, lang), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ client: option.raw, language: lang }) }).then((r) => json<BriefingResponse>(r))
+    : fetch(withLang(`/api/briefing60/${encodeURIComponent(option.ref)}${q}`, lang)).then((r) => json<BriefingResponse>(r))
 }
 
 export const loadStatus = () => fetch('/api/status').then((r) => json<{ openai: boolean; apertus: boolean }>(r)).catch(() => ({ openai: false, apertus: false }))

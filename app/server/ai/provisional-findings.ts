@@ -2,13 +2,16 @@
 // briefing writer runs on real data today. Check ids match the engine's (portfolio.*), so replacing
 // the portfolio part is one import. Contradictions and notes (E2/E3) stay here until the engine has them.
 //
+// Language: every text exists in German and English (lang, German when absent). Numbers, ids and quotes are the same in both.
+//
 // Pure: no clock (`now` is passed in), no network, no DOM. Null and absent fields both occur; an
 // unknown security is counted as "unclassified", never thrown on. Names and IBANs of accounts are never read.
 
 import { factsFromRaw } from '../../src/data/facts.ts'
 import { ruleText } from '../../src/data/ruleText.ts'
 import { amount, day, pct, type DraftProposal, type Evidence, type Finding } from './findings.ts'
-import { monthsBetween, readNote, type Exclusion, type ReadNote } from './notes.ts'
+import { monthsBetween, noteAvoid, noteLabel, noteText, openWishTitle, readNote, type Exclusion, type ReadNote } from './notes.ts'
+import { pick, prefix, sourceName, type Lang } from '../../engine/lang.ts'
 
 type Raw = Record<string, unknown>
 const isObj = (v: unknown): v is Raw => typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -104,47 +107,55 @@ function exposure(positions: Position[], ref: RefIndex, direct: (s: Raw) => bool
   return out
 }
 
-const EXCLUSIONS: Partial<Record<Exclusion, { label: string; direct: (s: Raw) => boolean; fundRow: (m: Raw) => boolean }>> = {
-  fossil: { label: 'Energie', direct: (s) => str(s.SAA_IndustryName) === 'Energy', fundRow: (m) => str(m.IndustryName) === 'Energy' },
-  'fossil-direct': { label: 'Energie', direct: (s) => str(s.SAA_IndustryName) === 'Energy', fundRow: (m) => str(m.IndustryName) === 'Energy' },
-  'emerging-markets': { label: 'Schwellenländer', direct: (s) => /emerging|emma/i.test(`${str(s.AssetClassName)} ${str(s.CountryGroupName)}`), fundRow: (m) => str(m.CountryGroupName) === 'Equities EmMa' },
+const EXCLUSIONS: Partial<Record<Exclusion, { label: string; labelEn: string; direct: (s: Raw) => boolean; fundRow: (m: Raw) => boolean }>> = {
+  fossil: { label: 'Energie', labelEn: 'energy', direct: (s) => str(s.SAA_IndustryName) === 'Energy', fundRow: (m) => str(m.IndustryName) === 'Energy' },
+  'fossil-direct': { label: 'Energie', labelEn: 'energy', direct: (s) => str(s.SAA_IndustryName) === 'Energy', fundRow: (m) => str(m.IndustryName) === 'Energy' },
+  'emerging-markets': { label: 'Schwellenländer', labelEn: 'emerging markets', direct: (s) => /emerging|emma/i.test(`${str(s.AssetClassName)} ${str(s.CountryGroupName)}`), fundRow: (m) => str(m.CountryGroupName) === 'Equities EmMa' },
 }
 
-const UNVERIFIABLE: Partial<Record<Exclusion, string>> = {
-  'defense-tobacco': 'Die Daten kennen keine Branche «Rüstung» oder «Tabak»',
-  'human-rights': 'Die Daten enthalten keine Angaben zu Menschenrechts-Kontroversen',
+const UNVERIFIABLE: Partial<Record<Exclusion, { de: string; en: string }>> = {
+  'defense-tobacco': { de: 'Die Daten kennen keine Branche «Rüstung» oder «Tabak»', en: 'The data has no industry «defence» or «tobacco»' },
+  'human-rights': { de: 'Die Daten enthalten keine Angaben zu Menschenrechts-Kontroversen', en: 'The data holds nothing on human-rights controversies' },
 }
 
-const noteEvidence = (n: ReadNote): Evidence => ({ source: 'Kundennotiz', quote: n.quote, date: n.date })
+const noteEvidence = (n: ReadNote, lang?: Lang): Evidence => ({ source: sourceName('note', lang), quote: n.quote, date: n.date })
 
 // ---- checks -------------------------------------------------------------------------------------
 
-function contradictions(ref: string, note: ReadNote, positions: Position[], index: RefIndex): Finding[] {
+function contradictions(ref: string, note: ReadNote, positions: Position[], index: RefIndex, lang?: Lang): Finding[] {
+  const t = pick(lang)
+  const wish = noteText(note, lang)
   const kind = note.exclusion!
   const id = `contradiction.${kind}:${ref}:${note.date}`
   const unverifiable = UNVERIFIABLE[kind]
   if (unverifiable) {
     return [{ id, check: 'contradiction.unverifiable', kind: 'fact', severity: 'info', topic: note.topic,
-      title: `Wunsch «${note.de}» ist vermerkt, lässt sich aber nicht prüfen`, detail: `${unverifiable}. Titel mit dem Kunden durchgehen, nicht raten.`,
-      evidence: [noteEvidence(note)] }]
+      title: t(`Wunsch «${wish}» ist vermerkt, lässt sich aber nicht prüfen`, `Wish «${wish}» is noted but cannot be verified`),
+      detail: t(`${unverifiable.de}. Titel mit dem Kunden durchgehen, nicht raten.`, `${unverifiable.en}. Go through the securities with the client, do not guess.`),
+      evidence: [noteEvidence(note, lang)] }]
   }
   const rule = EXCLUSIONS[kind]
   if (!rule) return []
+  const label = t(rule.label, rule.labelEn)
   const e = exposure(positions, index, rule.direct, rule.fundRow)
   const directOnly = kind === 'fossil-direct'
   const breached = directOnly ? e.direct > 0.0005 : e.total > 0.0005
   const numbers = { total: e.total, direct: e.direct, viaFunds: e.viaFunds, unclassified: e.unclassified }
   const positionEvidence: Evidence[] = e.holdings.slice(0, 4).map((h) => ({
-    source: 'Position', ref: String(h.securityId),
-    quote: h.via === 'Fonds' ? `${h.name}: ${pct(h.share)} des Vermögens, davon ${pct(h.fraction)} ${rule.label} = ${pct(h.exposure, 2)}` : `${h.name}: ${pct(h.share)} des Vermögens, direkt`,
+    source: sourceName('position', lang), ref: String(h.securityId),
+    quote: h.via === 'Fonds'
+      ? t(`${h.name}: ${pct(h.share)} des Vermögens, davon ${pct(h.fraction)} ${label} = ${pct(h.exposure, 2)}`, `${h.name}: ${pct(h.share)} of total assets, of which ${pct(h.fraction)} ${label} = ${pct(h.exposure, 2)}`)
+      : t(`${h.name}: ${pct(h.share)} des Vermögens, direkt`, `${h.name}: ${pct(h.share)} of total assets, held directly`),
   }))
-  const unclassifiedNote = e.unclassified > 0.001 ? ` ${pct(e.unclassified)} des Vermögens liegen in Titeln ohne Klassifizierung und sind nicht mitgezählt.` : ''
+  const unclassifiedNote = e.unclassified > 0.001 ? t(` ${pct(e.unclassified)} des Vermögens liegen in Titeln ohne Klassifizierung und sind nicht mitgezählt.`, ` ${pct(e.unclassified)} of total assets sits in unclassified securities and is not counted.`) : ''
 
   if (!breached) {
     return [{ id, check: `contradiction.${kind === 'emerging-markets' ? 'region' : 'fossil-fuel'}`, kind: 'fact', severity: 'ok', topic: note.topic, numbers,
-      title: directOnly && e.total > 0 ? `Wunsch «${note.de}» erfüllt: keine Direktanlage, über breite Fonds ${pct(e.total)} ${rule.label}` : `Wunsch «${note.de}» erfüllt`,
-      detail: `Direkt ${pct(e.direct)}, über Fonds ${pct(e.viaFunds)}.${unclassifiedNote}`,
-      evidence: [noteEvidence(note), ...positionEvidence] }]
+      title: directOnly && e.total > 0
+        ? t(`Wunsch «${wish}» erfüllt: keine Direktanlage, über breite Fonds ${pct(e.total)} ${label}`, `Wish «${wish}» met: no direct holding, ${pct(e.total)} ${label} through broad funds`)
+        : t(`Wunsch «${wish}» erfüllt`, `Wish «${wish}» met`),
+      detail: t(`Direkt ${pct(e.direct)}, über Fonds ${pct(e.viaFunds)}.${unclassifiedNote}`, `Directly ${pct(e.direct)}, through funds ${pct(e.viaFunds)}.${unclassifiedNote}`),
+      evidence: [noteEvidence(note, lang), ...positionEvidence] }]
   }
 
   // Smallest fix: sell only what is clearly the problem (a direct holding, or a fund at least half in the excluded area).
@@ -154,38 +165,45 @@ function contradictions(ref: string, note: ReadNote, positions: Position[], inde
   const after = Math.max(0, before - removed)
   // Proposal shape: the positions to sell, each with its target weight 0 and the amount that goes.
   const fix: DraftProposal | undefined = culprits.length ? {
-    Reason: culprits.length === 1 ? `${culprits[0].name} verkaufen` : `${culprits.length} Positionen verkaufen (${culprits.map((h) => h.name).join(', ')})`,
+    Reason: culprits.length === 1
+      ? t(`${culprits[0].name} verkaufen`, `Sell ${culprits[0].name}`)
+      : t(`${culprits.length} Positionen verkaufen (${culprits.map((h) => h.name).join(', ')})`, `Sell ${culprits.length} positions (${culprits.map((h) => h.name).join(', ')})`),
     SecurityPositions: culprits.map((h) => ({ SecurityId: h.securityId, SecurityName: h.name, ProposalValuePercentage: 0, TotalAmountInProposalCurrency: h.value })),
   } : undefined
-  const trades: Evidence[] = culprits.map((h) => ({ source: 'Vorschlag', ref: String(h.securityId), quote: `Verkauf ${h.name} über ${h.currency} ${amount(h.value)}` }))
+  const trades: Evidence[] = culprits.map((h) => ({ source: sourceName('fix', lang), ref: String(h.securityId), quote: t(`Verkauf ${h.name} über ${h.currency} ${amount(h.value)}`, `Sale of ${h.name} for ${h.currency} ${amount(h.value)}`) }))
   const funds = e.holdings.filter((h) => h.via === 'Fonds').length
-  const where = directOnly ? `${pct(e.direct)} direkt` : e.direct <= 0.0005 ? `${pct(e.total)} ${rule.label}, alles über ${funds} Fonds` : `${pct(e.total)} ${rule.label}, davon ${pct(e.viaFunds)} über Fonds`
+  const where = directOnly ? t(`${pct(e.direct)} direkt`, `${pct(e.direct)} directly`)
+    : e.direct <= 0.0005 ? t(`${pct(e.total)} ${label}, alles über ${funds} Fonds`, `${pct(e.total)} ${label}, all through ${funds} fund${funds === 1 ? '' : 's'}`)
+    : t(`${pct(e.total)} ${label}, davon ${pct(e.viaFunds)} über Fonds`, `${pct(e.total)} ${label}, of which ${pct(e.viaFunds)} through funds`)
   return [{ id, check: `contradiction.${kind === 'emerging-markets' ? 'region' : 'fossil-fuel'}`, kind: 'fact', topic: note.topic,
     numbers: { ...numbers, before, ...(fix ? { after } : {}) },
     severity: culprits.length ? 'risk' : 'warn', fix,
-    title: `Widerspruch: Wunsch «${note.de}», Portfolio hält ${where}`,
-    detail: (fix ? `Grösster Treiber: ${culprits[0].name} mit ${pct(culprits[0].exposure)}. Nach Verkauf: ${pct(after)}.` : `Nur über breite Indexfonds: ein Ausschluss verlangt Fonds mit ${rule.label}-Ausschluss.`) + unclassifiedNote,
-    evidence: [noteEvidence(note), ...positionEvidence, ...trades] }]
+    title: `${prefix('contradiction', lang)}${t(`Wunsch «${wish}», Portfolio hält ${where}`, `Wish «${wish}», portfolio holds ${where}`)}`,
+    detail: (fix
+      ? t(`Grösster Treiber: ${culprits[0].name} mit ${pct(culprits[0].exposure)}. Nach Verkauf: ${pct(after)}.`, `Largest driver: ${culprits[0].name} with ${pct(culprits[0].exposure)}. After the sale: ${pct(after)}.`)
+      : t(`Nur über breite Indexfonds: ein Ausschluss verlangt Fonds mit ${rule.label}-Ausschluss.`, `Only through broad index funds: an exclusion needs funds that exclude ${label}.`)) + unclassifiedNote,
+    evidence: [noteEvidence(note, lang), ...positionEvidence, ...trades] }]
 }
 
-function noteFindings(ref: string, note: ReadNote, now: Date): Finding[] {
+function noteFindings(ref: string, note: ReadNote, now: Date, lang?: Lang): Finding[] {
   const id = (check: string) => `${check}:${ref}:${note.date}`
-  const ev = [noteEvidence(note)]
+  const ev = [noteEvidence(note, lang)]
+  const text = noteText(note, lang)
   const age = monthsBetween(new Date(`${note.date}T00:00:00Z`), now)
   switch (note.category) {
     // 'plan' notes: context.plan / context.stale-note come from the engine (engine/checks/context-*.ts).
     case 'request':
       return [{ id: id('memory.promise'), check: 'memory.promise', kind: 'action', severity: 'warn', topic: note.topic, numbers: { ageMonths: age },
-        title: `Offener Wunsch seit ${day(note.date)}: ${note.label ?? note.de}`,
-        detail: 'In den Daten nicht als erledigt vermerkt.', evidence: ev }]
+        title: openWishTitle(day(note.date), noteLabel(note, lang) ?? text, lang),
+        detail: pick(lang)('In den Daten nicht als erledigt vermerkt.', 'Not marked as done in the data.'), evidence: ev }]
     case 'contact':
     case 'temperament':
-      return [{ id: id(`profile.${note.category}`), check: `profile.${note.category}`, kind: 'interpretation', severity: 'info', topic: note.topic, title: note.de, detail: note.avoid, evidence: ev }]
+      return [{ id: id(`profile.${note.category}`), check: `profile.${note.category}`, kind: 'interpretation', severity: 'info', topic: note.topic, title: text, detail: noteAvoid(note, lang), evidence: ev }]
     case 'interest':
-      return [{ id: id('profile.interest'), check: 'profile.interest', kind: 'fact', severity: 'info', topic: note.topic, title: note.de, evidence: ev }]
+      return [{ id: id('profile.interest'), check: 'profile.interest', kind: 'fact', severity: 'info', topic: note.topic, title: text, evidence: ev }]
     case 'context':
     case 'other':
-      return [{ id: id('context.note'), check: 'context.note', kind: 'fact', severity: 'info', topic: note.topic, title: note.de, evidence: ev }]
+      return [{ id: id('context.note'), check: 'context.note', kind: 'fact', severity: 'info', topic: note.topic, title: text, evidence: ev }]
     default:
       return []
   }
@@ -199,8 +217,11 @@ const REASONS: Record<string, string> = {
   'New deposit received': 'Neue Einzahlung', 'Life event (retirement)': 'Lebensereignis Pensionierung', 'Periodic portfolio review': 'Periodische Überprüfung',
 }
 export const reasonDe = (reason: string) => REASONS[reason] ?? reason
+// The data names proposal reasons in English already.
+const reasonIn = (reason: string, lang?: Lang) => (lang === 'en' ? reason : reasonDe(reason))
 
-function proposals(ref: string, client: Raw): Finding[] {
+function proposals(ref: string, client: Raw, lang?: Lang): Finding[] {
+  const t = pick(lang)
   const all = list(client.Proposals)
   if (!all.length) return []
   const status = (p: Raw) => str(p.ProposalStatusName)
@@ -211,68 +232,76 @@ function proposals(ref: string, client: Raw): Finding[] {
   const numbers = { total: all.length, accepted, rejected: rejected.length, draft: drafts.length }
   if (rejected.length) {
     out.push({ id: `portfolio.proposals:${ref}:rejected`, check: 'portfolio.proposals', kind: 'fact', severity: 'info', topic: 'proposals', numbers,
-      title: `${rejected.length} von ${all.length} Vorschlägen abgelehnt, zuletzt «${reasonDe(str(rejected[0].Reason))}» am ${day(str(rejected[0].ProposedDateUTC))}`,
-      evidence: rejected.slice(0, 5).map((p) => ({ source: 'Vorschlag (abgelehnt)', ref: str(p.ProposalId), quote: reasonDe(str(p.Reason)), date: str(p.ProposedDateUTC).slice(0, 10) })) })
+      title: t(`${rejected.length} von ${all.length} Vorschlägen abgelehnt, zuletzt «${reasonDe(str(rejected[0].Reason))}» am ${day(str(rejected[0].ProposedDateUTC))}`,
+        `${rejected.length} of ${all.length} proposals rejected, most recently «${str(rejected[0].Reason)}» on ${day(str(rejected[0].ProposedDateUTC))}`),
+      evidence: rejected.slice(0, 5).map((p) => ({ source: t('Vorschlag (abgelehnt)', 'Proposal (rejected)'), ref: str(p.ProposalId), quote: reasonIn(str(p.Reason), lang), date: str(p.ProposedDateUTC).slice(0, 10) })) })
   }
   if (drafts.length) {
     out.push({ id: `portfolio.proposals:${ref}:draft`, check: 'portfolio.proposals', kind: 'action', severity: 'warn', topic: 'proposals', numbers,
-      title: `Entwurf vom ${day(str(drafts[0].ProposedDateUTC))} noch offen: «${reasonDe(str(drafts[0].Reason))}»`,
-      evidence: drafts.slice(0, 3).map((p) => ({ source: 'Vorschlag (Entwurf)', ref: str(p.ProposalId), quote: reasonDe(str(p.Reason)), date: str(p.ProposedDateUTC).slice(0, 10) })) })
+      title: t(`Entwurf vom ${day(str(drafts[0].ProposedDateUTC))} noch offen: «${reasonDe(str(drafts[0].Reason))}»`, `Draft of ${day(str(drafts[0].ProposedDateUTC))} still open: «${str(drafts[0].Reason)}»`),
+      evidence: drafts.slice(0, 3).map((p) => ({ source: t('Vorschlag (Entwurf)', 'Proposal (draft)'), ref: str(p.ProposalId), quote: reasonIn(str(p.Reason), lang), date: str(p.ProposedDateUTC).slice(0, 10) })) })
   }
   return out
 }
 
-function violations(ref: string, client: Raw): Finding[] {
+function violations(ref: string, client: Raw, lang?: Lang): Finding[] {
   const groups = new Map<string, Raw[]>()
   for (const v of list(client.SuitabilityViolations)) {
-    const key = str(v.RuleCode) || str(v.RuleDescription) || 'unbekannt'
+    const key = str(v.RuleCode) || str(v.RuleDescription) || pick(lang)('unbekannt', 'unknown')
     groups.set(key, [...(groups.get(key) ?? []), v])
   }
   return [...groups.entries()].map(([code, vs]) => {
     const first = vs[0]
     const severity = first.Severity === 'Error' ? 'risk' : first.Severity === 'Warning' ? 'warn' : 'info'
-    const text = ruleText(code) !== code ? ruleText(code) : str(first.RuleDescription) || code
+    // The rule codes in the data are English sentences; German comes from the UI's rule table.
+    const text = lang === 'en' ? code : ruleText(code) !== code ? ruleText(code) : str(first.RuleDescription) || code
     return { id: `portfolio.violations:${ref}:${code}`, check: 'portfolio.violations', kind: 'fact', severity, topic: 'violations',
       numbers: { count: vs.length }, title: vs.length > 1 ? `${text} (${vs.length}×)` : text,
-      evidence: [{ source: 'Regelverletzung', ref: code, quote: text }] } satisfies Finding
+      evidence: [{ source: pick(lang)('Regelverletzung', 'Rule violation'), ref: code, quote: text }] } satisfies Finding
   }).sort((a, b) => (a.severity === b.severity ? 0 : a.severity === 'risk' ? -1 : 1))
 }
 
-function risk(ref: string, client: Raw, index: RefIndex): Finding[] {
+function risk(ref: string, client: Raw, index: RefIndex, lang?: Lang): Finding[] {
+  const t = pick(lang)
   const profile = index.riskProfiles.get(num(client.RiskProfileId))
   const max = num(profile?.MaxVola)
   if (!profile || max <= 0) return []
   return list(client.Portfolios).filter((p) => num(p.Volatility) > max).map((p) => ({
     id: `portfolio.risk:${ref}:${str(p.PortfolioNr) || str(p.PortfolioId)}`, check: 'portfolio.risk', kind: 'fact', severity: 'risk', topic: 'risk',
     numbers: { volatility: num(p.Volatility), max },
-    title: `Schwankung ${pct(num(p.Volatility))} liegt über dem Maximum von ${str(profile.Name)} (${pct(max)})`,
-    evidence: [{ source: 'Portfolio', ref: str(p.PortfolioNr), quote: `Volatilität ${pct(num(p.Volatility))}` }, { source: 'Risikoprofil', ref: str(profile.Name), quote: `Maximale Volatilität ${pct(max)}` }],
+    title: t(`Schwankung ${pct(num(p.Volatility))} liegt über dem Maximum von ${str(profile.Name)} (${pct(max)})`, `Volatility of ${pct(num(p.Volatility))} is above the maximum of ${str(profile.Name)} (${pct(max)})`),
+    evidence: [
+      { source: sourceName('portfolio', lang), ref: str(p.PortfolioNr), quote: t(`Volatilität ${pct(num(p.Volatility))}`, `Volatility ${pct(num(p.Volatility))}`) },
+      { source: sourceName('riskProfile', lang), ref: str(profile.Name), quote: t(`Maximale Volatilität ${pct(max)}`, `Maximum volatility ${pct(max)}`) },
+    ],
   }) satisfies Finding)
 }
 
-function performance(ref: string, client: Raw): Finding[] {
+function performance(ref: string, client: Raw, lang?: Lang): Finding[] {
   const f = factsFromRaw(client).performance
   if (!f) return []
+  const t = pick(lang)
   const numbers = { month: f.month / 100, ytd: f.ytd / 100, sinceStart: f.sinceStart / 100, worst: f.worst.value / 100 }
   const sign = (v: number) => `${v > 0 ? '+' : ''}${v.toFixed(1)}%`
   return [{ id: `portfolio.performance:${ref}:total`, check: 'portfolio.performance', kind: 'fact', topic: 'performance', numbers,
     severity: f.month <= -2 || f.ytd < 0 ? 'warn' : 'info',
-    title: `Letzter Monat ${sign(f.month)}, seit Jahresbeginn ${sign(f.ytd)}`,
-    detail: `Seit ${f.startLabel} ${sign(f.sinceStart)}. Schwächster Monat: ${f.worst.label} mit ${sign(f.worst.value)}. ${f.note}`,
-    evidence: [{ source: 'Wertentwicklung', quote: f.note }] }]
+    title: t(`Letzter Monat ${sign(f.month)}, seit Jahresbeginn ${sign(f.ytd)}`, `Last month ${sign(f.month)}, year to date ${sign(f.ytd)}`),
+    // The month labels and the note come from the UI's German fact reader, so the English detail keeps to the numbers.
+    detail: t(`Seit ${f.startLabel} ${sign(f.sinceStart)}. Schwächster Monat: ${f.worst.label} mit ${sign(f.worst.value)}. ${f.note}`, `Since the first monthly value ${sign(f.sinceStart)}. Weakest month: ${sign(f.worst.value)}.`),
+    evidence: [{ source: t('Wertentwicklung', 'Performance'), quote: t(f.note, `Weakest month ${sign(f.worst.value)}`) }] }]
 }
 
-function concentration(ref: string, positions: Position[]): Finding[] {
+function concentration(ref: string, positions: Position[], lang?: Lang): Finding[] {
   const top = [...positions].sort((a, b) => b.share - a.share)[0]
   if (!top || top.share < 0.1) return []
   return [{ id: `portfolio.concentration:${ref}:${top.securityId}`, check: 'portfolio.concentration', kind: 'fact', severity: top.share >= 0.2 ? 'risk' : 'warn', topic: 'concentration',
-    numbers: { share: top.share }, title: `Klumpenrisiko: ${top.name} macht ${pct(top.share)} des Vermögens aus`,
-    evidence: [{ source: 'Position', ref: String(top.securityId), quote: `${top.name}: ${pct(top.share)}` }] }]
+    numbers: { share: top.share }, title: pick(lang)(`Klumpenrisiko: ${top.name} macht ${pct(top.share)} des Vermögens aus`, `Cluster risk: ${top.name} makes up ${pct(top.share)} of total assets`),
+    evidence: [{ source: sourceName('position', lang), ref: String(top.securityId), quote: `${top.name}: ${pct(top.share)}` }] }]
 }
 
 // ---- entry --------------------------------------------------------------------------------------
 
-export function provisionalFindings(client: unknown, reference: unknown, now: Date): Finding[] {
+export function provisionalFindings(client: unknown, reference: unknown, now: Date, lang?: Lang): Finding[] {
   const raw: Raw = isObj(client) ? client : {}
   const ref = str(raw.ClientRef) || 'UNBEKANNT'
   const index = indexReference(reference)
@@ -284,13 +313,13 @@ export function provisionalFindings(client: unknown, reference: unknown, now: Da
     .map((n) => readNote(n.text, n.date))
 
   const findings: Finding[] = [
-    ...notes.filter((n) => n.exclusion).flatMap((n) => contradictions(ref, n, positions, index)),
-    ...risk(ref, raw, index),
-    ...violations(ref, raw),
-    ...performance(ref, raw),
-    ...concentration(ref, positions),
-    ...proposals(ref, raw),
-    ...notes.filter((n) => !n.exclusion).flatMap((n) => noteFindings(ref, n, now)),
+    ...notes.filter((n) => n.exclusion).flatMap((n) => contradictions(ref, n, positions, index, lang)),
+    ...risk(ref, raw, index, lang),
+    ...violations(ref, raw, lang),
+    ...performance(ref, raw, lang),
+    ...concentration(ref, positions, lang),
+    ...proposals(ref, raw, lang),
+    ...notes.filter((n) => !n.exclusion).flatMap((n) => noteFindings(ref, n, now, lang)),
   ]
   // portfolio.liquidity comes from the engine (engine/checks/portfolio-liquidity.ts).
   return findings

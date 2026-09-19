@@ -1,6 +1,8 @@
 import type { Card, Client } from '../types'
 import { fromRaw, parseClientFile } from './fromRaw'
 import { clients as sampleClients } from './mock'
+import { pick, type Lang } from '../../engine/lang.ts'
+import { uiLang, withLang } from './uiLang'
 
 // Single data source of the UI. It asks the engine API first and falls back to local data when the
 // endpoint is missing or fails (same idea as the example mode in workspace/brain.ts), so the UI works
@@ -57,7 +59,7 @@ let uploaded: Client[] = []
 function readStore(): Client[] {
   try {
     const data: unknown = JSON.parse(sessionStorage.getItem(STORE_KEY) ?? '[]')
-    return Array.isArray(data) ? data.map(normalise).filter((c): c is Client => c !== null) : []
+    return Array.isArray(data) ? data.map((item) => normalise(item)).filter((c): c is Client => c !== null) : []
   } catch { return [] }
 }
 
@@ -102,9 +104,9 @@ const text = (v: unknown, fallback = '–') => (typeof v === 'string' && v ? v :
 const count = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
 
 // Accepts a client in the UI shape (possibly without a briefing) or in the raw clients.json shape.
-function normalise(item: unknown): Client | null {
+function normalise(item: unknown, lang: Lang = uiLang()): Client | null {
   if (!isObj(item)) return null
-  if (typeof item.ref !== 'string' || !item.ref) return typeof item.ClientRef === 'string' ? fromRaw(item, new Date()) : null
+  if (typeof item.ref !== 'string' || !item.ref) return typeof item.ClientRef === 'string' ? fromRaw(item, new Date(), lang) : null
   return {
     ref: item.ref, name: text(item.name, item.ref), clientType: text(item.clientType), profile: text(item.profile), portfolioNr: text(item.portfolioNr),
     service: text(item.service), strategy: text(item.strategy), aum: text(item.aum), context: text(item.context), birthday: text(item.birthday),
@@ -120,18 +122,19 @@ uploaded = readStore()
 // Clients from the last /api/clients answer, so their local briefing is found without refetching.
 let listed: Client[] = []
 
-export async function listClients(): Promise<Client[]> {
+// The list itself is data (no server text in it); the local briefing built from it is written in `lang`.
+export async function listClients(lang: Lang = uiLang()): Promise<Client[]> {
   const data = await getJson('/api/clients')
   const items = Array.isArray(data) ? data : isObj(data) && Array.isArray(data.clients) ? data.clients : null
-  const fromEngine = (items ?? []).map(normalise).filter((c): c is Client => c !== null)
+  const fromEngine = (items ?? []).map((item) => normalise(item, lang)).filter((c): c is Client => c !== null)
   listed = fromEngine
   // Real data only. The sample clients are the offline fallback when the server has no list.
   return fromEngine.length ? mergeByRef(fromEngine, uploaded) : mergeByRef(sampleClients, uploaded)
 }
 
-export async function loadBriefing(ref: string, tier: Tier): Promise<Briefing> {
+export async function loadBriefing(ref: string, tier: Tier, lang: Lang = uiLang()): Promise<Briefing> {
   if (!isSample(ref)) {
-    const data = await getJson(`/api/briefing/${encodeURIComponent(ref)}?tier=${tier}`, undefined, timeout[tier])
+    const data = await getJson(withLang(`/api/briefing/${encodeURIComponent(ref)}?tier=${tier}`, lang), undefined, timeout[tier])
     if (isObj(data) && Array.isArray(data.cards)) {
       return {
         cards: data.cards as Card[], findings: Array.isArray(data.findings) ? (data.findings as Finding[]) : [], origin: 'engine',
@@ -149,20 +152,21 @@ export async function loadBriefing(ref: string, tier: Tier): Promise<Briefing> {
 // `Content-Type: application/json` (no multipart). The engine may answer with any JSON; the UI then
 // re-reads /api/clients. Whether or not the endpoint exists, the file is also mapped locally with
 // fromRaw, so the uploaded clients open even if the engine has no briefing for them.
-export async function uploadClients(file: File): Promise<UploadResult> {
+export async function uploadClients(file: File, lang: Lang = uiLang()): Promise<UploadResult> {
+  const t = pick(lang)
   let content: string
-  try { content = await file.text() } catch { return { ok: false, message: 'Die Datei konnte nicht gelesen werden.' } }
-  const parsed = parseClientFile(content)
+  try { content = await file.text() } catch { return { ok: false, message: t('Die Datei konnte nicht gelesen werden.', 'The file could not be read.') } }
+  const parsed = parseClientFile(content, lang)
   if (!parsed.ok) return { ok: false, message: parsed.error }
 
   await getJson('/api/clients/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: content }, 15000)
 
   const now = new Date()
-  const mapped = mergeByRef(parsed.raw.map((raw) => fromRaw(raw, now)))
+  const mapped = mergeByRef(parsed.raw.map((raw) => fromRaw(raw, now, lang)))
   const fresh = mapped.filter((c) => !isSample(c.ref))
   uploaded = mergeByRef(fresh, uploaded)
   writeStore()
   const n = fresh.length
-  if (!n) return { ok: false, message: 'Die Datei enthält nur Kunden, die bereits als Beispiel vorhanden sind.' }
-  return { ok: true, count: n, refs: fresh.map((c) => c.ref), message: n === 1 ? '1 Kunde geladen' : `${n} Kunden geladen` }
+  if (!n) return { ok: false, message: t('Die Datei enthält nur Kunden, die bereits als Beispiel vorhanden sind.', 'The file only holds clients that already exist as samples.') }
+  return { ok: true, count: n, refs: fresh.map((c) => c.ref), message: n === 1 ? t('1 Kunde geladen', '1 client loaded') : t(`${n} Kunden geladen`, `${n} clients loaded`) }
 }
