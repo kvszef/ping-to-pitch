@@ -11,7 +11,7 @@ describe('portfolio.violations', () => {
     expect(na.title).toBe('CASE-037-02: Untergewicht in der Aktienregion «Nordamerika»: 23.9%')
     expect(na.numbers!.actual).toBeCloseTo(0.2388, 4)
     expect(na.numbers).toMatchObject({ threshold1: 0.265, threshold2: 0.215 })
-    expect(na.detail).toBe('Ist 23.9%, Schwellen der Bank: 26.5% / 21.5%')
+    expect(na.detail).toBe('Der Anteil liegt bei 23.9% der Aktien, die Schwellen der Bank liegen bei 26.5% / 21.5%.')
     expect(na.kind).toBe('fact')
     expect(warns.some((x) => x.title.includes('«Übriges Europa»'))).toBe(true)
   })
@@ -38,6 +38,25 @@ describe('portfolio.violations', () => {
     expect(liq.severity).toBe('risk')
   })
 
+  it('explains each rule in plain words and flags a volatility figure that contradicts the portfolio', () => {
+    const f = violations(client('CASE-001'), ctx)
+    const max = f.find((x) => x.title.includes('Maximale Volatilität'))!
+    expect(max.detail).toBe('Das Portfolio schwankt mit 11.9% pro Jahr stärker, als das Risikoprofil des Kunden erlaubt (höchstens 11.5%). Achtung: Das Portfolio weist heute eine Volatilität von 0.0% aus, die Meldung rechnet mit 11.9%.')
+    expect(max.numbers!.portfolioVolatility).toBe(0)
+    const low = f.find((x) => x.title.includes('Volatilitätsband unterschritten'))!
+    expect(low.detail).not.toContain('Achtung')
+    expect(f.find((x) => x.title.includes('Liquidität'))!.detail).toBe('100.0% des Portfolios liegen als Liquidität auf dem Konto, die Strategie erlaubt höchstens 60.0%. Dieser Teil ist nicht angelegt.')
+  })
+
+  it('keeps the two languages apart: an English run carries no German words', () => {
+    const f = violations(client('CASE-001'), { ...ctx, lang: 'en' })
+    const max = f.find((x) => x.title.includes('maximum volatility'))!
+    expect(max.detail).toBe("At 11.9% a year the portfolio swings more than the client's risk profile allows (at most 11.5%). Note: the portfolio shows a volatility of 0.0% today, the violation is based on 11.9%.")
+    expect(f.find((x) => x.title.includes('liquidity'))!.detail).toBe('100.0% of the portfolio sits in cash, the strategy allows at most 60.0%. This part is not invested.')
+    for (const x of f) expect(`${x.title} ${x.detail}`).not.toMatch(/Portfolios|Achtung|Schwelle|schwankt|Aktien|Liquidität/)
+    for (const x of violations(client('CASE-001'), ctx)) expect(x.detail).not.toMatch(/(the|portfolio shows|threshold|Note)/)
+  })
+
   it('still reports violations on portfolios the client file does not list', () => {
     const f = violations(client('CASE-038'), ctx).filter((x) => x.title.startsWith('Portfolio nicht in der Datei'))
     expect(f.length).toBeGreaterThan(0)
@@ -57,7 +76,7 @@ describe('portfolio.violations', () => {
     const f = violations(client('CASE-037'), en)
     const na = f.find((x) => x.title.includes('North America'))!
     expect(na.title).toBe('CASE-037-02: Underweight in the equity region «North America»: 23.9%')
-    expect(na.detail).toBe("Actual 23.9%, the bank's thresholds: 26.5% / 21.5%")
+    expect(na.detail).toBe("The share is 23.9% of the equities, the bank's thresholds are 26.5% / 21.5%.")
     expect(na.numbers).toMatchObject({ threshold1: 0.265, threshold2: 0.215 })
     const override = f.find((x) => x.severity === 'info')!
     expect(override.title).toBe('Rule «No structured products» is switched off for this client')

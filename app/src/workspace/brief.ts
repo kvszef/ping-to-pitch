@@ -56,6 +56,11 @@ function fromFindings(client: Client, findings: EngineFinding[], lang: Lang): Br
   for (const group of ['Anlass', 'Positionen', 'Hausmeinung', 'Verlauf', 'Kunde', 'Vorschlag'] as BriefGroup[]) {
     for (const f of picked.get(group) ?? []) {
       const title = f.title.replace(/^CASE-[\w-]+:\s*/, '')
+      // Bank rule breaches: the rule name alone says little, so the tile reads the engine's explanation and cites the rule.
+      if (f.check === 'portfolio.violations' && f.numbers?.actual !== undefined && f.detail) {
+        out.push({ id: f.id, group, topics: [...(TOPICS[f.topic ?? ''] ?? []), ...(f.topic ? [f.topic] : [])], text: f.detail, source: `${t('Regel', 'Rule')} «${title.replace(/:\s*[−+-]?\d[\d.,]*%$/, '')}»`, severity: f.severity })
+        continue
+      }
       const lead = /^([−+-]?\d[\d'.,]*\s?%)\s+(.+)$/.exec(title)
       out.push({ id: f.id, group, topics: [...(TOPICS[f.topic ?? ''] ?? []), ...(f.topic ? [f.topic] : [])], figure: lead?.[1], text: lead ? lead[2] : title, source: f.evidence[0]?.source ?? 'Engine', severity: f.severity })
     }

@@ -41,6 +41,27 @@ export function decodePath(path: Violation['path']): { actual: number; threshold
   return { actual: cand[0].left!, thresholds: [...new Set(cand.map((x) => x.right!))] }
 }
 
+// One plain sentence per rule family: what the figure measures and where the bank draws the line.
+// Several thresholds (one per strategy level) are listed, never narrowed down to the one that applies.
+export function explain(rule: string, actual: number, thresholds: number[], lang?: Lang): string {
+  const t = pick(lang)
+  const a = pct(actual)
+  const l = thresholds.map((x) => pct(x)).join(' / ')
+  const many = thresholds.length > 1
+  if (/maximum volatility|range exceeded/i.test(rule)) return t(`Das Portfolio schwankt mit ${a} pro Jahr stärker, als das Risikoprofil des Kunden erlaubt (höchstens ${l}).`, `At ${a} a year the portfolio swings more than the client's risk profile allows (at most ${l}).`)
+  if (/range undershot/i.test(rule)) return t(`Das Portfolio schwankt mit ${a} pro Jahr weniger, als die Anlagestrategie vorsieht (mindestens ${l}). Es wird weniger Risiko eingegangen, als der Kunde gewählt hat.`, `At ${a} a year the portfolio swings less than the investment strategy intends (at least ${l}). It takes less risk than the client chose.`)
+  const min = /^Minimum limit (shares|fixed income)/i.exec(rule)
+  if (min) {
+    const shares = min[1].toLowerCase() === 'shares'
+    return t(`${shares ? 'Aktien' : 'Obligationen'} machen ${a} des Portfolios aus, die Strategie verlangt einen Mindestanteil (${many ? 'Schwellen je Strategiestufe' : 'Schwelle'}: ${l}).`, `${shares ? 'Shares' : 'Bonds'} make up ${a} of the portfolio, the strategy requires a minimum share (${many ? 'thresholds per strategy level' : 'threshold'}: ${l}).`)
+  }
+  if (/^Maximum limit liquidity/i.test(rule)) return t(`${a} des Portfolios liegen als Liquidität auf dem Konto, die Strategie erlaubt höchstens ${l}. Dieser Teil ist nicht angelegt.`, `${a} of the portfolio sits in cash, the strategy allows at most ${l}. This part is not invested.`)
+  if (/^Cluster risk of a single/i.test(rule)) return t(`Eine einzelne Position macht ${a} des Portfolios aus, die Bank erlaubt pro Titel höchstens ${l}.`, `A single position makes up ${a} of the portfolio, the bank allows at most ${l} per security.`)
+  if (/^Foreign currency/i.test(rule)) return t(`Fremdwährungen machen ${a} des Portfolios aus, die Schwelle der Bank liegt bei ${l}.`, `Foreign currencies make up ${a} of the portfolio, the bank's threshold is ${l}.`)
+  if (/weight in the equity/i.test(rule)) return t(`Der Anteil liegt bei ${a} der Aktien, ${many ? 'die Schwellen der Bank liegen bei' : 'die Schwelle der Bank liegt bei'} ${l}.`, `The share is ${a} of the equities, the bank's threshold${many ? 's are' : ' is'} ${l}.`)
+  return t(`Ist ${a}, Schwelle${many ? 'n' : ''} der Bank: ${l}`, `Actual ${a}, the bank's threshold${many ? 's' : ''}: ${l}`)
+}
+
 export const violations: Check = (raw, ctx) => {
   const client = clientOf(raw, ctx.ref)
   const t = pick(ctx.lang)
@@ -64,8 +85,13 @@ export const violations: Check = (raw, ctx) => {
     if (decoded) {
       numbers.actual = decoded.actual
       decoded.thresholds.forEach((x, k) => { numbers[`threshold${k + 1}`] = x })
-      const many = decoded.thresholds.length > 1, list = decoded.thresholds.map((x) => pct(x)).join(' / ')
-      detail = t(`Ist ${pct(decoded.actual)}, Schwelle${many ? 'n' : ''} der Bank: ${list}`, `Actual ${pct(decoded.actual)}, the bank's threshold${many ? 's' : ''}: ${list}`)
+      detail = explain(v.rule, decoded.actual, decoded.thresholds, ctx.lang)
+      // The bank's check can rest on another calculation than today's risk figure (CASE-001: flagged at 11.9%, portfolio shows 0.0%).
+      const today = portfolio?.volatility
+      if (/Volatility/i.test(v.rule) && today !== undefined && Math.abs(today - decoded.actual) >= 0.005) {
+        numbers.portfolioVolatility = today
+        detail += t(` Achtung: Das Portfolio weist heute eine Volatilität von ${pct(today)} aus, die Meldung rechnet mit ${pct(decoded.actual)}.`, ` Note: the portfolio shows a volatility of ${pct(today)} today, the violation is based on ${pct(decoded.actual)}.`)
+      }
     }
     const title = `${nr}: ${ruleDe(v.rule, ctx.lang)}${position ? ` (${position})` : ''}${decoded ? `: ${pct(decoded.actual)}` : ''}`
     out.push({
