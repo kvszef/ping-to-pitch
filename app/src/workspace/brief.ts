@@ -5,7 +5,7 @@ import type { Client, EngineFinding, Severity } from '../types'
 // past activity and the client's own precedents, each with one figure and its source. Built from
 // the computed facts for real client files; the sample clients have hand-written ones.
 
-export type BriefGroup = 'Anlass' | 'Positionen' | 'Verlauf' | 'Kunde' | 'Frühere Fälle' | 'Vorschlag' | 'Aus dem Chat'
+export type BriefGroup = 'Anlass' | 'Positionen' | 'Hausmeinung' | 'Verlauf' | 'Kunde' | 'Frühere Fälle' | 'Vorschlag' | 'Aus dem Chat'
 export type BriefItem = { id: string; topics?: string[]; group: BriefGroup; figure?: string; text: string; source: string; severity?: Severity }
 
 export const WORDS_PER_SECOND = 2.5 // 150 words per minute
@@ -17,16 +17,17 @@ const share = (v: number) => `${v.toFixed(1)}%`
 // Engine topic → the conversation topics the transcript and the chat use, so they find the tile.
 const TOPICS: Record<string, string[]> = {
   performance: ['wertentwicklung'], violations: ['regeln'], concentration: ['konzentration', 'waehrungen'], allocation: ['waehrungen', 'regeln'],
-  liquidity: ['liquiditaet', 'notizen'], proposals: ['vorschlaege'], esg: ['nachhaltig', 'regeln'], risk: ['wertentwicklung'],
+  liquidity: ['liquiditaet', 'notizen'], proposals: ['vorschlaege'], 'house-view': ['hausmeinung', 'cio', 'markt'], esg: ['nachhaltig', 'regeln'], risk: ['wertentwicklung'],
 }
 const GROUP: [RegExp, BriefGroup][] = [
   [/^portfolio\.performance/, 'Anlass'],
   [/^(contradiction\.|portfolio\.(violations|concentration|allocation|liquidity))/, 'Positionen'],
   [/^(portfolio\.(proposals|maturities)|memory\.)/, 'Verlauf'],
   [/^(context\.|profile\.)/, 'Kunde'],
+  [/^cio\./, 'Hausmeinung'],
 ]
 const rank: Record<Severity, number> = { risk: 0, warn: 1, info: 2, ok: 3 }
-const LIMIT: Partial<Record<BriefGroup, number>> = { Anlass: 1, Positionen: 4, Verlauf: 2, Kunde: 2 }
+const LIMIT: Partial<Record<BriefGroup, number>> = { Anlass: 1, Positionen: 4, Hausmeinung: 2, Verlauf: 2, Kunde: 2 }
 
 // Tiles from the engine: its findings, most serious first within each group, trimmed to fit 60 s.
 // Titles lose the portfolio prefix; a leading figure becomes the tile's big number.
@@ -34,7 +35,7 @@ function fromFindings(client: Client, findings: EngineFinding[]): BriefItem[] {
   const picked = new Map<BriefGroup, EngineFinding[]>()
   // Same severity: the more telling check first (a currency share says more than the asset mix).
   const prefer = (f: EngineFinding) => ['contradiction', 'portfolio.violations', 'portfolio.concentration', 'portfolio.liquidity', 'portfolio.allocation'].findIndex((c) => f.check.startsWith(c)) >>> 0
-  const usable = findings.filter((f) => f.severity !== 'ok' && !/^Abgelehnt(:| vom)/.test(f.title)).sort((a, b) => rank[a.severity] - rank[b.severity] || prefer(a) - prefer(b))
+  const usable = findings.filter((f) => (f.severity !== 'ok' || f.check.startsWith('cio.')) && !(f.check.startsWith('cio.') && f.id.endsWith(':summary')) && !/^Abgelehnt(:| vom)/.test(f.title)).sort((a, b) => rank[a.severity] - rank[b.severity] || prefer(a) - prefer(b))
   for (const f of usable) {
     const group = GROUP.find(([re]) => re.test(f.check))?.[1] ?? (f.kind === 'action' ? 'Vorschlag' : undefined)
     if (!group) continue
@@ -42,7 +43,7 @@ function fromFindings(client: Client, findings: EngineFinding[]): BriefItem[] {
     if (list.length < (LIMIT[group] ?? 1)) picked.set(group, [...list, f])
   }
   const out: BriefItem[] = []
-  for (const group of ['Anlass', 'Positionen', 'Verlauf', 'Kunde', 'Vorschlag'] as BriefGroup[]) {
+  for (const group of ['Anlass', 'Positionen', 'Hausmeinung', 'Verlauf', 'Kunde', 'Vorschlag'] as BriefGroup[]) {
     for (const f of picked.get(group) ?? []) {
       const title = f.title.replace(/^CASE-[\w-]+:\s*/, '')
       const lead = /^([−+-]?\d[\d'.,]*\s?%)\s+(.+)$/.exec(title)

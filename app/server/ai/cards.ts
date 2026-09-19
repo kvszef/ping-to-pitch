@@ -3,6 +3,7 @@
 // Key figures and client context come from the UI's own fromRaw, so both paths show the same facts.
 
 import { fromRaw } from '../../src/data/fromRaw.ts'
+import { houseView } from '../houseview.ts'
 import type { Card, CardOf, Severity, TalkLine } from '../../src/types.ts'
 import type { Briefing60, Line } from './briefing.ts'
 import { amount, day, pct, type Finding } from './findings.ts'
@@ -114,6 +115,21 @@ function flagsCard(findings: Finding[]): CardOf<'flags'> {
   }
 }
 
+// The bank's investment view with this client's points (engine check cio.house-view). No findings: no card.
+function houseViewCard(findings: Finding[]): CardOf<'houseview'> | null {
+  const mine = findings.filter((f) => f.check === 'cio.house-view')
+  const summary = mine.find((f) => f.id.endsWith(':summary'))
+  if (!summary) return null
+  const view = houseView()
+  return {
+    type: 'houseview', title: view.example ? 'Hausmeinung (Beispiel)' : 'Hausmeinung', date: `${view.date.slice(8, 10)}.${view.date.slice(5, 7)}.${view.date.slice(0, 4)}`,
+    example: view.example, summary: view.summary,
+    stances: view.stances.map((s) => ({ label: s.label, rating: s.rating, why: s.why })),
+    hits: mine.filter((f) => f !== summary).map((f) => ({ kind: f.kind === 'action' ? 'chance' as const : 'abweichung' as const, text: f.title.replace(/^Chance: /, ''), detail: f.detail })),
+    inLine: summary.numbers?.inLine, measured: summary.numbers?.measured,
+  }
+}
+
 /** Every card except the talk track, which the route sends once it is phrased (or right away without a model). */
 export function factCards(raw: unknown, reference: unknown, findings: Finding[], b: Briefing60, now: Date): Card[] {
   const base = fromRaw(raw, now).briefing.filter((c) => c.type === 'metrics' || c.type === 'context')
@@ -124,7 +140,7 @@ export function factCards(raw: unknown, reference: unknown, findings: Finding[],
   const instant: Card[] = [
     ...base, flagsCard(findings), ...contradictions,
     ...findings.filter((f) => f.check === 'context.stale-note').slice(0, 2).map(staleCard),
-    ...([profileCard(b, findings), todosCard(findings)] as (Card | null)[]).filter((c): c is Card => c !== null),
+    ...([profileCard(b, findings), todosCard(findings), houseViewCard(findings)] as (Card | null)[]).filter((c): c is Card => c !== null),
     { type: 'questions', title: 'Wahrscheinliche Fragen', items: b.questions.map((q) => ({ q: q.q, a: q.a })) },
     { type: 'actions', title: 'Nächste Schritte', items: b.actions.map((a) => {
       const f = a.findings.map((id) => byId.get(id)).find((x): x is Finding => !!x)

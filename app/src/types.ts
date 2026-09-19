@@ -23,6 +23,7 @@ export type Card =
   | { type: 'todos'; title: string; items: { text: string; owner: 'Berater' | 'Kunde'; due?: string; done: boolean; overdue?: boolean; source: string }[] }
   | { type: 'callnote'; title: string; source: string; note: CallNote }
   | { type: 'talktrack'; title: string; open: TalkLine; mention: TalkLine[]; ask: TalkLine[]; avoid: TalkLine[]; reasons?: TalkLine[] }
+  | { type: 'houseview'; title: string; date: string; example: boolean; summary: string; stances: { label: string; rating: number; why: string }[]; hits: { kind: 'chance' | 'abweichung'; text: string; detail?: string }[]; inLine?: number; measured?: number }
 
 // A quoted client note with its date and where it comes from.
 export type Evidence = { quote: string; date: string; source: string }

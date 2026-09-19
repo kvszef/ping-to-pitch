@@ -24,6 +24,7 @@ export async function ask(client: Client, question: string): Promise<string> {
       case 'todos': return c.items.map((t) => `${t.done ? 'Erledigt' : t.overdue ? 'Überfällig' : 'Offen'} (${t.owner}${t.due ? `, fällig ${t.due}` : ''}): ${t.text}`)
       case 'callnote': return [...c.note.proposed.map((p) => `Vorgeschlagen: ${p.text} ${p.why ?? ''}`), ...c.note.promises.map((p) => `Zusage${p.due ? ` bis ${p.due}` : ''}: ${p.text}`), ...c.note.factUpdates.map((f) => `${f.note}${f.newValue ? ` → ${f.newValue}` : ''}`)]
       case 'talktrack': return [c.open, ...c.mention, ...c.ask, ...c.avoid].map((l) => `${l.text} (${l.source}${l.date ? `, ${l.date}` : ''})`)
+      case 'houseview': return [`Hausmeinung vom ${c.date}${c.example ? ' (Beispiel)' : ''}: ${c.summary}`, ...c.hits.map((h) => `${h.text}${h.detail ? ` ${h.detail}` : ''}`), ...c.stances.map((x) => `${x.label}: ${x.rating > 0 ? 'übergewichten' : x.rating < 0 ? 'untergewichten' : 'neutral'}. ${x.why}`)]
     }
   })
   const hits = lines.filter((l) => words.some((w) => l.toLowerCase().includes(w))).slice(0, 2)

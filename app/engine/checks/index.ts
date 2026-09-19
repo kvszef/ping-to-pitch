@@ -1,5 +1,6 @@
 // Check registry. One file per check, one line here.
 import type { Check } from '../types.ts'
+import { houseView } from './cio-house-view.ts'
 import { history } from './context-history.ts'
 import { peerBehaviour } from './context-peer-behaviour.ts'
 import { peers } from './context-peers.ts'
@@ -36,6 +37,7 @@ export const checks: Record<string, Check> = {
   'portfolio.maturities': maturities,
   'portfolio.liquidity': liquidity,
   'portfolio.ex-custody': exCustody,
+  'cio.house-view': houseView,
   'context.stale-note': staleNote,
   'context.plan': plan,
   'context.peers': peers,

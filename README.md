@@ -293,7 +293,8 @@ What the real data already proves:
 | Client data in the UI | Engine over `clients.json` (via SQLite and MCP Toolbox, case files as fallback), uploaded files and imported ex-custody PDFs; the three sample clients in `app/src/data/mock.ts` only when the API is down | Same, fed from the bank's core system |
 | Briefing wording, chat, call analysis | LLM via OpenAI or Apertus (OpenAI-compatible); example mode without keys (`app/src/workspace/brain.ts`) | Same, phrasing engine findings only |
 | Live transcription | ElevenLabs speech-to-text; scripted call as fallback | Same |
-| News and CIO view | Live web news per holding (Bing News RSS, free, no key), judged by the model, refreshed every 10 min; saved snapshot offline. No CIO view yet | Licensed feed (e.g. SIX, Refinitiv) and the bank's house view behind the same interface (`app/server/market/`) |
+| News | Live web news per holding (Bing News RSS, free, no key), judged by the model, refreshed every 10 min; saved snapshot offline | Licensed feed (e.g. SIX, Refinitiv) behind the same interface (`app/server/market/`) |
+| CIO house view | An **example** house view (`app/engine/houseview.ts`, labelled "Beispiel" on screen). The engine check `cio.house-view` compares every portfolio with it deterministically (look-through exposures vs SAA targets); opportunities only within the mandate band, stated wishes and the ESG floor, products from the bank's recommendation list | The bank's monthly CIO view in the same JSON shape via `HOUSE_VIEW_FILE` (e.g. read from the CIO PDF with the ex-custody import path); nothing else changes |
 | Call memory | Confirmed call notes in the server's memory (`app/server/memory/`), lost on restart; rejected proposals from the data from minute zero | SQLite or the bank's CRM, same `CallNote` shape |
 
 Every live dependency has an offline fallback, so the demo never dies.

@@ -4,6 +4,7 @@ import { appBriefing, briefing60, briefingClients, uploadClients } from './ai/br
 import { briefingNews, clientNews, newsFeed, newsStatus, outbound, pushNews, snapshotNews, startNewsWatcher } from './market/route.ts'
 import { callRoute } from './call.ts'
 import { newsAgentRoute } from './ai/news-agent.ts'
+import { houseView } from './houseview.ts'
 import { callsRoute } from './calls.ts'
 import { importRoute } from './import/route.ts'
 import { askData, chatWithData } from './ai/chat-route.ts'
@@ -246,6 +247,7 @@ export function api(env: Env): Plugin {
         try {
           if (req.url.startsWith('/api/call/') && await callRoute(req, res)) return
           if (req.url === '/api/status') return send(res, 200, { openai: ready(env, 'openai'), apertus: ready(env, 'apertus'), elevenlabs: !!env.ELEVENLABS_API_KEY, transcribe: !!env.ELEVENLABS_API_KEY || !!env.OPENAI_API_KEY, daten: await dataStatus() })
+          if (req.url === '/api/house-view' && req.method === 'GET') return send(res, 200, houseView())
           if (req.url === '/api/clients' && req.method === 'GET') return send(res, 200, await caseClients())
           const llm = { complete: (p: Provider, m: Message[]) => complete(env, p, true, m), ready: (p: Provider) => ready(env, p) }
           if (req.url.startsWith('/api/briefing60')) {

@@ -29,7 +29,7 @@ export type UploadResult = { ok: true; count: number; message: string; refs: str
 
 // Which tier a card belongs to when the briefing comes from local data.
 const tierOf: Record<Card['type'], Tier> = {
-  talktrack: 'instant', metrics: 'instant', flags: 'instant', allocation: 'instant', context: 'instant', drivers: 'instant',
+  talktrack: 'instant', houseview: 'instant', metrics: 'instant', flags: 'instant', allocation: 'instant', context: 'instant', drivers: 'instant',
   headline: 'fast', actions: 'fast', questions: 'fast', proposal: 'fast',
   contradiction: 'fast', lookthrough: 'fast', stalenote: 'fast', todos: 'fast', callnote: 'fast',
   split: 'slow', // compares the portfolio with market news and the CIO view
@@ -41,7 +41,7 @@ const timeout: Record<Tier, number> = { instant: 4000, fast: 20000, slow: 60000 
 // Default reading order on the page, independent of the order in which tiers arrive. The model can
 // move its ranked insight cards (see server/ai/insights.ts) ahead of this for one client; cards it
 // did not rank keep their place here, appended after the ones it did.
-const cardOrder: Card['type'][] = ['talktrack', 'headline', 'metrics', 'split', 'allocation', 'drivers', 'contradiction', 'proposal', 'lookthrough', 'stalenote', 'context', 'profile', 'peers', 'flags', 'actions', 'todos', 'questions', 'callnote']
+const cardOrder: Card['type'][] = ['talktrack', 'headline', 'metrics', 'split', 'allocation', 'drivers', 'contradiction', 'houseview', 'proposal', 'lookthrough', 'stalenote', 'context', 'profile', 'peers', 'flags', 'actions', 'todos', 'questions', 'callnote']
 export function sortCards(cards: Card[], modelOrder?: Card['type'][], hidden?: Card['type'][]): Card[] {
   const order = modelOrder?.length ? [...modelOrder, ...cardOrder.filter((t) => !modelOrder.includes(t))] : cardOrder
   const rank = (c: Card) => { const i = order.indexOf(c.type); return i < 0 ? order.length : i }

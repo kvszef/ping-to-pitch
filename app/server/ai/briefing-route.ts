@@ -11,6 +11,7 @@ import { rankCards } from './insights.ts'
 import type { Finding } from './findings.ts'
 import { provisionalFindings } from './provisional-findings.ts'
 import { peerStats, type PeerStats } from '../../engine/peers.ts'
+import { houseView } from '../houseview.ts'
 import { readClient } from '../../engine/data.ts'
 import { classifyNote } from '../../engine/wishes.ts'
 import { classifyNotes, type WishAnswers } from './wishes.ts'
@@ -86,7 +87,7 @@ export async function briefing60(method: string, url: string, body: Buffer | nul
   let engine: Finding[] = []
   let engineError: string | undefined
   try {
-    engine = run(raw, { ref: index, now, memory: notesFor(str(raw.ClientRef)), wishes, peers: peersOf(clients, index) })
+    engine = run(raw, { ref: index, now, memory: notesFor(str(raw.ClientRef)), wishes, peers: peersOf(clients, index), houseView: houseView() })
   } catch (e) {
     engineError = e instanceof Error ? e.message : String(e)
   }
@@ -147,7 +148,7 @@ export async function templateFor(ref: string, llm: Llm): Promise<{ template: Br
   const now = new Date()
   const wishes = await wishesFor(raw, index, llm)
   let engine: Finding[] = []
-  try { engine = run(raw, { ref: index, now, memory: notesFor(ref), wishes, peers: peersOf(clients, index) }) } catch { /* the stopgap still answers */ }
+  try { engine = run(raw, { ref: index, now, memory: notesFor(ref), wishes, peers: peersOf(clients, index), houseView: houseView() }) } catch { /* the stopgap still answers */ }
   const { findings } = mergeFindings(engine, provisionalFindings(raw, reference, now))
   return { template: composeBriefing(ref, findings), findings }
 }
@@ -165,7 +166,7 @@ export async function appBriefing(url: string, llm: Llm) {
   const now = new Date()
   const wishes = await wishesFor(raw, index, llm)
   let engine: Finding[] = []
-  try { engine = run(raw, { ref: index, now, memory: notesFor(ref), wishes, peers: peersOf(clients, index) }) } catch { /* the stopgap still answers */ }
+  try { engine = run(raw, { ref: index, now, memory: notesFor(ref), wishes, peers: peersOf(clients, index), houseView: houseView() }) } catch { /* the stopgap still answers */ }
   const { findings } = mergeFindings(engine, provisionalFindings(raw, reference, now))
   const template = composeBriefing(ref, findings)
   const provider = providerFor(llm)
@@ -203,7 +204,7 @@ export async function clientsWithFindings(now: Date): Promise<{ raw: Record<stri
   const peers = peersOf(clients, index)
   return all.map((raw) => {
     let findings: Finding[] = []
-    try { findings = run(raw, { ref: index, now, memory: notesFor(str(raw.ClientRef)), peers }) } catch { /* ranked on news only */ }
+    try { findings = run(raw, { ref: index, now, memory: notesFor(str(raw.ClientRef)), peers, houseView: houseView() }) } catch { /* ranked on news only */ }
     return { raw, ref: str(raw.ClientRef), name: header(raw).name, index, findings }
   })
 }
