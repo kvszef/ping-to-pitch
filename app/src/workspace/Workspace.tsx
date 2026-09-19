@@ -45,7 +45,7 @@ type Props = {
 
 const rank = { risk: 0, warn: 1, info: 2, ok: 3 }
 // Why the client is probably calling, from the engine's profile check.
-const callReasons = (client: Client) => (client.findings ?? []).filter((f) => f.check === 'profile.call-reason').map((f) => f.title).join('; ') || undefined
+const callReasons = (client: Client) => (client.findings ?? []).filter((f) => (f.check === 'profile.call-reason' || (f.check === 'cio.house-view' && !!f.numbers?.changed))).map((f) => f.title).join('; ') || undefined
 const providerLabel = { openai: 'OpenAI', apertus: 'Apertus', beispiel: 'Beispielmodus' }
 const TODAY = 6 // how many of today's ranked clients show their reason
 // A call that came in while the advisor was on another call.

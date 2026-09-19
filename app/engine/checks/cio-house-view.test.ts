@@ -12,7 +12,8 @@ describe('cio.house-view', () => {
     expect(usd.kind).toBe('interpretation')
     expect(usd.severity).toBe('warn')
     expect(usd.numbers!.actual).toBeGreaterThan(usd.numbers!.target!)
-    expect(usd.title).toMatch(/^Hausmeinung US-Dollar untergewichten \(absichern\), Portfolio 75\.3%/)
+    expect(usd.title).toMatch(/^Neu seit 15\.09\.2026 \(vorher neutral\): Hausmeinung US-Dollar untergewichten \(absichern\), Portfolio 75\.3%/)
+    expect(usd.numbers!.changed).toBe(1)
     expect(usd.evidence[0]).toMatchObject({ source: 'Hausmeinung (Beispiel)' })
   })
 
@@ -22,8 +23,18 @@ describe('cio.house-view', () => {
     expect(chances.length).toBeGreaterThan(0)
     for (const f of chances) {
       expect(f.numbers!.actual).toBeLessThan(f.numbers!.target!)
-      expect(f.detail).toMatch(/Empfehlungsliste: \S/)
+      expect(f.detail).toMatch(/Empfehlungsliste: \S|Vorschlag: /)
     }
+  })
+
+  it('proposes a re-checked step funded from the deviation (CASE-004: energy fund into bonds)', () => {
+    const bonds = houseView(client('CASE-004'), withView).find((f) => f.id.endsWith('AssetClass:Bonds'))!
+    expect(bonds.fix?.SecurityPositions.length).toBe(2)
+    const [sell, buy] = bonds.fix!.SecurityPositions
+    expect(sell.TotalAmountInProposalCurrency).toBeLessThan(0)
+    expect(buy.TotalAmountInProposalCurrency).toBe(-sell.TotalAmountInProposalCurrency!)
+    expect(bonds.numbers!.after).toBeGreaterThan(bonds.numbers!.actual)
+    expect(bonds.detail).toMatch(/Vorschlag: Verkauf .+ CHF [\d']+, Kauf .+ CHF [\d']+\. Danach: Obligationen 20\.5% → /)
   })
 
   it('stays quiet where the portfolio is in line, and without a house view (CASE-037)', () => {

@@ -14,7 +14,8 @@
 // Without ctx.houseView the check says nothing. The model never sees a task here: numbers and wording are fixed.
 import type { Dimension } from '../data.ts'
 import { ratingDe, type Stance } from '../houseview.ts'
-import { categoryDe, dateCh, pct, pts, shortName } from '../format.ts'
+import { categoryDe, chf, dateCh, pct, pts, shortName } from '../format.ts'
+import { rebalance, type Rebalance } from '../rebalance.ts'
 import { wishesOf } from '../wishes.ts'
 import type { Check, Evidence, Finding } from '../types.ts'
 import { clientOf, findingId, SRC } from './common.ts'
@@ -30,11 +31,13 @@ const MAX_FINDINGS = 3
 const productName = (name: string) => shortName(name
   .replace(/^(Anteile|Namen-Aktie|Inhaber-Aktie|Na\. u\. Inh\. Ti\.-Aktie|Genussschein)\s+/i, '')
   .replace(/^-[^-]*-\s*/, '')
+  .replace(/^(Namen-Aktie|Inhaber-Aktie)\s+/i, '')
+  .replace(/^-[^-]*-\s*/, '')
   .replace(/^(CHF|USD|EUR)\s*\(Hedged\)\s*/i, '')
   .replace(/\s*\(R\)/g, '')
   .trim())
 
-type Hit = { stance: Stance; actual: number; target?: number; gap: number; kind: 'chance' | 'abweichung'; product?: string }
+type Hit = { stance: Stance; actual: number; target?: number; gap: number; kind: 'chance' | 'abweichung'; product?: { id: number; name: string }; trade?: Rebalance }
 
 export const houseView: Check = (raw, ctx) => {
   const view = ctx.houseView
@@ -63,7 +66,7 @@ export const houseView: Check = (raw, ctx) => {
         : s.dimension === 'CountryGroup' ? x.assetClass === 'Shares' && x.countryGroup === s.category
           : s.dimension === 'Industry' ? x.assetClass === 'Shares' && x.industry === s.category : false))
     const fund = fits.find((x) => /fund|etf/i.test(x.type ?? '')) ?? fits[0]
-    return fund ? productName(fund.name) : undefined
+    return fund ? { id: fund.id, name: productName(fund.name) } : undefined
   }
 
   let measured = 0, inLine = 0
@@ -88,6 +91,27 @@ export const houseView: Check = (raw, ctx) => {
     }
   }
 
+  // A concrete, re-checked step for each opportunity that has a product: funded from the largest deviation
+  // (the view wants less of it), otherwise from cash above the liquidity target.
+  const deviation = hits.filter((h) => h.kind === 'abweichung').sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap))[0]
+  for (const h of hits.filter((x) => x.kind === 'chance' && x.product && x.target !== undefined)) {
+    const s = h.stance
+    const source = deviation && !(deviation.stance.dimension === 'AssetClass' && deviation.stance.category === 'Liquidity')
+      ? { kind: 'position' as const, dimension: deviation.stance.dimension as Dimension, category: deviation.stance.category, label: deviation.stance.label }
+      : { kind: 'cash' as const, label: 'Liquidität CHF' }
+    h.trade = rebalance(raw, ctx, { dimension: s.dimension as Dimension, category: s.category, label: s.label, target: h.target! }, h.product!, source)
+      ?? (source.kind === 'position' ? rebalance(raw, ctx, { dimension: s.dimension as Dimension, category: s.category, label: s.label, target: h.target! }, h.product!, { kind: 'cash', label: 'Liquidität CHF' }) : undefined)
+  }
+  // Recent changes of the view first, then opportunities with a ready step, then the largest gaps.
+  const weightOf = (h: Hit) => (h.stance.changed ? 2 : 0) + (h.trade ? 1 : 0)
+  const changedNote = (s: Stance) => (s.changed && s.previous !== undefined ? `Neu seit ${dateCh(s.changed)} (vorher ${ratingDe(s.previous)}): ` : '')
+  // "Verkauf Alphabet CHF 4'000, Kauf PIMCO … CHF 4'000"; from cash: "aus der Liquidität CHF 618'000 in …".
+  const legText = (t: Rebalance) => {
+    const [sell, buy] = t.legs
+    return sell.name === 'Liquidität CHF' ? `aus der Liquidität ${chf(buy.amount)} in ${productName(buy.name)} investieren` : `Verkauf ${productName(sell.name)} ${chf(sell.amount)}, Kauf ${productName(buy.name)} ${chf(buy.amount)}`
+  }
+  const effectText = (t: Rebalance) => t.effects.map((e) => `${e.label} ${e.unit === '%' ? `${pct(e.before)} → ${pct(e.after)}` : `${e.before} → ${e.after}`}`).join(', ')
+
   const id = (subject: string) => findingId(CHECK, client.ref, subject)
   const viewEvidence: Evidence = { source: view.example ? 'Hausmeinung (Beispiel)' : 'Hausmeinung', quote: view.title, date: view.date }
   const within = (s: Stance) => (s.dimension === 'CountryGroup' || s.dimension === 'Industry' ? ' des Aktienteils' : '')
@@ -99,7 +123,7 @@ export const houseView: Check = (raw, ctx) => {
     evidence: [viewEvidence],
   }]
 
-  for (const h of hits.sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap)).slice(0, MAX_FINDINGS)) {
+  for (const h of hits.sort((a, b) => weightOf(b) - weightOf(a) || Math.abs(b.gap) - Math.abs(a.gap)).slice(0, MAX_FINDINGS)) {
     const s = h.stance
     const where = h.target !== undefined ? `${pct(h.actual)}${within(s)} statt Ziel ${pct(h.target)} (${pts(h.gap)})` : `${pct(h.actual)}${within(s)}`
     out.push({
@@ -107,14 +131,20 @@ export const houseView: Check = (raw, ctx) => {
       kind: h.kind === 'chance' ? 'action' : 'interpretation',
       severity: h.kind === 'chance' ? 'ok' : 'warn', topic: 'house-view',
       title: h.kind === 'chance'
-        ? `Chance: Hausmeinung ${s.label} ${ratingDe(s.rating)}, Portfolio ${where}`
-        : `Hausmeinung ${s.label} ${ratingDe(s.rating)}${s.action ? ` (${s.action})` : ''}, Portfolio ${where}`,
+        ? `${changedNote(s) || 'Chance: '}Hausmeinung ${s.label} ${ratingDe(s.rating)}, Portfolio ${where}`
+        : `${changedNote(s)}Hausmeinung ${s.label} ${ratingDe(s.rating)}${s.action ? ` (${s.action})` : ''}, Portfolio ${where}`,
       detail: [
         s.why,
-        h.kind === 'chance' ? `Aufstocken bis zum Ziel bleibt im Mandatsband${h.product ? `; aus der Empfehlungsliste: ${h.product}` : ''}.` : '',
+        h.trade
+          ? `Vorschlag: ${legText(h.trade)}. Danach: ${effectText(h.trade)}.${h.trade.newIssues.length ? ` Neu zu beachten: ${h.trade.newIssues.map((f) => f.title).join('; ')}.` : ''}`
+          : h.kind === 'chance' ? `Aufstocken Richtung Ziel bleibt im Mandatsband${h.product ? `; aus der Empfehlungsliste: ${h.product.name}` : ''}.` : '',
         `Gemessen mit Durchsicht in Fonds, Kategorie ${categoryDe(s.category)}.`,
       ].filter(Boolean).join(' '),
-      numbers: { actual: h.actual, ...(h.target !== undefined ? { target: h.target } : {}), gap: h.gap, rating: s.rating },
+      numbers: {
+        actual: h.actual, ...(h.target !== undefined ? { target: h.target } : {}), gap: h.gap, rating: s.rating, changed: s.changed ? 1 : 0,
+        ...(h.trade ? { amount: h.trade.legs[0].amount, after: h.trade.effects[0].after } : {}),
+      },
+      fix: h.trade?.fix,
       evidence: [viewEvidence, SRC.saa(saa?.name), ...(main ? [SRC.portfolio(main.nr)] : [])],
     })
   }

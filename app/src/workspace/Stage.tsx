@@ -86,7 +86,7 @@ function Profile({ client, compact = false, language }: { client: Client; compac
     ['Alter', fact('Alter')], ['ESG', fact('ESG-Profil')], ['Letzte Beratung', client.lastConsultation], ['Regelverletzungen', client.errors + client.warnings ? `${client.errors} Fehler · ${client.warnings} Warnungen` : undefined],
   ].filter((f): f is [string, string] => !!f[1] && f[1] !== '–')
   const notes = context?.type === 'context' ? context.notes.slice(0, 2) : []
-  const reasons = (client.findings ?? []).filter((f) => f.check === 'profile.call-reason').map((f) => f.title).slice(0, 2)
+  const reasons = (client.findings ?? []).filter((f) => (f.check === 'profile.call-reason' || (f.check === 'cio.house-view' && !!f.numbers?.changed))).map((f) => f.title).slice(0, 2)
   // The engine's facts are precise but wordy; the model condenses them to a glance, in the advisor's language.
   const summary = useSummary(persona?.type === 'profile' ? persona.persona : undefined, reasons, notes, language)
   const labels = useTranslated(facts.map(([label]) => label), language)

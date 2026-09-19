@@ -62,7 +62,7 @@ export function RingingIsland({ client, call, signal, onAccept, onDecline, busyW
   )
   const headline = client.briefing.find((c) => c.type === 'headline')
   const track = client.briefing.find((c) => c.type === 'talktrack')
-  const fromEngine = (client.findings ?? []).filter((f) => f.check === 'profile.call-reason').map((f) => ({ text: f.title }))
+  const fromEngine = (client.findings ?? []).filter((f) => (f.check === 'profile.call-reason' || (f.check === 'cio.house-view' && !!f.numbers?.changed))).map((f) => ({ text: f.title }))
   const reasons = fromEngine.length ? fromEngine.slice(0, 3) : track?.type === 'talktrack' ? (track.reasons ?? []).slice(0, 3) : []
   const persona = client.findings?.find((f) => f.check === 'profile.persona')?.title
   const tone = (client.findings ?? []).filter((f) => f.check === 'profile.tone').map((f) => f.title.replace(/^Ton:\s*/, ''))

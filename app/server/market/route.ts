@@ -99,6 +99,11 @@ export async function outbound(complete: Complete | null) {
     const engine = e.findings.filter((f) => f.severity === 'risk' || (f.severity === 'warn' && f.kind === 'action'))
       .sort((a, b) => (a.severity === 'risk' ? 0 : 1) - (b.severity === 'risk' ? 0 : 1)).slice(0, MAX_ENGINE)
     for (const f of engine) reasons.push({ kind: 'risk', severity: f.severity, title: f.title, findingId: f.id, points: ENGINE_POINTS[f.severity as 'risk' | 'warn'] ?? 0 })
+    // House view (cio.house-view): a recent change of the view that touches this client, or an opportunity with a
+    // ready, re-checked step, is a reason to call today. At most two per client.
+    const view = e.findings.filter((f) => f.check === 'cio.house-view' && !f.id.endsWith(':summary') && (f.numbers?.changed || f.fix))
+      .sort((a, b) => (b.numbers?.changed ?? 0) - (a.numbers?.changed ?? 0)).slice(0, 2)
+    for (const f of view) reasons.push({ kind: f.kind === 'action' ? 'opportunity' : 'risk', severity: f.severity === 'ok' ? 'ok' : 'warn', title: f.title, findingId: f.id, points: (f.numbers?.changed ? 1.2 : 0) + (f.fix ? 0.8 : 0) })
     reasons.sort((a, b) => b.points - a.points)
     const score = Math.round(reasons.reduce((s, r) => s + r.points, 0) * 10) / 10
     return { ref: e.ref, name: e.name, score, opportunities: reasons.filter((r) => r.kind === 'opportunity').length, reasons: reasons.slice(0, 5) }

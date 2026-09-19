@@ -28,7 +28,17 @@ export function HouseViewCard({ card }: { card: CardOf<'houseview'> }) {
               <span className="mt-[3px]"><SeverityIcon severity={h.kind === 'chance' ? 'ok' : 'warn'} size={12} /></span>
               <span className="min-w-0 flex-1">
                 <KindTag kind={h.kind === 'chance' ? 'action' : 'interpretation'} />{h.text}
-                {h.detail && <span className="block text-[11px] text-muted">{h.detail}</span>}
+                {h.detail && (() => {
+                  // The engine writes "reason. Vorschlag: … Danach: …. Gemessen …": show the step apart from the reason.
+                  const [why, rest] = h.detail.split(/ Vorschlag: /)
+                  const [step, after] = (rest ?? '').split(/ Danach: /)
+                  return (
+                    <>
+                      <span className="block text-[11px] text-muted">{why.replace(/ Gemessen mit.*$/, '')}</span>
+                      {rest && <span className="mt-1 block rounded-lg bg-ok/10 px-2 py-1 text-[12px] text-ink"><span className="mr-1 text-[10px] uppercase tracking-wide text-muted">Vorschlag</span>{step.replace(/\.$/, '')}{after && <span className="block text-[11px] text-muted">Danach: {after.replace(/ Gemessen mit.*$/, '')}</span>}</span>}
+                    </>
+                  )
+                })()}
               </span>
             </li>
           ))}
