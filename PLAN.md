@@ -122,6 +122,24 @@ POST /api/call/note · POST /api/call/note/:id/confirm
 already there: /api/chat · /api/analyse · /api/transcribe · /api/status
 ```
 
+### News (N1 ↔ N2)
+
+Two uses of the same matched news:
+
+- **Inbound**: a client calls. Was there recent, important news about something they hold? If yes it becomes a call reason ("Nestlé -8% yesterday, you hold 6% of it, 2% more via funds") on the ringing banner and at the top of the briefing.
+- **Outbound**: rank all clients for "who to call today". A risk hit pushes a client up (bad news on a big holding), and so does an **opportunity** (news that fits a stated wish or the mandate, e.g. the house view upgrades a region the client is below target in). An opportunity is only shown if it passes mandate, risk profile, ESG preference and stated wishes.
+
+Split: N1 (Arash) computes, N2 (Kaushik) shows. The UI types already exist in `app/src/types.ts`, so nobody waits.
+
+```
+GET  /api/news                  NewsItem[]  newest first; affects[ref] filled by N1 for every client it touches
+GET  /api/outbound              { ref, score, reasons: { kind: 'risk' | 'opportunity', title, severity, findingId?, newsId? }[] }[]  highest score first
+POST /api/news                  demo only: push one news item, matched on arrival (N2's demo control)
+GET  /api/briefing/:ref         unchanged; news hits arrive as `news.*` findings in tier=slow, and as a call reason
+```
+
+Engine side: matched news enters the check context as `ctx.news` (absent = no news, nothing breaks). Check `news.hit` emits one finding per relevant item (fact: what happened and the exposure in % incl. look-through; source: the news item and the position). `profile.call-reason` ranks a hit from the last 3 days like its other reasons. Matching is by `SecurityId`/issuer, sector and region first; embeddings only for items the rules cannot place.
+
 An ex-custody portfolio is just a `Portfolios[]` entry with `isExCustody: true`. The engine needs no special case, and neither does the fix simulator: apply the fix to a copy, run the checks again, show before and after.
 
 ## 4. Tracks
@@ -139,8 +157,8 @@ Each track owns its own files, so agents running in parallel do not collide. Own
 | **A2** | Live call copilot | Ahmet | `server/ai/call*`, `src/workspace/useCallAudio.ts` | Listening already works (ElevenLabs). Add only: to-dos the client asked for, and "show the data being talked about". Scripted call stays one click away. Biggest stage risk, so no more than that |
 | **A3** | Memory | Ahmet | `server/memory*` | Post-call draft → one-tap confirm → SQLite → read by the engine. Seeded from rejected proposals |
 | **A4** | Ask-the-data chat | Kaushik | `server/ai/chat*`, `src/components/ChatDock.tsx` | The on-demand twin of the live copilot: the advisor asks, the chat answers from the client's data, including niche questions no check covers (a single transaction, a fee, one position's history). The LLM only picks a tool and phrases the result; tools over the engine's data index do the lookup and the arithmetic, and every answer names its source. Says so when the data does not support an answer. Stretch, off by default: a fast outside search for things the data cannot hold (what a company does, a term), always labelled "outside source", never mixed into client numbers, and no client name or identifier in the query |
-| **N1** | News + CIO view | Arash | `server/market/` | News items matched to each client's holdings with embeddings (including what sits inside funds) → `Signal[]`. Sample news file and a live source behind one interface. "This happened before, and here is what markets did next": decide when this track starts, it needs outside price data |
-| **N2** | Outbound mode | free hands | `server/alerts*` | Light version: rank all clients by their findings and news hits into "who to call today", shown on the existing Anrufe & Signale page. No background watcher |
+| **N1** | News matching | Arash | `server/market/`, `engine/checks/news-*` | News items matched to each client's holdings (including what sits inside funds) → the UI's `NewsItem.affects` and `news.*` findings. Sample news file and a live source behind one interface. Contract: section 3, "News". "This happened before, and here is what markets did next": decide when this track starts, it needs outside price data |
+| **N2** | News on screen + inbound/outbound ranking | Kaushik | `src/`, `server/ai/news-agent*` | The news agent and feed on screen; inbound: "recent important news about this client" on the ringing banner and in the workspace; outbound: the "who to call today" ranking on the Anrufe & Signale page (risks and opportunities); internal tooling (agent tools, a demo control to push a news item live). Builds against the mock `newsFeed` / `signals` until N1 lands; only the import changes |
 | **N3** | Ex-custody PDF | free hands | `server/import*` | PDF → virtual portfolio → same engine path (bonus points) |
 | **U1** | Real data in the UI | Kaushik | `src/` | Mock replaced by the API, skeleton loading per tier, client-file upload |
 | **U2** | New cards | Kaushik | `src/cards/` | Contradiction + fix (before/after), look-through, stale note, client profile, peers, to-dos, post-call confirm, click any statement to see its source |

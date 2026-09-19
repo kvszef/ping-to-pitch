@@ -26,8 +26,8 @@ Shared "what is done, what is open" board for the 60-second client briefing. Pla
 | A2 Live call copilot | Ahmet | in progress | cf59e72, f78af13, 22e98db, 2e2d6a4, 70f2792, cbdb5b0, 10b3233, 418bf2a, 9511ffb, 2033021: `phone/` with Vapi number, live transcript, copilot event bus, SQLite loader, cXML bridge (SignalWire/Twilio) | Lives in `phone/`, not `app/server/ai/call*` as PLAN.md says; call to-dos and "show the data being talked about" in the app: unknown – owner to confirm. |
 | A3 Memory | Ahmet | not started | – (no `server/memory*`, no call-note table in `phone/toolbox/schema.sql`) | Post-call draft → confirm → SQLite → `ctx.memory`. unknown – owner to confirm. |
 | A4 Ask-the-data chat | Kaushik | in progress | 9dd6731, be9906f, 53df718: chat under the graph column, answers through OpenAI from the client's data and the engine's findings, number-checked, with sources | Tools over the engine's data index (a transaction, a fee, one position's history) not built yet. |
-| N1 News + CIO view | Arash | not started | – | Sample news file, embedding match to holdings incl. fund contents → `Signal[]`. |
-| N2 Outbound mode | free hands | not started | – | Rank clients by findings into "who to call today". |
+| N1 News matching | Arash | not started | – | Sample news file, match to holdings incl. fund contents → `/api/news` (`NewsItem.affects`), `news.hit` findings, news call reason, `/api/outbound` scores. Contract: PLAN.md section 3 "News". |
+| N2 News on screen + inbound/outbound ranking | Kaushik | not started | – | News agent + feed, inbound news call reason on the banner and workspace, outbound "who to call today" ranking on Anrufe & Signale, internal tooling (agent tools, demo push of a news item). Build on mock `newsFeed`/`signals` until N1's endpoints land. |
 | N3 Ex-custody PDF | free hands | not started | – (sample PDFs sit in `side-challenge/`) | PDF → virtual portfolio → same engine path. |
 | U1 Real data in the UI | Kaushik | done | b85ab39 … 9f92d36, 53df718: real client list only (samples are the offline fallback), engine briefing in the Briefing page and the workspace, tier skeletons, upload | Rehearse from a fresh clone. |
 | U2 New cards | Kaushik | in progress | af7f990, dfddd55, a1f6f2d: contradiction, look-through, stale note, profile, peers, to-do, call-note cards; engine sends real ones via /api/briefing | Click-to-source on every card. |
@@ -57,6 +57,7 @@ Shared "what is done, what is open" board for the 60-second client briefing. Pla
 
 ## Log
 
+- 2026-09-19 · Arash (Claude) · News split: N1 matching stays with Arash, N2 news on screen + inbound/outbound ranking + internal tooling moves to Kaushik; contract in PLAN.md
 - 2026-09-19 · Arash (engine session) · E2: wishes vs holdings, smallest fix with re-check, AI classifier for unknown notes (f2abb8c, f4cf5f2)
 - 2026-09-19 · Arash (Claude) · E4: client profile in the engine (traits with evidence, persona, tone, call reasons) and wired into the briefing composer (51cdbfe, e93f872)
 - 2026-09-19 · Arash · E3: context checks (stale notes, plans, liquidity, peers, own history) in the engine, stopgap parts removed (6d54f34)
