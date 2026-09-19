@@ -70,7 +70,8 @@ export function WidgetRail({ widgets, hot, onPin, onRemove, onFocus }: {
               {!w.pinned && <span className="flex items-center gap-0.5 text-brand"><Sparkles size={10} /> Gespräch</span>}
               <span className="ml-auto flex gap-0.5">
                 {!w.pinned && <button onClick={(e) => { e.stopPropagation(); onPin(w.id) }} aria-label="Behalten" title="Behalten" className="flex h-5 w-5 items-center justify-center rounded-full hover:bg-pill hover:text-ink"><Pin size={10} /></button>}
-                {w.pinned && <button onClick={(e) => { e.stopPropagation(); onRemove(w.id) }} aria-label="Lösen" title="Lösen" className="flex h-5 w-5 items-center justify-center rounded-full opacity-0 transition-opacity hover:bg-pill hover:text-ink group-hover:opacity-100"><X size={10} /></button>}
+                {/* Also shown for an unpinned, agent-picked widget: without it there was no way to close one the agent kept re-suggesting. */}
+                <button onClick={(e) => { e.stopPropagation(); onRemove(w.id) }} aria-label={w.pinned ? 'Lösen' : 'Ausblenden'} title={w.pinned ? 'Lösen' : 'Ausblenden'} className="flex h-5 w-5 items-center justify-center rounded-full opacity-0 transition-opacity hover:bg-pill hover:text-ink group-hover:opacity-100"><X size={10} /></button>
               </span>
             </div>
             {w.main && <div className="text-[26px] leading-tight tabular-nums text-ink">{w.main}</div>}

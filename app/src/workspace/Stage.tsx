@@ -154,10 +154,14 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
 
   // ---- widgets: the agent's picks plus the advisor's pins; leaving ones shrink out first ----
   const [pins, setPins] = useState<string[]>([])
+  // An agent pick the advisor closed: stays hidden even though the agent keeps suggesting it,
+  // until the advisor pins it back. Without this, closing an unpinned widget was a no-op — the
+  // agent's own picks (including the single fallback graph below) always re-filled the column.
+  const [dismissed, setDismissed] = useState<string[]>([])
   // Never an empty column: without the agent's picks, the graph (or figure) of the tile in focus.
   const focusTile = plan.focus ? byId.get(plan.focus) : undefined
   const picks = plan.widgets.length ? plan.widgets : focusTile ? [focusTile.chart ? `chart:${focusTile.chart}` : `tile:${focusTile.id}`] : []
-  const wanted = useMemo(() => [...pins, ...picks.filter((w) => !pins.includes(w))], [pins, picks.join('|')]) // eslint-disable-line react-hooks/exhaustive-deps
+  const wanted = useMemo(() => [...pins, ...picks.filter((w) => !pins.includes(w) && !dismissed.includes(w))], [pins, dismissed, picks.join('|')]) // eslint-disable-line react-hooks/exhaustive-deps
   const [shown, setShown] = useState<Widget[]>([])
   const toWidget = useCallback((key: string): Widget | null => {
     const pinned = pins.includes(key)
@@ -177,7 +181,8 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
     return () => clearTimeout(t)
   }, [wanted, toWidget])
   const pinnedTile = (id: string) => pins.includes(`tile:${id}`)
-  const togglePin = (key: string) => setPins((p) => (p.includes(key) ? p.filter((x) => x !== key) : [key, ...p]))
+  const togglePin = (key: string) => { setPins((p) => (p.includes(key) ? p.filter((x) => x !== key) : [key, ...p])); setDismissed((d) => d.filter((x) => x !== key)) }
+  const removeWidget = (key: string) => { setPins((p) => p.filter((x) => x !== key)); setDismissed((d) => (d.includes(key) ? d : [...d, key])) }
 
   const dock = usePresence(inCall, 450)
   // Open graph column: 2/5 of the row (the text side gets 3/5), measured so the width can animate.
@@ -252,7 +257,7 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
                   <span className="flex items-center gap-1.5"><BarChart3 size={12} /> Grafiken</span>
                   <button onClick={() => onGraphs(false)} aria-label="Grafiken einklappen" title="Grafiken einklappen" className="flex h-6 w-6 items-center justify-center rounded-full normal-case hover:bg-pill hover:text-ink"><PanelRightClose size={14} /></button>
                 </div>
-                <WidgetRail widgets={shown} hot={plan.focus ? `tile:${plan.focus}` : null} onPin={(id) => togglePin(id)} onRemove={(id) => setPins((p) => p.filter((x) => x !== id))}
+                <WidgetRail widgets={shown} hot={plan.focus ? `tile:${plan.focus}` : null} onPin={(id) => togglePin(id)} onRemove={removeWidget}
                   onFocus={(id) => { if (id.startsWith('tile:')) focus(id.slice(5)) }} />
               </div>
               <ChatPanel name={client.name} chat={chat} busy={busy} detail={detail} suggestions={chatSuggestions} onAsk={onAsk} onShow={onShowChart} />
