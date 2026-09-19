@@ -170,7 +170,7 @@ flowchart LR
   HOLD["holdings.ts<br/>8 biggest holdings per client<br/>'Namen-Aktie Nestle SA' → 'Nestle'<br/>fund → theme ('S&P 500')"]
   WEB(["Bing News RSS<br/>free, no key, de-CH<br/>only security names leave the server"])
   CAND["candidates<br/>must name the holding · last 3 days ·<br/>no price pages · max 4 per holding"]
-  JUDGE["judge · fast model<br/>relevant? importance 0–3?<br/>risk or opportunity? one German line<br/>no key: keyword rules"]
+  JUDGE["judge · fast model<br/>relevant? importance 0–3?<br/>risk or opportunity? one line in de + en<br/>no key: keyword rules"]
   SNAP[("news-snapshot.json<br/>offline fallback")]
   WATCH["watcher<br/>server start + every 10 min<br/>all clients"]
 
@@ -210,7 +210,7 @@ flowchart LR
   FC["OpenAI picks tools"]
   KW["keyword routing<br/>(Apertus, or no key: /api/chat/data)"]
   TOOLS["chat-tools.ts · deterministic<br/>holdings incl. look-through · transactions ·<br/>value history · cash and accounts<br/>no names, IBANs or portfolio numbers"]
-  PHRASE["model phrases the tool results<br/>in German, with sources"]
+  PHRASE["model phrases the tool results<br/>in the advisor's language, with sources"]
   GUARD["number check<br/>every figure must be in<br/>the data or a tool result"]
   ANS["answer in the chat panel<br/>text · sources · graph"]
   PIN["Anheften<br/>→ card 'Aus dem Chat'<br/>in the graph column"]

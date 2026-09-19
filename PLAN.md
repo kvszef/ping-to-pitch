@@ -95,7 +95,7 @@ type Finding = {
   check: string       // 'contradiction.fossil-fuel'
   kind: 'fact' | 'interpretation' | 'action'          // same vocabulary as app/src/types.ts
   severity: 'risk' | 'warn' | 'ok' | 'info'
-  title: string       // German, one line, written for the advisor
+  title: string       // one line, written for the advisor, in ctx.lang (English by default, German on request)
   detail?: string
   numbers?: Record<string, number>                    // raw, fractions 0–1, never pre-formatted
   evidence: { source: string; ref?: string; quote?: string; date?: string }[]
@@ -198,7 +198,7 @@ Integration is continuous and Claude's job. Everything plugs into a registry, so
 
 - Engine is TypeScript in `app/engine/`: shares types with the UI, runs in the same process, works on uploaded files. The repo is TypeScript only.
 - Everyone pushes to `main`. CI is advisory. No hooks, no branch protection.
-- UI text and LLM output in German (Swiss spelling). Code, commits and docs in English.
+- The app is English by default and German (Swiss spelling) on request, through the language switch in the top bar. Engine, composer, chat, news and model prompts phrase natively in the chosen language (`app/engine/lang.ts`); numbers and dates look the same in both. Code, commits and docs in English.
 
 ## 8. Finance words in plain language
 
