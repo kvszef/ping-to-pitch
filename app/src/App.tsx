@@ -88,12 +88,10 @@ export default function App() {
     )
   }
 
-  // Only E1 (portfolio facts) from the engine for now: cards built from E2–E4 findings stay out.
-  const e1 = briefing.cards.filter((c) => !['contradiction', 'stalenote', 'profile', 'todos', 'callnote'].includes(c.type))
-  const main = e1.filter((c) => slotOf(c) === 'main')
-  const side = e1.filter((c) => slotOf(c) === 'side')
+  const main = briefing.cards.filter((c) => slotOf(c) === 'main')
+  const side = briefing.cards.filter((c) => slotOf(c) === 'side')
   const loading = (tier: 'instant' | 'fast' | 'slow') => briefing.pending.includes(tier)
-  const withBriefing = { ...client, briefing: e1 }
+  const withBriefing = { ...client, briefing: briefing.cards }
   // The header pills are the demo shortcuts; an uploaded client gets its own pill while it is open.
   const pills = [client]
 

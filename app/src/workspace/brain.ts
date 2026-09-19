@@ -10,7 +10,7 @@ import type { ChatEntry, Hint, ModuleSpec, Origin, Settings, Slot, Topic, Transc
 // demselben Kontext. Ist kein Anbieter konfiguriert oder schlägt ein Aufruf fehl, übernimmt der
 // Beispielmodus (Stichwortsuche in den Beispieldaten), damit die Oberfläche immer bedienbar bleibt.
 
-export type Status = { openai: boolean; apertus: boolean; elevenlabs: boolean }
+export type Status = { openai: boolean; apertus: boolean; elevenlabs: boolean; transcribe?: boolean } // transcribe: the server can turn audio into text (ElevenLabs or OpenAI)
 export type Segment = { speaker: string; text: string }
 export type Thought = { lines: TranscriptLine[]; customer?: Slot; advisor?: Slot; hints: Hint[]; insight?: ChatEntry }
 export type Reply = { entry: ChatEntry; hints: Hint[]; next?: Slot }
