@@ -9,7 +9,9 @@ import { usePhoneAudio } from '../phone/usePhoneAudio'
 import { demoCalls, lineDelay, type DemoLine } from '../data/demoCalls'
 import { useOutbound } from '../data/useOutbound'
 import type { Card, CardOf, Client, Signal } from '../types'
+import { AfterCall, type EndedCall } from './AfterCall'
 import { activeProvider, agentStep, answer, demoScript, fetchStatus, question, screenFor, topicsFor, type AgentEvent, type Segment, type Status } from './brain'
+import { sinceCallStart } from './callNote'
 import { localPlan, nameIn, rebasePlan, type Plan, type Suggestion } from './screen'
 import { SettingsPanel } from './SettingsPanel'
 import { useSettings } from './settings'
@@ -172,6 +174,21 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
 
   useEffect(() => { fetchStatus().then(setStatus) }, [])
 
+  // After the call: what was heard since it began becomes a draft note the advisor confirms
+  // (AfterCall.tsx). Must stay above the client-change effect below, which clears the transcript:
+  // picking another client ends the call and switches client in one step, and effects run in order.
+  const [ended, setEnded] = useState<EndedCall | null>(null)
+  const callFor = useRef<{ ref: string; name: string } | null>(null)
+  const heardBefore = useRef<TranscriptLine[]>([])
+  useEffect(() => { if (inCall) callFor.current = identifying ? null : { ref: client.ref, name: client.name } }, [inCall, identifying, client.ref, client.name])
+  useEffect(() => {
+    if (inCall) { heardBefore.current = linesRef.current; return }
+    const who = callFor.current
+    callFor.current = null
+    const heard = [...sinceCallStart(heardBefore.current, linesRef.current), ...pending.map((text) => ({ speaker: 'Unbekannt', text }))]
+    if (who && heard.length >= 2) setEnded({ ref: who.ref, name: who.name, lines: heard })
+  }, [inCall]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // New client: a fresh start, except when the caller was just recognised mid-call (the call goes on).
   useEffect(() => {
     if (keepCall.current) { keepCall.current = false; saidRef.current = { ids: [], texts: [] }; setChat([]); setHints([]); return }
@@ -204,7 +221,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
   const [phoneMuted, setPhoneMuted] = useState(false)
   useEffect(() => { setPhoneMuted(false) }, [phoneCall])
   const togglePhoneMute = () => setPhoneMuted((m) => { deskLine.setMuted(!m); return !m })
-  const endCall = () => { if (phone) deskLine.hangup(); setInCall(false) }
+  const endCall = () => { if (phone || line.state === 'dialling') deskLine.hangup(); setInCall(false) } // also cancels a call that still rings
 
   // A demo call plays its script at speaking pace through the same path as live transcription.
   const demo = demoCalls.find((d) => d.id === initialDemo)
@@ -229,7 +246,8 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
     // A demo call: no microphone (the conversation is written and played); set before the call starts.
     if (asDemo) setDialling(target)
     setDemoMenu(false); setIdentifying(false); setRef(target); setScript(null); setInCall(true)
-    if (!asDemo) return
+    // A real call also rings the client's phone page (call.html); if nobody picks up, the laptop microphone takes over.
+    if (!asDemo) { deskLine.dial(target); return }
     const who = clients.find((c) => c.ref === target)
     const reasons = ranking.find((r) => r.ref === target)?.reasons.map((r) => r.title) ?? []
     const lines = who ? await demoScript(who, reasons, settings, status) : []
@@ -242,6 +260,13 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
   // A call listens to the microphone straight away when recording is on (real transcript, no script).
   useEffect(() => { if (inCall && settings.record && canListen(!!status.transcribe) && !script && !dialling && !phone) setMic(true) }, [inCall, status.transcribe]) // eslint-disable-line react-hooks/exhaustive-deps
   // (the internet call brings its own audio; see usePhoneAudio above) // eslint-disable-line react-hooks/exhaustive-deps
+  // Nobody picked up the internet call (timeout or declined): the call goes on with the laptop microphone, as before.
+  const wasDialling = useRef(false)
+  useEffect(() => {
+    const gaveUp = wasDialling.current && line.state === 'idle'
+    wasDialling.current = line.state === 'dialling'
+    if (gaveUp && inCall && settings.record && canListen(!!status.transcribe) && !script) setMic(true)
+  }, [line.state]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useCallAudio(mic && inCall && settings.record && !phone, !!status.transcribe, (segments) => hearRef.current(segments), (error) => { setMic(false); if (error) setNote(error) })
 
@@ -371,13 +396,13 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
             lead={
               <div className="flex min-w-0 shrink-0 items-baseline gap-2">
                 <span className="truncate text-[15px]">{client.name}</span>
-                <span className="flex items-center gap-1 text-[11px] text-muted"><span className={`h-1.5 w-1.5 rounded-full ${inCall ? 'animate-pulse bg-risk' : 'bg-track'}`} />{dialling ? 'Verbindet …' : inCall ? 'Gespräch' : 'Vorbereitung'}</span>
+                <span className="flex items-center gap-1 text-[11px] text-muted"><span className={`h-1.5 w-1.5 rounded-full ${inCall ? 'animate-pulse bg-risk' : 'bg-track'}`} />{dialling ? 'Verbindet …' : phone && line.state === 'dialling' ? 'Klingelt …' : inCall ? 'Gespräch' : 'Vorbereitung'}</span>
               </div>
             }
             actions={
               <div className="flex shrink-0 gap-1.5">
                 {inCall && settings.record && canListen(!!status.transcribe) && <button onClick={() => (phone ? togglePhoneMute() : setMic((m) => !m))} aria-label="Mikrofon" title="Mikrofon" className={`flex h-7 w-7 items-center justify-center rounded-full ${(phone ? !phoneMuted : mic) ? 'bg-risk text-white' : 'bg-pill hover:bg-track'}`}>{(phone ? !phoneMuted : mic) ? <Mic size={13} /> : <MicOff size={13} />}</button>}
-                <button onClick={() => (inCall ? endCall() : setInCall(true))} className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs text-white transition-colors ${inCall ? 'bg-risk' : 'bg-brand hover:bg-brand-dark'}`}>{inCall ? <><PhoneOff size={12} /> Beenden</> : <><Phone size={12} /> Anrufen</>}</button>
+                <button onClick={() => (inCall ? endCall() : void callOut(client.ref, false))} className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs text-white transition-colors ${inCall ? 'bg-risk' : 'bg-brand hover:bg-brand-dark'}`}>{inCall ? <><PhoneOff size={12} /> Beenden</> : <><Phone size={12} /> Anrufen</>}</button>
               </div>
             }
             chat={chat} busy={busy} detail={settings.detail} chatSuggestions={chatSuggestions} onAsk={ask}
@@ -389,6 +414,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
       </div>
 
       <SettingsPanel open={settingsOpen} settings={settings} status={status} update={update} onClose={() => setSettingsOpen(false)} />
+      {ended && <AfterCall key={ended.ref + ended.lines.length} call={ended} onClose={() => setEnded(null)} />}
     </>
   )
 }

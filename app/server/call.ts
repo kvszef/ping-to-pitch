@@ -15,10 +15,15 @@ const listeners: Record<Role, Set<ServerResponse>> = { desk: new Set(), phone: n
 let pendingRing: unknown = null
 // Messages for the phone are also queued for polling (GET /api/call/poll): the cloudflared tunnel
 // buffers server-sent events, so the phone never saw the desk's answer over the event stream.
-let phoneQueue: unknown[] = []
+// Each queued message carries its arrival time: a poll drops what is older than PHONE_TTL_MS, so a
+// dial from minutes ago never rings on a phone page that is opened later.
+const PHONE_TTL_MS = 20_000
+let phoneQueue: { at: number; msg: unknown }[] = []
+// When the phone page last polled: tells the desk whether a phone is there to be dialled at all.
+let phoneSeen = 0
 
 function push(to: Role, msg: unknown) {
-  if (to === 'phone') phoneQueue = [...phoneQueue.slice(-49), msg]
+  if (to === 'phone') phoneQueue = [...phoneQueue.slice(-49), { at: Date.now(), msg }]
   const line = `data: ${JSON.stringify(msg)}\n\n`
   for (const res of listeners[to]) res.write(line)
 }
@@ -43,7 +48,9 @@ export async function callRoute(req: IncomingMessage, res: ServerResponse): Prom
     return true
   }
   if (url.pathname === '/api/call/poll' && req.method === 'GET') {
-    const out = phoneQueue
+    phoneSeen = Date.now()
+    const fresh = Date.now() - PHONE_TTL_MS
+    const out = phoneQueue.filter((q) => q.at >= fresh).map((q) => q.msg)
     phoneQueue = []
     res.setHeader('Content-Type', 'application/json; charset=utf-8')
     res.setHeader('Cache-Control', 'no-store')
@@ -64,7 +71,7 @@ export async function callRoute(req: IncomingMessage, res: ServerResponse): Prom
     if (msg?.type === 'answer' || msg?.type === 'hangup' || msg?.type === 'decline') pendingRing = null
     push(to, msg)
     res.setHeader('Content-Type', 'application/json; charset=utf-8')
-    res.end(JSON.stringify({ ok: true, listeners: listeners[to].size }))
+    res.end(JSON.stringify({ ok: true, listeners: listeners[to].size, phoneOnline: Date.now() - phoneSeen < 5000 }))
     return true
   }
   return false

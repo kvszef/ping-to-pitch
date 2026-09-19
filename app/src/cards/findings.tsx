@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { ArrowRight, Check, CircleHelp, ClipboardCheck, Layers, ListTodo, ShieldAlert, UserRoundSearch, UsersRound, X } from 'lucide-react'
 import type { CallNote, CardOf, Effect, Trade } from '../types'
 import { KindTag, Panel, SeverityIcon, Source } from './ui'
+import { confirmNote } from '../workspace/callNote'
 
 const DIRECT = '#3f7fd9', FUNDS = '#69d4d6'
 const pct = (n: number, digits = 1) => `${n.toFixed(digits)}%`
@@ -228,10 +229,12 @@ const reactionStyle = { accepted: ['angenommen', 'bg-ok text-white'], rejected: 
 const statusStyle = { confirmed: ['bestätigt', 'bg-ok text-white'], outdated: ['veraltet', 'bg-pill text-ink'], changed: ['geändert', 'bg-brand text-white'] } as const
 const Chip = ({ style }: { style: readonly [string, string] }) => <span className={`w-[74px] shrink-0 rounded-sm py-px text-center text-[10px] ${style[1]}`}>{style[0]}</span>
 
-// Post-call confirmation. Confirming only flips local state until POST /api/call/note/:id/confirm exists.
+// Post-call confirmation. Confirming stores the note on the server (POST /api/calls/:ref/confirm).
 export function CallNoteCard({ card }: { card: CardOf<'callnote'> }) {
   const [note, setNote] = useState<CallNote>(card.note)
   const [editing, setEditing] = useState(false)
+  const [failed, setFailed] = useState<string | null>(null)
+  const confirm = () => { setEditing(false); setFailed(null); confirmNote(note.clientRef, note).then(() => setNote((n) => ({ ...n, confirmed: true })), (e: unknown) => setFailed(e instanceof Error ? e.message : 'Unbekannter Fehler')) }
   const cycle = (i: number) => setNote((n) => ({ ...n, proposed: n.proposed.map((p, j) => (j === i ? { ...p, reaction: reactionOrder[(reactionOrder.indexOf(p.reaction) + 1) % 3] } : p)) }))
   const row = (i: number) => `flex items-start gap-2 px-2 py-1.5 ${i % 2 ? '' : 'bg-stripe'}`
   return (
@@ -276,9 +279,9 @@ export function CallNoteCard({ card }: { card: CardOf<'callnote'> }) {
           <span className="flex items-center gap-1.5 text-xs"><SeverityIcon severity="ok" /> Gespeichert. Fliesst ins nächste Briefing ein.</span>
         ) : (
           <>
-            <button type="button" onClick={() => { setEditing(false); setNote((n) => ({ ...n, confirmed: true })) }} className="bg-brand px-3 py-1.5 text-xs text-white hover:bg-brand-dark">Bestätigen und speichern</button>
+            <button type="button" onClick={confirm} className="bg-brand px-3 py-1.5 text-xs text-white hover:bg-brand-dark">Bestätigen und speichern</button>
             <button type="button" onClick={() => setEditing((e) => !e)} className="border border-line px-3 py-1.5 text-xs hover:bg-stripe">{editing ? 'Fertig' : 'Bearbeiten'}</button>
-            <span className="ml-auto text-[11px] text-muted">{editing ? 'Reaktion anklicken zum Ändern' : 'Nichts wird ohne Bestätigung gespeichert'}</span>
+            <span className={`ml-auto text-[11px] ${failed ? 'text-risk' : 'text-muted'}`}>{failed ? `Speichern fehlgeschlagen: ${failed}` : editing ? 'Reaktion anklicken zum Ändern' : 'Nichts wird ohne Bestätigung gespeichert'}</span>
           </>
         )}
       </div>

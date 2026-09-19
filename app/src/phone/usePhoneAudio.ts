@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import type { Segment } from '../workspace/brain'
 import { audioContext, onCaption } from './deskLine'
 
-const CHUNK_MS = 7000
+const CHUNK_MS = 4000
 
 type Recognition = { lang: string; continuous: boolean; interimResults: boolean; start: () => void; stop: () => void; onresult: ((e: { resultIndex: number; results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void) | null; onend: (() => void) | null }
 const BrowserRecognition = ((window as unknown as Record<string, unknown>).SpeechRecognition ?? (window as unknown as Record<string, unknown>).webkitSpeechRecognition) as (new () => Recognition) | undefined

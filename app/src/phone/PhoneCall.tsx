@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Mic, MicOff, Phone, PhoneOff, UserRound } from 'lucide-react'
 import { ICE, gathered, listenCall, sendCall, type CallMessage } from './protocol.ts'
+import { startRingback, startRingtone, unlockTones } from './tones.ts'
 
 // The client's side of the internet call: pick a client, call the advisor's desk, talk over WebRTC.
+// The advisor can also call: a 'dial' makes this page ring ('incoming'); picking up runs the same
+// path as calling (the phone always creates the WebRTC offer).
 
-type Phase = 'idle' | 'ringing' | 'connected' | 'ended'
+type Phase = 'idle' | 'incoming' | 'ringing' | 'connected' | 'ended'
 type ClientOption = { ref: string; label: string }
 
 type Recognition = {
@@ -46,6 +49,7 @@ export default function PhoneCall() {
   const [clients, setClients] = useState<ClientOption[]>([])
   const [ref, setRef] = useState<string>(() => new URLSearchParams(location.search).get('ref') ?? '')
   const [phase, setPhase] = useState<Phase>('idle')
+  const [incoming, setIncoming] = useState('') // the client the advisor is calling, while it rings here
   const [error, setError] = useState<string | null>(null)
   const [muted, setMuted] = useState(false)
   const [startedAt, setStartedAt] = useState<number | null>(null)
@@ -100,7 +104,15 @@ export default function PhoneCall() {
   // Messages from the desk.
   useEffect(() => listenCall('phone', (msg) => {
     log(`from desk: ${msg.type}`)
-    if (msg.type === 'answer') {
+    if (msg.type === 'dial') {
+      if (phaseRef.current !== 'idle' && phaseRef.current !== 'ended') return
+      setError(null)
+      setIncoming(msg.ref)
+      go('incoming')
+    } else if (phaseRef.current === 'incoming') {
+      // The advisor gave up before the client picked up.
+      if (msg.type === 'hangup' || msg.type === 'decline') go('idle')
+    } else if (msg.type === 'answer') {
       const pc = pcRef.current
       if (!pc || phaseRef.current !== 'ringing') return
       pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp }).then(() => {
@@ -115,11 +127,29 @@ export default function PhoneCall() {
   // Tell the desk when the page goes away mid-call.
   useEffect(() => {
     const onHide = () => {
-      if (phaseRef.current === 'ringing' || phaseRef.current === 'connected') { hangupBeacon(); cleanup(); phaseRef.current = 'idle' }
+      if (phaseRef.current === 'incoming' || phaseRef.current === 'ringing' || phaseRef.current === 'connected') { hangupBeacon(); cleanup(); phaseRef.current = 'idle' }
     }
     window.addEventListener('pagehide', onHide)
     return () => window.removeEventListener('pagehide', onHide)
   }, [cleanup])
+
+  // Tones: the ringtone and vibration while the advisor calls, the ringback while the desk rings.
+  // An unanswered incoming call ends by itself, in case the desk's hangup never arrives.
+  useEffect(() => {
+    if (phase === 'ringing') return startRingback()
+    if (phase !== 'incoming') return
+    const stopTone = startRingtone()
+    const buzz = () => { try { navigator.vibrate?.([700, 300, 700]) } catch { /* not supported */ } }
+    buzz()
+    const buzzing = window.setInterval(buzz, 3000)
+    const giveUp = window.setTimeout(() => { if (phaseRef.current === 'incoming') go('idle') }, 35000)
+    return () => {
+      stopTone()
+      clearInterval(buzzing)
+      clearTimeout(giveUp)
+      try { navigator.vibrate?.(0) } catch { /* not supported */ }
+    }
+  }, [phase])
 
   // Call timer.
   useEffect(() => {
@@ -143,7 +173,7 @@ export default function PhoneCall() {
     return () => { active = false; document.removeEventListener('visibilitychange', take); void lock?.release().catch(() => {}) }
   }, [phase])
 
-  // The phone transcribes its own voice: 7 s chunks go through the tunnel to /api/transcribe and the
+  // The phone transcribes its own voice: 4 s chunks go through the tunnel to /api/transcribe and the
   // text reaches the desk as a caption. This works even when the network blocks the direct audio link.
   useEffect(() => {
     if (phase !== 'connected') return
@@ -173,7 +203,7 @@ export default function PhoneCall() {
         } catch (e) { log(`transcribe failed ${e}`) }
       }
       try { current.start() } catch (e) { log(`recorder start failed ${e}`); return }
-      timer = window.setTimeout(() => current.state === 'recording' && current.stop(), 7000)
+      timer = window.setTimeout(() => current.state === 'recording' && current.stop(), 4000)
     }
     record()
     return () => { stopped = true; clearTimeout(timer); if (recorder?.state === 'recording') recorder.stop() }
@@ -215,13 +245,24 @@ export default function PhoneCall() {
     }
   }, [phase, transcribe])
 
-  const call = async () => {
+  // Tells the desk that its call is not taken (the client declined or the call could not start).
+  const refuse = () => {
+    log('incoming declined')
+    void sendCall('desk', { type: 'decline' }).catch(() => {})
+    go('idle')
+  }
+
+  // `as` is set when the client picks up the advisor's call: the call runs as the dialled client.
+  const call = async (as?: string) => {
+    const who = as ?? ref
     setError(null)
+    unlockTones()
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
       setError('Bitte über die https-Adresse öffnen.')
+      if (as) refuse()
       return
     }
-    if (!ref) { setError('Bitte zuerst einen Kunden wählen.'); return }
+    if (!who) { setError('Bitte zuerst einen Kunden wählen.'); return }
     go('ringing')
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
@@ -246,7 +287,7 @@ export default function PhoneCall() {
       await pc.setLocalDescription(await pc.createOffer())
       await gathered(pc)
       if (phaseRef.current !== 'ringing' || !pc.localDescription) return
-      const res = await sendCall('desk', { type: 'ring', ref, sdp: pc.localDescription.sdp })
+      const res = await sendCall('desk', { type: 'ring', ref: who, sdp: pc.localDescription.sdp })
       log(`ring sent ${res.status}`)
     } catch (e) {
       log(`call failed ${e}`)
@@ -257,9 +298,12 @@ export default function PhoneCall() {
           ? 'Kein Mikrofon gefunden.'
           : 'Der Anruf konnte nicht gestartet werden.')
       cleanup()
-      go('idle')
+      if (as) refuse()
+      else go('idle')
     }
   }
+
+  const pickUp = () => { log(`incoming accepted as ${incoming}`); setRef(incoming); void call(incoming) }
 
   const toggleMute = () => {
     const next = !muted
@@ -268,7 +312,8 @@ export default function PhoneCall() {
   }
 
   const elapsed = startedAt ? Math.max(0, Math.floor((now - startedAt) / 1000)) : 0
-  const clientLabel = clients.find((c) => c.ref === ref)?.label ?? ref
+  const shownRef = phase === 'incoming' ? incoming : ref
+  const clientLabel = clients.find((c) => c.ref === shownRef)?.label ?? shownRef
   const insecure = typeof window !== 'undefined' && !window.isSecureContext
 
   return (
@@ -276,17 +321,19 @@ export default function PhoneCall() {
       <audio ref={audioRef} autoPlay playsInline />
 
       <div className="flex w-full max-w-sm flex-col items-center text-center">
-        <div className={`mb-6 flex h-28 w-28 items-center justify-center rounded-full bg-white/10 ${phase === 'ringing' ? 'animate-pulse' : ''}`}>
+        <div className={`mb-6 flex h-28 w-28 items-center justify-center rounded-full bg-white/10 ${phase === 'ringing' || phase === 'incoming' ? 'animate-pulse' : ''}`}>
           <UserRound className="h-14 w-14 text-white/80" strokeWidth={1.5} />
         </div>
-        <h1 className="text-2xl font-semibold">Ihr Kundenberater</h1>
+        <h1 className="text-2xl font-semibold">{phase === 'incoming' ? 'Ihr Kundenberater ruft an' : 'Ihr Kundenberater'}</h1>
         <p className="mt-2 text-base text-white/60">
           {phase === 'idle' && 'Bereit zum Anrufen'}
+          {phase === 'incoming' && 'Eingehender Anruf …'}
           {phase === 'ringing' && 'Klingelt …'}
           {phase === 'connected' && <>Verbunden · <span className="tabular-nums">{mmss(elapsed)}</span></>}
           {phase === 'ended' && 'Anruf beendet'}
         </p>
         {phase !== 'idle' && clientLabel && <p className="mt-1 text-sm text-white/40">Als {clientLabel}</p>}
+        {phase === 'idle' && <p className="mt-3 text-xs text-white/40">Seite offen lassen, um Anrufe zu erhalten</p>}
         {phase === 'connected' && <p className="mt-3 text-xs text-white/50">Bildschirm bleibt an. Diese Seite während des Gesprächs offen lassen.</p>}
         {phase === 'connected' && captionsOn &&<p className="mt-3 text-xs text-emerald-300/80">Live-Untertitel vom Telefon</p>}
       </div>
@@ -328,6 +375,23 @@ export default function PhoneCall() {
               <span className="text-sm text-white/80">Anrufen</span>
             </button>
           </>
+        )}
+
+        {phase === 'incoming' && (
+          <div className="flex items-end justify-center gap-16">
+            <button type="button" onClick={refuse} aria-label="Ablehnen" className="flex flex-col items-center gap-2">
+              <span className="flex h-20 w-20 items-center justify-center rounded-full bg-red-500 shadow-lg shadow-red-500/30 active:scale-95">
+                <PhoneOff className="h-9 w-9" />
+              </span>
+              <span className="text-sm text-white/80">Ablehnen</span>
+            </button>
+            <button type="button" onClick={pickUp} aria-label="Annehmen" className="flex flex-col items-center gap-2">
+              <span className="flex h-20 w-20 animate-pulse items-center justify-center rounded-full bg-emerald-500 shadow-lg shadow-emerald-500/30 active:scale-95">
+                <Phone className="h-9 w-9" />
+              </span>
+              <span className="text-sm text-white/80">Annehmen</span>
+            </button>
+          </div>
         )}
 
         {(phase === 'ringing' || phase === 'connected') && (

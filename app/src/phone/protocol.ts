@@ -5,7 +5,8 @@
 export type CallMessage =
   | { type: 'ring'; ref: string; sdp: string }            // phone -> desk: client calls, WebRTC offer
   | { type: 'answer'; sdp: string }                        // desk -> phone: advisor picked up
-  | { type: 'decline' }                                    // desk -> phone
+  | { type: 'dial'; ref: string }                          // desk -> phone: advisor calls; the phone rings and answers with its own 'ring'
+  | { type: 'decline' }                                    // either way: desk declines a ring, phone declines a dial
   | { type: 'hangup' }                                     // either way
   | { type: 'caption'; speaker: 'Kunde'; text: string }    // phone -> desk: fallback when the server has no transcription key
 
