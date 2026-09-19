@@ -16,4 +16,16 @@ describe('unsupportedNumbers', () => {
     expect(unsupportedNumbers('Die 3 grössten Positionen', evidence)).toEqual([])
     expect(grounded(null, evidence)).toBe(false)
   })
+
+  it('checks English text the same way: same figures pass, a new one is flagged', () => {
+    expect(unsupportedNumbers("8.1% of assets, sale of CHF 67'000 on 17.12.2025, month -4.2%, 38 per cent held elsewhere", evidence)).toEqual([])
+    expect(unsupportedNumbers("Reduce positions worth CHF 40'000", evidence)).toEqual(["40'000"])
+  })
+
+  it('reads English thousands commas as the amount, never as a decimal comma', () => {
+    expect(unsupportedNumbers('Sale of CHF 67,000', evidence)).toEqual([])
+    // 38 is in the data, 38'000 is not: read as «38,0» it would slip through.
+    expect(unsupportedNumbers('Sale of CHF 38,000', evidence)).toEqual(['38,000'])
+    expect(unsupportedNumbers('A decimal comma still works: 8,1% und -4,2%', evidence)).toEqual([])
+  })
 })

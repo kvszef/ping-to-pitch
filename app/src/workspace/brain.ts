@@ -5,7 +5,8 @@ import type { NewsAgentItem, NewsAgentResult } from '../../server/ai/news-agent-
 import { deriveTopics } from './derive'
 import { grounded } from './grounding'
 import { CATALOGUE, chartsFor, checkPlan, describeCharts, describeTiles, localPlan, tilesFor, type Chart, type Plan, type Tile } from './screen'
-import type { ChatEntry, Hint, ModuleSpec, Origin, Settings, Slot, Topic, TranscriptLine } from './types'
+import { englishTopic, keywordHit, KEYWORDS_EN, OPENERS_EN } from './topics-en'
+import type { ChatEntry, Hint, Language, ModuleSpec, Origin, Settings, Slot, Topic, TranscriptLine } from './types'
 
 // Einzige Anschlussstelle für die KI. Gesprächsassistent und Berater-Chat fragen dieselbe Instanz mit
 // demselben Kontext. Ist kein Anbieter konfiguriert oder schlägt ein Aufruf fehl, übernimmt der
@@ -16,12 +17,36 @@ export type Segment = { speaker: string; text: string }
 export type Thought = { lines: TranscriptLine[]; customer?: Slot; advisor?: Slot; hints: Hint[]; insight?: ChatEntry }
 export type Reply = { entry: ChatEntry; hints: Hint[]; next?: Slot }
 
-// Hand-written topics for the sample clients, derived ones for every real client file.
+// Hand-written topics for the sample clients, derived ones for every real client file. The German ones are
+// the source (ids, keywords, figures); English is the same topics reworded by hand (topics-en.ts).
+// Every request and every example-mode answer follows the advisor's display language (settings.language);
+// where a caller names none it is English, the app's default.
 const derived = new WeakMap<Client, Topic[]>()
-export function topicsFor(client: Client): Topic[] {
-  if (topics[client.ref]) return topics[client.ref]
-  if (!derived.has(client)) derived.set(client, deriveTopics(client))
-  return derived.get(client)!
+const english = new WeakMap<Client, Topic[]>()
+export function topicsFor(client: Client, lang: Language = 'en'): Topic[] {
+  if (!topics[client.ref] && !derived.has(client)) derived.set(client, deriveTopics(client))
+  const german = topics[client.ref] ?? derived.get(client)!
+  if (lang === 'de') return german
+  if (!english.has(client)) english.set(client, german.map((t) => englishTopic(client, t)))
+  return english.get(client)!
+}
+
+// The brain's own fixed sentences, written by hand in both languages.
+const TEXT = {
+  de: {
+    noData: 'Dazu liegen für diesen Kunden keine Daten vor. Ich stelle keine Vermutung an.',
+    discarded: 'Die Antwort des Modells enthielt eine Zahl, die nicht in den Kundendaten steht. Sie wurde verworfen.',
+    asked: (q: string) => `Frage des Beraters: «${q}»`, heard: (t: string) => `Kunde: «${t}»`,
+    fromData: 'Aus den Kundendaten', opener: 'Gesprächseinstieg', openerFrom: 'Gesprächseinstieg aus Marktsignal',
+    down: (provider: string, why: unknown) => `[${provider} nicht erreichbar, Beispielmodus: ${why}]`, error: (status: number) => `Fehler ${status}`,
+  },
+  en: {
+    noData: 'There is no data on this for this client. I do not guess.',
+    discarded: "The model's answer held a number that is not in the client data. It was discarded.",
+    asked: (q: string) => `Advisor's question: «${q}»`, heard: (t: string) => `Client: «${t}»`,
+    fromData: 'From the client data', opener: 'Conversation opener', openerFrom: 'Conversation opener from a market signal',
+    down: (provider: string, why: unknown) => `[${provider} not reachable, example mode: ${why}]`, error: (status: number) => `Error ${status}`,
+  },
 }
 
 let counter = 0
@@ -38,10 +63,11 @@ export async function fetchStatus(): Promise<Status> {
 
 export const activeProvider = (settings: Settings, status: Status) => (status[settings.provider] ? settings.provider : null)
 
-async function post<T>(path: string, payload: unknown): Promise<T> {
+// Every request names the advisor's language, so the server phrases in it directly (absent would mean English).
+async function post<T>(path: string, payload: { language: Language; [key: string]: unknown }): Promise<T> {
   const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
   const data = await r.json()
-  if (!r.ok) throw new Error(data.error ?? `Fehler ${r.status}`)
+  if (!r.ok) throw new Error(data.error ?? TEXT[payload.language].error(r.status))
   return data
 }
 
@@ -52,71 +78,77 @@ async function post<T>(path: string, payload: unknown): Promise<T> {
 const newsCache = new Map<string, { at: number; items: NewsAgentItem[] }>()
 const NEWS_TTL = 60_000
 
-async function fetchNews(ref: string): Promise<NewsAgentItem[]> {
-  const cached = newsCache.get(ref)
+async function fetchNews(ref: string, lang: Language): Promise<NewsAgentItem[]> {
+  const key = `${lang}:${ref}`
+  const cached = newsCache.get(key)
   if (cached && Date.now() - cached.at < NEWS_TTL) return cached.items
   try {
-    const r = await fetch(`/api/news-agent?ref=${encodeURIComponent(ref)}`)
+    const r = await fetch(`/api/news-agent?ref=${encodeURIComponent(ref)}&lang=${lang}`)
     if (!r.ok) return cached?.items ?? []
     const data = await r.json() as NewsAgentResult
     const items = Array.isArray(data.items) ? data.items : []
-    newsCache.set(ref, { at: Date.now(), items })
+    newsCache.set(key, { at: Date.now(), items })
     return items
   } catch { return cached?.items ?? [] }
 }
 
 // Was das Modell über den Kunden erfährt: nur Fakten aus den Daten, ohne Namen und Kontonummern.
-function contextFor(client: Client, news: NewsAgentItem[] = []) {
+function contextFor(client: Client, news: NewsAgentItem[], lang: Language) {
   return {
     kunde: { kennung: client.ref, kundenprofil: client.profile, strategie: client.strategy, anlagedienstleistung: client.service, vermoegen: client.aum, anlass: client.context, letzteBeratung: client.lastConsultation, geburtsdatum: client.birthday, letzteProfilierung: client.lastProfiling },
     briefing: client.briefing,
     befunde: client.findings?.map((f) => ({ titel: f.title, art: f.kind, schwere: f.severity, quelle: f.evidence.map((e) => [e.source, e.date].filter(Boolean).join(', ')).join('; ') })),
     kennzahlen: client.facts ? { ...client.facts, performance: client.facts.performance && { ...client.facts.performance, series: undefined } } : undefined,
-    themen: topicsFor(client).map((t) => ({ thema: t.label, fakten: t.insight.detailliert, begruendung: t.why, quellen: t.sources })),
+    themen: topicsFor(client, lang).map((t) => ({ thema: t.label, fakten: t.insight.detailliert, begruendung: t.why, quellen: t.sources })),
     marktsignale: signals.filter((s) => s.affected.some((a) => a.ref === client.ref)).map((s) => ({ titel: s.title, detail: s.detail, reichweite: s.reach, quelle: s.source, betroffenheit: s.affected.find((a) => a.ref === client.ref)?.exposure })),
     nachrichten: news.map((n) => ({ titel: n.title, quelle: n.source, zeit: n.time, position: n.security, gewicht: n.weight, ton: n.tone, warum: n.why })),
   }
 }
 
-const catalogue = (client: Client) => topicsFor(client).filter((t) => t.module).map((t) => ({ id: t.id, titel: t.module!.spec.title, zeigt: t.module!.spec.note }))
+const catalogue = (client: Client, lang: Language) => topicsFor(client, lang).filter((t) => t.module).map((t) => ({ id: t.id, titel: t.module!.spec.title, zeigt: t.module!.spec.note }))
 
 function pickModule(client: Client, settings: Settings, chosen?: { id: string; confidence: number } | null): Pick<Extract<ChatEntry, { role: 'ki' }>, 'module' | 'offered'> {
-  const spec: ModuleSpec | undefined = topicsFor(client).find((t) => t.id === chosen?.id)?.module?.spec
+  const spec: ModuleSpec | undefined = topicsFor(client, settings.language).find((t) => t.id === chosen?.id)?.module?.spec
   if (!spec || !chosen) return {}
   const confidence = Math.round(Math.max(0, Math.min(100, chosen.confidence)))
   return settings.autoModules && confidence >= settings.confidence ? { module: spec } : { offered: { spec, confidence } }
 }
 
-export function detectTopics(who: string | Client, text: string): Topic[] {
+// German and English keywords both count, whatever the display language: the call may be held in either.
+// `lang` only decides the wording of the topics that come back.
+export function detectTopics(who: string | Client, text: string, lang: Language = 'en'): Topic[] {
   const w = words(text)
-  return (typeof who === 'string' ? topics[who] ?? [] : topicsFor(who)).filter((t) => t.keywords.some((k) => w.some((x) => x.startsWith(k))))
+  return (typeof who === 'string' ? topics[who] ?? [] : topicsFor(who, lang)).filter((t) => [...t.keywords, ...(KEYWORDS_EN[t.id] ?? [])].some((k) => w.some((x) => keywordHit(x, k))))
 }
 
 const hint = (topicId: string, label: string, text: string, why: string, severity: Hint['severity'], origin: Origin, trigger: string): Hint => ({ id: nextId(), topicId, label, text, why, severity, origin, trigger })
 
 // Ausgangslage ohne Gespräch: Gesprächseinstieg aus den Marktsignalen und die dringendsten Themen aus den Kundendaten.
-export function openingHints(client: Client): Hint[] {
+export function openingHints(client: Client, lang: Language = 'en'): Hint[] {
+  const T = TEXT[lang]
   const opener = signals.flatMap((s) => s.affected.filter((a) => a.ref === client.ref).map((a) => ({ a, s })))[0]
-  const all = topicsFor(client)
+  const spoken = opener && lang === 'en' ? OPENERS_EN[opener.s.id] : undefined
+  const all = topicsFor(client, lang)
   const urgent = all.filter((t) => t.severity === 'risk' || t.severity === 'warn')
-  const fromData = (urgent.length ? urgent : all).slice(0, opener ? 2 : 3).map((t) => hint(t.id, t.label, t.say, t.why, t.severity, 'kundendaten', 'Aus den Kundendaten'))
-  return opener ? [hint('einstieg', 'Gesprächseinstieg', opener.a.opener, opener.s.title, opener.a.severity, 'kundendaten', 'Gesprächseinstieg aus Marktsignal'), ...fromData] : fromData
+  const fromData = (urgent.length ? urgent : all).slice(0, opener ? 2 : 3).map((t) => hint(t.id, t.label, t.say, t.why, t.severity, 'kundendaten', T.fromData))
+  return opener ? [hint('einstieg', T.opener, spoken?.opener ?? opener.a.opener, spoken?.title ?? opener.s.title, opener.a.severity, 'kundendaten', T.openerFrom), ...fromData] : fromData
 }
 
 // Short chip label: the known topic name, otherwise the model's own keyword.
-const labelOf = (client: Client, topic: string) => topicsFor(client).find((t) => t.id === topic)?.label ?? topic.charAt(0).toUpperCase() + topic.slice(1)
+const labelOf = (client: Client, topic: string, lang: Language) => topicsFor(client, lang).find((t) => t.id === topic)?.label ?? topic.charAt(0).toUpperCase() + topic.slice(1)
 
 export const question = (text: string): ChatEntry => ({ id: nextId(), role: 'berater', text })
 
 const notice = (text: string): ChatEntry => ({ id: nextId(), role: 'ki', origin: 'chat', sources: [], text })
 
 function localAnswer(client: Client, text: string, settings: Settings, origin: Origin): Reply {
-  const found = detectTopics(client, text)
-  if (!found.length) return { hints: [], entry: notice('Dazu liegen für diesen Kunden keine Daten vor. Ich stelle keine Vermutung an.') }
+  const T = TEXT[settings.language]
+  const found = detectTopics(client, text, settings.language)
+  if (!found.length) return { hints: [], entry: notice(T.noData) }
   const t = found[0]
   return {
     entry: { id: nextId(), role: 'ki', origin, sources: t.sources, text: t.insight[settings.detail], ...pickModule(client, settings, t.module && { id: t.id, confidence: t.module.confidence }) },
-    hints: found.map((f) => hint(f.id, f.label, f.say, f.why, f.severity, origin, `Frage des Beraters: «${text}»`)),
+    hints: found.map((f) => hint(f.id, f.label, f.say, f.why, f.severity, origin, T.asked(text))),
     next: { heard: text, text: t.next, topic: t.id },
   }
 }
@@ -126,9 +158,9 @@ type ChatResult = { supported: boolean; text: string; sources?: string[]; module
 // A4 without a model: the server looks the answer up in the client's data (holdings incl. funds, trades,
 // value history, accounts) and phrases it deterministically. Undefined when the lookup has nothing to say
 // or the server is unreachable; the topic-based example mode then answers.
-async function dataAnswer(client: Client, text: string): Promise<Reply | undefined> {
+async function dataAnswer(client: Client, text: string, language: Language): Promise<Reply | undefined> {
   try {
-    const r = await post<ChatResult>('/api/chat/data', { ref: client.ref, question: text })
+    const r = await post<ChatResult>('/api/chat/data', { language, ref: client.ref, question: text })
     if (!r.supported || !r.text) return undefined
     return { hints: [], entry: { id: nextId(), role: 'ki', origin: 'chat', sources: r.sources ?? [], text: r.text } }
   } catch { return undefined }
@@ -136,35 +168,36 @@ async function dataAnswer(client: Client, text: string): Promise<Reply | undefin
 
 export async function answer(client: Client, text: string, settings: Settings, status: Status, history: ChatEntry[]): Promise<Reply> {
   const provider = activeProvider(settings, status)
-  if (!provider) { await new Promise((r) => setTimeout(r, 400)); return (await dataAnswer(client, text)) ?? localAnswer(client, text, settings, 'chat') }
+  const language = settings.language, T = TEXT[language]
+  if (!provider) { await new Promise((r) => setTimeout(r, 400)); return (await dataAnswer(client, text, language)) ?? localAnswer(client, text, settings, 'chat') }
   try {
-    const news = await fetchNews(client.ref)
-    const context = contextFor(client, news)
-    const r = await post<ChatResult>('/api/chat', { provider, detail: settings.detail, context, modules: catalogue(client), question: text, history: history.slice(-6).map((e) => ({ rolle: e.role, text: e.text })) })
+    const news = await fetchNews(client.ref, language)
+    const context = contextFor(client, news, language)
+    const r = await post<ChatResult>('/api/chat', { provider, language, detail: settings.detail, context, modules: catalogue(client, language), question: text, history: history.slice(-6).map((e) => ({ rolle: e.role, text: e.text })) })
     // Grounding guard: a sentence with a number that is not in the data never reaches the screen.
     // Tool results (A4, computed on the server from the client's data) count as data.
     const evidence = JSON.stringify(context) + text + JSON.stringify(r.tools ?? [])
     if (!grounded(r.text, evidence)) {
-      const data = await dataAnswer(client, text)
+      const data = await dataAnswer(client, text, language)
       if (data) return data
       const local = localAnswer(client, text, settings, 'chat')
-      return local.hints.length ? local : { hints: [], entry: notice('Die Antwort des Modells enthielt eine Zahl, die nicht in den Kundendaten steht. Sie wurde verworfen.') }
+      return local.hints.length ? local : { hints: [], entry: notice(T.discarded) }
     }
     if (r.hint && !grounded(r.hint.text, evidence)) r.hint = null
     if (r.next && !grounded(r.next, evidence)) r.next = null
     const topicId = r.module?.id ?? words(text).slice(0, 2).join('-')
     // For a known topic the sentence to the client is the computed one: the model tends to pin figures on the wrong subject.
-    const known = r.supported ? topicsFor(client).find((t) => t.id === topicId) : undefined
+    const known = r.supported ? topicsFor(client, language).find((t) => t.id === topicId) : undefined
     if (known) r.hint = { text: known.say, why: known.why }
     return {
       entry: { id: nextId(), role: 'ki', origin: 'chat', sources: r.sources ?? [], text: r.text, ...(r.supported ? pickModule(client, settings, r.module) : {}) },
-      hints: r.supported && r.hint ? [hint(topicId, labelOf(client, topicId), r.hint.text, r.hint.why, 'info', 'chat', `Frage des Beraters: «${text}»`)] : [],
+      hints: r.supported && r.hint ? [hint(topicId, labelOf(client, topicId, language), r.hint.text, r.hint.why, 'info', 'chat', T.asked(text))] : [],
       next: r.supported && r.next ? { heard: text, text: r.next, topic: topicId } : undefined,
     }
   } catch (e) {
-    const data = await dataAnswer(client, text)
+    const data = await dataAnswer(client, text, language)
     const fallback = data ?? localAnswer(client, text, settings, 'chat')
-    return { ...fallback, entry: { ...fallback.entry, text: `[${provider} nicht erreichbar, Beispielmodus: ${e instanceof Error ? e.message : e}]\n\n${(fallback.entry as { text: string }).text}` } }
+    return { ...fallback, entry: { ...fallback.entry, text: `${T.down(provider, e instanceof Error ? e.message : e)}\n\n${(fallback.entry as { text: string }).text}` } }
   }
 }
 
@@ -172,12 +205,12 @@ function localThink(client: Client, segments: Segment[], settings: Settings): Th
   const lines: TranscriptLine[] = segments.map((s) => ({ speaker: s.speaker === 'Berater' ? 'Berater' : 'Kunde', text: s.text }))
   const thought: Thought = { lines, hints: [] }
   for (const line of lines) {
-    const found = detectTopics(client, line.text)
+    const found = detectTopics(client, line.text, settings.language)
     if (!found.length) continue
     const t = found[0]
     if (line.speaker === 'Berater') { thought.advisor = { heard: line.text, text: t.next, topic: t.id }; continue }
     thought.customer = { heard: line.text, text: t.say, topic: t.id }
-    thought.hints.push(...found.map((f) => hint(f.id, f.label, f.say, f.why, f.severity, 'gespraech', `Kunde: «${line.text}»`)))
+    thought.hints.push(...found.map((f) => hint(f.id, f.label, f.say, f.why, f.severity, 'gespraech', TEXT[settings.language].heard(line.text))))
     thought.insight = { id: nextId(), role: 'ki', origin: 'gespraech', sources: t.sources, text: t.insight[settings.detail], ...pickModule(client, settings, t.module && { id: t.id, confidence: t.module.confidence }) }
   }
   return thought
@@ -194,10 +227,11 @@ type AnalyseResult = {
 export async function think(client: Client, transcript: TranscriptLine[], segments: Segment[], settings: Settings, status: Status): Promise<Thought> {
   const provider = activeProvider(settings, status)
   if (!provider) return localThink(client, segments, settings)
+  const language = settings.language
   try {
-    const news = await fetchNews(client.ref)
-    const context = contextFor(client, news)
-    const r = await post<AnalyseResult>('/api/analyse', { provider, detail: settings.detail, context, modules: catalogue(client), transcript: transcript.slice(-8), segments })
+    const news = await fetchNews(client.ref, language)
+    const context = contextFor(client, news, language)
+    const r = await post<AnalyseResult>('/api/analyse', { provider, language, detail: settings.detail, context, modules: catalogue(client, language), transcript: transcript.slice(-8), segments })
     // Grounding guard, as in `answer`: ungrounded parts fall back to the deterministic topic or are dropped.
     const evidence = JSON.stringify(context) + segments.map((s) => s.text).join(' ')
     const local = localThink(client, segments, settings)
@@ -211,7 +245,7 @@ export async function think(client: Client, transcript: TranscriptLine[], segmen
       lines,
       customer: r.customer ? { heard: r.customer.heard, text: r.customer.text, topic: r.customer.topic } : undefined,
       advisor: r.advisor ? { heard: r.advisor.heard, text: r.advisor.text, topic: r.advisor.topic } : undefined,
-      hints: r.customer ? [hint(r.customer.topic, labelOf(client, r.customer.topic), r.customer.text, r.customer.why ?? '', 'info', 'gespraech', `Kunde: «${r.customer.heard}»`)] : [],
+      hints: r.customer ? [hint(r.customer.topic, labelOf(client, r.customer.topic, language), r.customer.text, r.customer.why ?? '', 'info', 'gespraech', TEXT[language].heard(r.customer.heard))] : [],
       insight: r.insight ? { id: nextId(), role: 'ki', origin: 'gespraech', sources: r.insight.sources ?? [], text: r.insight.text, ...pickModule(client, settings, r.insight.module) } : undefined,
     }
   } catch {
@@ -237,8 +271,8 @@ const talkTrackTexts = (briefing: Card[]): Set<string> => {
   return new Set(t ? [t.open, ...t.mention, ...t.ask].map((l) => l.text) : [])
 }
 
-export function screenFor(client: Client, news: NewsItem[] = []): Screen {
-  const charts = chartsFor(client, topicsFor(client).filter((t) => t.module).map((t) => ({ id: t.id, spec: t.module!.spec })))
+export function screenFor(client: Client, news: NewsItem[] = [], lang: Language = 'en'): Screen {
+  const charts = chartsFor(client, topicsFor(client, lang).filter((t) => t.module).map((t) => ({ id: t.id, spec: t.module!.spec })))
   return { charts, tiles: tilesFor(client, charts, news) }
 }
 
@@ -256,8 +290,8 @@ export async function agentStep(client: Client, screen: Screen, transcript: Tran
   const provider = activeProvider(settings, status)
   if (!provider) return local()
   try {
-    const news = await fetchNews(client.ref)
-    const context = contextFor(client, news)
+    const news = await fetchNews(client.ref, settings.language)
+    const context = contextFor(client, news, settings.language)
     const tiles = describeTiles(screen.tiles), charts = describeCharts(screen.charts)
     const r = await post<Record<string, unknown>>('/api/agent', {
       provider, language: settings.language, context, catalogue: CATALOGUE, tiles, charts, transcript: transcript.slice(-8), segments, said, event: event.type === 'said' ? `Berater sagte: ${event.text}` : event.type === 'start' && event.out ? `Ausgehender Anruf: der Berater ruft den Kunden von sich aus an. Anlass des Anrufs: ${event.out}. Richte Kacheln, Fokus und Vorschläge auf diesen Anlass aus.` : event.type === 'start' && event.call ? `Eingehender Anruf, soeben angenommen. Vermutlicher Anlass: ${event.call}. Richte Kacheln, Fokus, Grafiken und Vorschläge auf diesen Anlass aus.` : event.type,
@@ -287,8 +321,8 @@ export async function demoScript(client: Client, reasons: string[], settings: Se
   const provider = activeProvider(settings, status)
   if (!provider) return []
   try {
-    const context = contextFor(client)
-    const r = await post<{ script?: Segment[] }>('/api/demo-script', { provider, context, reasons: reasons.map((text, i) => `GRUND ${i + 1}: ${text}`) })
+    const context = contextFor(client, [], settings.language)
+    const r = await post<{ script?: Segment[] }>('/api/demo-script', { provider, language: settings.language, context, reasons: reasons.map((text, i) => `GRUND ${i + 1}: ${text}`) })
     const evidence = JSON.stringify(context) + reasons.join(' ')
     return (r.script ?? []).filter((l) => (l.speaker === 'Kunde' || l.speaker === 'Berater') && l.text && grounded(l.text, evidence))
   } catch {
