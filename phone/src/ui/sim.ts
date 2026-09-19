@@ -165,6 +165,7 @@ export const simPage = `<!doctype html>
   .felder .stand { font-family:var(--f-mono); font-size:11px; color:var(--ink-3); }
   .felder .kopfzeile button { font-size:11.5px; padding:4px 9px; }
   .abschnitt { border-top:1px solid var(--line-soft); margin-top:14px; padding-top:13px; }
+  .abschnitt .kartentitel { margin-top:0; }
   .abschnitt .quelle { font-family:var(--f-mono); font-size:11px; color:var(--ink-3); margin:0 0 8px; word-break:break-all; }
   .abschnitt .hinweis { font-size:12px; color:var(--ink-3); margin:8px 0 0; }
   .abschnitt .leer { font-size:13px; color:var(--ink-3); margin:0; }
@@ -405,6 +406,95 @@ function briefingZeigen(karten) {
   briefingDa = true;
 }
 
+// ------------------------------------------------------------------ Kundendaten aus der Datenbank
+// Alles in diesem Abschnitt kommt unverändert aus /api/dossier: Spaltennamen wie im SELECT,
+// Werte wie in der Zelle. Nichts wird gerundet oder in Prozent umgerechnet -- Anteile sind
+// Brüche von 0 bis 1, so wie sie in der Datenbank stehen.
+
+// Der Kunde, dessen Daten gerade angezeigt werden. Trennt eine veraltete Antwort von der
+// aktuellen, wenn zwischendurch ein anderer Anruf kommt.
+let felderRef = null;
+
+const istZahl = (s) => s.trim() !== "" && !isNaN(Number(s));
+const zweistellig = (n) => String(n).padStart(2, "0");
+
+async function felderLaden(ref) {
+  const z = $("felder");
+  felderRef = ref || null;
+  if (!ref) {
+    z.innerHTML = '<p class="ruhe">Diese Nummer steht in keinem Kundendatensatz. Es werden keine Kundendaten angezeigt.</p>';
+    return;
+  }
+  z.innerHTML = '<p class="ruhe">Die Kundendaten werden aus der Datenbank gelesen …</p>';
+  try {
+    const r = await fetch("/api/dossier?ref=" + encodeURIComponent(ref));
+    if (!r.ok) throw new Error("Server antwortet " + r.status);
+    const d = await r.json();
+    if (felderRef !== ref) return;
+    felderZeigen(d);
+  } catch (e) {
+    z.innerHTML = '<p class="fehler">Kundendaten nicht lesbar: ' + esc(e.message) +
+      ". Läuft die Toolbox? <code>npm run toolbox</code></p>";
+  }
+}
+
+function felderZeigen(d) {
+  const z = $("felder");
+  z.innerHTML = "";
+
+  const kopf = el("div", "kopfzeile");
+  kopf.append(el("h3", null, esc(d.name || d.clientRef)));
+  const t = new Date(d.stand);
+  kopf.append(el("span", "stand", esc(d.clientRef) + " · gelesen " +
+    zweistellig(t.getHours()) + ":" + zweistellig(t.getMinutes()) + ":" + zweistellig(t.getSeconds())));
+  const knopf = el("button", null, "neu lesen");
+  knopf.addEventListener("click", () => felderLaden(d.clientRef));
+  kopf.append(knopf);
+  z.append(kopf);
+
+  if (!d.vollstaendig) {
+    z.append(el("p", "fehler", "Mindestens ein Werkzeug hat nicht geantwortet. Die betroffenen Abschnitte sind unten benannt."));
+  }
+  for (const a of d.abschnitte) z.append(abschnittZeigen(a));
+}
+
+function abschnittZeigen(a) {
+  const s = el("section", "abschnitt");
+  s.append(el("p", "kartentitel", esc(a.titel)), el("p", "quelle", esc(a.quelle)));
+
+  if (a.fehler) {
+    s.append(el("p", "fehlt", "Nicht gelesen: " + esc(a.fehler)));
+  } else if (a.art === "text" || a.art === "json") {
+    if (!a.text) s.append(el("p", "leer", "Leer."));
+    else s.append(el(a.art === "json" ? "pre" : "p", a.art === "json" ? "roh" : "freitext", esc(a.text)));
+  } else if (!a.zeilen || !a.zeilen.length) {
+    s.append(el("p", "leer", a.art === "felder" ? "Kein Datensatz zu dieser Kundenkennung." : "Keine Zeilen."));
+  } else if (a.art === "felder") {
+    const dl = el("dl", "feldliste");
+    a.spalten.forEach((spalte, i) => {
+      const wert = a.zeilen[0][i];
+      dl.append(el("dt", null, esc(spalte)), el("dd", null, wert === "" ? "–" : esc(wert)));
+    });
+    s.append(dl);
+  } else {
+    let h = "<table><thead><tr>";
+    for (const spalte of a.spalten) h += "<th>" + esc(spalte) + "</th>";
+    h += "</tr></thead><tbody>";
+    for (const zeile of a.zeilen) {
+      h += "<tr>";
+      for (const wert of zeile) {
+        const klasse = wert === "" ? "leerzelle" : istZahl(wert) ? "zahl" : "";
+        h += '<td class="' + klasse + '">' + (wert === "" ? "–" : esc(wert)) + "</td>";
+      }
+      h += "</tr>";
+    }
+    s.append(el("div", "tabelle", h + "</tbody></table>"));
+  }
+
+  if (a.hinweis) s.append(el("p", "hinweis", esc(a.hinweis)));
+  return s;
+}
+
 const ART = { say: "Das können Sie sagen", fact: "Fakt", next: "Nächster Schritt", warning: "Achtung" };
 
 function vorschlagZeigen(v) {
@@ -448,7 +538,9 @@ function verbinden() {
     uhrId = setInterval(() => { sekunden++; uhrStellen(); }, 1000);
     $("text").focus();
   });
-  on("client.identified", (e) => { kundeZeigen(e); if (e.briefing && e.briefing.length) briefingZeigen(e.briefing); });
+  // Das Briefing kommt im Ereignis weiterhin mit, angezeigt werden aber die Felder aus der
+  // Datenbank. Wer das formulierte Briefing sehen will: briefingZeigen(e.briefing) dazu.
+  on("client.identified", (e) => { kundeZeigen(e); felderLaden(e.clientRef); });
   on("transcript.segment", (e) => { if (e.final) beitragZeigen(e.speaker, e.text); });
   on("agent.step", schrittZeigen);
   on("suggestion", vorschlagZeigen);
@@ -462,7 +554,12 @@ function verbinden() {
     $("beenden").disabled = true;
   });
   on("status", (e) => {
-    if (e.component === "toolbox" && e.detail && e.detail.indexOf("Dossier") >= 0) dossierZeigen(e.detail);
+    if (e.component === "toolbox" && e.detail && e.detail.indexOf("Dossier") >= 0) {
+      dossierZeigen(e.detail);
+      // Die Notiz haengt jetzt am Freitext des Kunden: noch einmal lesen, dann steht sie auch
+      // im Abschnitt «Freitext im Dossier».
+      if (felderRef) felderLaden(felderRef);
+    }
   });
 
   quelle.onerror = () => { $("zustand").textContent = "Verbindung unterbrochen"; };
@@ -498,7 +595,7 @@ function zuruecksetzen() {
   $("transkript").innerHTML = '<p class="ruhe">Der Anruf steht. Schreib als Kunde oder als Berater.</p>';
   $("vorschlaege").innerHTML = "";
   $("log").innerHTML = '<p class="ruhe">Wartet auf den ersten Schritt …</p>';
-  $("briefing").innerHTML = '<p class="ruhe">Das Briefing wird gerade gebaut …</p>';
+  $("felder").innerHTML = '<p class="ruhe">Die Kundendaten werden gelesen, sobald die Nummer zugeordnet ist …</p>';
   $("kunde").innerHTML = '<p class="ruhe">Die Nummer wird nachgeschlagen …</p>';
   $("dossier").hidden = true;
   zaehlerSetzen();

@@ -210,7 +210,9 @@ export async function ladeDossier(client: ToolboxClient, clientRef: string): Pro
       fehler,
     })
 
-    if (schritt.tool === 'get_client_overview') {
+    // Freitext und Kundensatz stammen aus derselben Antwort. Ist sie ausgefallen, waeren die
+    // beiden Abschnitte nur leere Kaesten neben einer Fehlermeldung -- dann lieber gar keine.
+    if (schritt.tool === 'get_client_overview' && !fehler) {
       abschnitte.push({
         titel: 'Freitext im Dossier',
         quelle: `${quelle} · Spalte beschreibung`,
