@@ -50,6 +50,16 @@ describe('draftCallNote', () => {
     expect(note.promises).toEqual([])
   })
 
+  it('asks the model for an English note on request, German otherwise', async () => {
+    const seen: string[] = []
+    const complete: Complete = async (m) => { seen.push(m[0].content); return { proposed: [], promises: [{ text: 'Client request: send the documents' }], factUpdates: [] } }
+    const note = await draftCallNote('CASE-004', transcript, briefing, complete, 'en')
+    await draftCallNote('CASE-004', transcript, briefing, complete)
+    expect(seen[0]).toMatch(/Write in English/)
+    expect(seen[1]).toMatch(/Deutsch, Schweizer Schreibweise/)
+    expect(note.promises).toEqual([{ text: 'Client request: send the documents', done: false }])
+  })
+
   it('falls back to an empty draft when the model call fails', async () => {
     const complete: Complete = async () => { throw new Error('network') }
     const note = await draftCallNote('CASE-004', transcript, briefing, complete)

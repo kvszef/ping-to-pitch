@@ -50,6 +50,40 @@ describe('virtual ex-custody portfolio', () => {
   })
 })
 
+describe('in English', () => {
+  const importedEn = async (n: string) => buildExCustody(parseStatement(await pdfPages(readFileSync(DIR + readdirSync(DIR).find((f) => f.includes(`_${n}_`))!))), isins, 'en')
+
+  it('labels the portfolio and writes the report in English, numbers unchanged', async () => {
+    const [de, en] = [await imported('01'), await importedEn('01')]
+    expect(en.portfolio.Name).toBe('External custody account (ex-custody) · Privatbank Helvetia AG')
+    expect(en.portfolio.InvestmentServiceName).toBe('External custody account (ex-custody)')
+    expect(en.portfolio.StrategyName).toMatch(/^External mandate «/)
+    expect(en.importId).toBe(de.importId)
+    expect({ ...en.report, issues: [], rows: [] }).toEqual({ ...de.report, issues: [], rows: [] })
+    expect(en.report.issues).toHaveLength(de.report.issues.length)
+    expect(en.report.issues.some((i) => /not in the bank's master data: asset class estimated from the statement/.test(i))).toBe(true)
+    expect(en.report.issues.join(' ')).not.toMatch(/Position\(en\)|geschätzt|Auszug|Prüfziffer/)
+    expect(en.report.rows.filter((r) => r.matchedBy === 'account').every((r) => /^Account [A-Z]{3,5}$/.test(r.name))).toBe(true)
+    expect(buildExCustody(parseStatement(['nothing']), isins, 'en').report.issues[0]).toMatch(/^No positions recognised/)
+  })
+
+  it('says when the sum does not reconcile', () => {
+    const page = ["Privatbank Test AG", "Referenzwährung: CHF", "Detailpositionen", "Aktien", "CHF 10 N-Akt Nestle SA 3 886 335 / CH0038863350 90.00 100.00 31.12.25 1'000 50.00 %", "Total Vermögen 5'000 100.00 %"]
+    const { report } = buildExCustody(parseStatement([page.join('\n')]), isins, 'en')
+    expect(report.reconciles).toBe(false)
+    expect(report.issues.some((i) => /^The sum of the positions differs from the stated total assets by CHF -4.000\.$/.test(i))).toBe(true)
+  })
+
+  it('numbers the attached portfolio in English and the engine names it so', async () => {
+    const { portfolio, importId } = await importedEn('01')
+    const withEx = attachExCustody(attachExCustody(client('CASE-004'), portfolio), portfolio)
+    expect(exCustodyOf(withEx).map((p) => p.PortfolioNr)).toEqual(['External custody account 1'])
+    const findings = run(withEx, { ...ctx, lang: 'en' })
+    expect(findings.find((f) => f.check === 'portfolio.ex-custody')!.title).toMatch(/^External custody account 1 at Privatbank Helvetia AG: CHF 2'049'658/)
+    expect(exCustodyOf(detachExCustody(withEx, importId))).toHaveLength(0)
+  })
+})
+
 describe('attached to a client', () => {
   it('adds, replaces and removes the portfolio and keeps the totals right', async () => {
     const base = client('CASE-004')

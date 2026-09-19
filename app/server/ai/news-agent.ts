@@ -1,14 +1,17 @@
 // News agent (N2): live headlines for the biggest holdings of one client.
-//   GET /api/news-agent?ref=CASE-012  →  { items: NewsAgentItem[], fetchedAt, errors? }
+//   GET /api/news-agent?ref=CASE-012&lang=de|en  →  { items: NewsAgentItem[], fetchedAt, errors? }
+//   `lang` (absent = English) decides the language of what we write about an item (position line, the model's
+//   "why"). Headlines are data and never translated; the search itself stays on the Swiss German editions.
 //
 // Sources: Google News RSS (Swiss German edition, English as fallback for US names), Bing News RSS
 // (de-CH; answers when Google rate-limits us) and Yahoo Finance RSS for the few tickers we know for sure.
 // All free and keyless. Only security names, index
 // names and currency pairs leave the server; never client names, IBANs or account names.
-// With a model configured, one call per refresh classifies tone and writes one German line per item;
+// With a model configured, one call per refresh classifies tone and writes one line per item (in the language);
 // without one the items still arrive, just without tone and "why".
 // Items carry the UI's NewsItem shape (src/types.ts) plus the raw fields, so N1 can adopt the fetchers.
 
+import { langOf, pick, type Lang } from '../../engine/lang.ts'
 import type { Llm } from './briefing-route.ts'
 import { loadData } from '../database.ts'
 import type { NewsAgentItem, NewsAgentResult, Tone } from './news-agent-types.ts'
@@ -140,11 +143,12 @@ export function termFor(name: string, currency = ''): Omit<SearchTerm, 'weight'>
 }
 
 const CURRENCY_QUERY: Record<string, string> = { USD: 'Dollar Franken Wechselkurs', EUR: 'Euro Franken Wechselkurs', GBP: 'Pfund Franken Wechselkurs', JPY: 'Yen Franken Wechselkurs', CHF: 'Franken Wechselkurs SNB' }
-const SECTOR: Record<string, [string, string]> = {
-  'Information Technology': ['Technologie', 'Technologieaktien'], 'Health Care': ['Gesundheit', 'Pharma Aktien'], Financials: ['Finanzen', 'Bankaktien Finanzsektor'],
-  'Consumer Staples': ['Basiskonsum', 'Nahrungsmittel Aktien'], 'Consumer Discretionary': ['Zyklischer Konsum', 'Luxusgüter Konsum Aktien'],
-  Industrials: ['Industrie', 'Industrieaktien'], Materials: ['Rohstoffe', 'Rohstoffe Chemie Aktien'], Energy: ['Energie', 'Energieaktien Ölpreis'],
-  Utilities: ['Versorger', 'Versorger Strompreis'], 'Real Estate': ['Immobilien', 'Immobilienaktien'], 'Telecommunication Services': ['Telekom', 'Telekom Aktien'],
+// SAA industry → [German label, search term, English label]. The search term stays German (Swiss editions).
+const SECTOR: Record<string, [string, string, string]> = {
+  'Information Technology': ['Technologie', 'Technologieaktien', 'technology'], 'Health Care': ['Gesundheit', 'Pharma Aktien', 'health care'], Financials: ['Finanzen', 'Bankaktien Finanzsektor', 'financials'],
+  'Consumer Staples': ['Basiskonsum', 'Nahrungsmittel Aktien', 'consumer staples'], 'Consumer Discretionary': ['Zyklischer Konsum', 'Luxusgüter Konsum Aktien', 'consumer discretionary'],
+  Industrials: ['Industrie', 'Industrieaktien', 'industrials'], Materials: ['Rohstoffe', 'Rohstoffe Chemie Aktien', 'materials'], Energy: ['Energie', 'Energieaktien Ölpreis', 'energy'],
+  Utilities: ['Versorger', 'Versorger Strompreis', 'utilities'], 'Real Estate': ['Immobilien', 'Immobilienaktien', 'real estate'], 'Telecommunication Services': ['Telekom', 'Telekom Aktien', 'telecoms'],
 }
 
 /**
@@ -152,7 +156,8 @@ const SECTOR: Record<string, [string, string]> = {
  * (portfolios weighted by their size) plus up to two market terms (largest foreign currency, largest sector).
  * `industryOf` maps a SecurityId to its SAA_IndustryName (reference.json); without it no sector term.
  */
-export function searchTerms(raw: Raw, industryOf?: (securityId: number) => string | undefined, max = 8): SearchTerm[] {
+export function searchTerms(raw: Raw, industryOf?: (securityId: number) => string | undefined, max = 8, lang?: Lang): SearchTerm[] {
+  const t = pick(lang)
   const portfolios = arr(raw.Portfolios)
   const total = portfolios.reduce((s, p) => s + num(p.AssetsUnderManagementInDefaultCurrency), 0)
   const home = str(raw.ReportingCurrency) || 'CHF'
@@ -169,24 +174,24 @@ export function searchTerms(raw: Raw, industryOf?: (securityId: number) => strin
       if (cur) currencies.set(cur, (currencies.get(cur) ?? 0) + w)
       const industry = industryOf?.(num(s.SecurityId))
       if (industry) { sectors.set(industry, (sectors.get(industry) ?? 0) + w); sectorTop.set(industry, Math.max(sectorTop.get(industry) ?? 0, w)) }
-      const t = termFor(str(s.SecurityName), cur)
-      if (!t) continue
-      const prev = byQuery.get(t.query)
-      if (!prev) byQuery.set(t.query, { ...t, weight: w, top: w })
+      const term = termFor(str(s.SecurityName), cur)
+      if (!term) continue
+      const prev = byQuery.get(term.query)
+      if (!prev) byQuery.set(term.query, { ...term, weight: w, top: w })
       else {
         prev.weight += w
-        if (w > prev.top) Object.assign(prev, { security: t.security, top: w, ticker: prev.ticker ?? t.ticker })
+        if (w > prev.top) Object.assign(prev, { security: term.security, top: w, ticker: prev.ticker ?? term.ticker })
       }
     }
   }
-  const holdings = [...byQuery.values()].sort((a, b) => b.weight - a.weight).slice(0, max).map(({ top: _top, ...t }) => t)
+  const holdings = [...byQuery.values()].sort((a, b) => b.weight - a.weight).slice(0, max).map(({ top: _top, ...rest }) => rest)
   const market: SearchTerm[] = []
   const [cur, curW] = [...currencies].filter(([c]) => c !== home).sort((a, b) => b[1] - a[1])[0] ?? []
-  if (cur && curW >= 10) market.push({ security: `Währung ${cur}`, query: CURRENCY_QUERY[cur] ?? `${cur} Franken Wechselkurs`, weight: curW, kind: 'markt' })
+  if (cur && curW >= 10) market.push({ security: t(`Währung ${cur}`, `Currency ${cur}`), query: CURRENCY_QUERY[cur] ?? `${cur} Franken Wechselkurs`, weight: curW, kind: 'markt' })
   const [sec, secW] = [...sectors].sort((a, b) => b[1] - a[1])[0] ?? []
   // A sector that is mostly one holding we already search for adds nothing.
-  if (sec && secW >= 10 && secW >= 1.5 * (sectorTop.get(sec) ?? 0) && SECTOR[sec] && !holdings.some((h) => h.query === SECTOR[sec][1])) market.push({ security: `Sektor ${SECTOR[sec][0]}`, query: SECTOR[sec][1], weight: secW, kind: 'thema' })
-  return [...holdings, ...market].map((t) => ({ ...t, weight: Math.round(t.weight * 10) / 10 }))
+  if (sec && secW >= 10 && secW >= 1.5 * (sectorTop.get(sec) ?? 0) && SECTOR[sec] && !holdings.some((h) => h.query === SECTOR[sec][1])) market.push({ security: t(`Sektor ${SECTOR[sec][0]}`, `Sector ${SECTOR[sec][2]}`), query: SECTOR[sec][1], weight: secW, kind: 'thema' })
+  return [...holdings, ...market].map((x) => ({ ...x, weight: Math.round(x.weight * 10) / 10 }))
 }
 
 // ---- RSS (pure) ------------------------------------------------------------------------------------
@@ -276,20 +281,21 @@ export function rank(candidates: Candidate[], now: number, max = 12): Candidate[
 const pct = (w: number) => `${w.toFixed(1)}%`
 const zurichTime = (iso: string) => new Intl.DateTimeFormat('de-CH', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Zurich' }).format(new Date(iso))
 
-export function toItem(c: Candidate, ref: string, note?: { tone?: Tone; why?: string }): NewsAgentItem {
+export function toItem(c: Candidate, ref: string, note?: { tone?: Tone; why?: string }, lang?: Lang): NewsAgentItem {
+  const t = pick(lang)
   const tone = note?.tone
   const severity: Severity = tone === 'negativ' ? (c.term.weight >= 5 ? 'risk' : 'warn') : tone === 'positiv' ? 'ok' : 'info'
   const reach: Reach = c.term.kind === 'titel' ? 'Titel' : c.term.kind === 'thema' ? 'Sektor' : 'Global'
-  const meaning = note?.why ?? (c.term.kind === 'titel' ? `Direkte Position mit ${pct(c.term.weight)} Gewicht.` : `Betrifft ${pct(c.term.weight)} des Vermögens.`)
+  const meaning = note?.why ?? (c.term.kind === 'titel' ? t(`Direkte Position mit ${pct(c.term.weight)} Gewicht.`, `Direct position with ${pct(c.term.weight)} weight.`) : t(`Betrifft ${pct(c.term.weight)} des Vermögens.`, `Touches ${pct(c.term.weight)} of assets.`))
   return {
     id: `news-${hash(c.title.toLowerCase())}`, time: zurichTime(c.published), title: c.title, source: c.source, reach,
-    affects: { [ref]: { tag: `${c.term.security} ${pct(c.term.weight)}`, position: `${c.term.security}, ${pct(c.term.weight)} des Vermögens`, meaning, severity } },
+    affects: { [ref]: { tag: `${c.term.security} ${pct(c.term.weight)}`, position: `${c.term.security}, ${pct(c.term.weight)} ${t('des Vermögens', 'of assets')}`, meaning, severity } },
     url: c.url, published: c.published, security: c.term.security, weight: c.term.weight,
     ...(tone ? { tone } : {}), ...(note?.why ? { why: note.why } : {}),
   }
 }
 
-// ---- LLM step: tone + one German line --------------------------------------------------------------
+// ---- LLM step: tone + one line in the advisor's language -------------------------------------------
 
 const numbersIn = (s: string) => s.match(/\d+(?:[.,']\d+)*/g) ?? []
 
@@ -304,10 +310,20 @@ export function checkWhy(why: unknown, title: string, weight: number): string | 
 
 type Note = { tone?: Tone; why?: string; relevant: boolean }
 
-async function annotate(cands: Candidate[], complete: (m: Message[]) => Promise<unknown>): Promise<Map<number, Note>> {
+// The tone values stay German in both prompts: code compares them.
+const ANNOTATE_EN = `You help a client advisor at a Swiss bank. Write in English (British spelling).
+For each headline ("titel") you know the position in the client's portfolio ("position") and its weight ("gewicht").
+Schema: {"items": [{"i": number, "relevant": boolean, "tone": "negativ" | "positiv" | "neutral", "why": string}]}
+- "relevant": false if the headline has nothing to do with the position (namesake, advertising, another topic), is mainly about another company, or is not news (price page, calculator, product sheet).
+- "tone": effect of the news on the value of the position; exactly one of "negativ", "positiv", "neutral".
+- "why": one sentence, at most 14 words, why this matters for THIS portfolio. Use only numbers from the headline or the weight («position with 6.2% weight», never «6.2% affected»); calculate nothing. No investment advice. Do not translate or repeat the headline.
+  Connect what the news says with the position instead of only naming the weight. Good: «Antitrust ruling supports the advertising business of the largest position (25.5% weight).» Bad: «Alphabet has 25.5% weight in the portfolio.» (Do NOT copy the numbers from the example.)
+Answer as one single JSON object without any other text.`
+
+async function annotate(cands: Candidate[], complete: (m: Message[]) => Promise<unknown>, lang?: Lang): Promise<Map<number, Note>> {
   const list = cands.map((c, i) => ({ i, titel: c.title, position: c.term.security, gewicht: pct(c.term.weight) }))
   const answer = await complete([
-    { role: 'system', content: `Du hilfst einem Kundenberater einer Schweizer Bank. Antworte auf Deutsch in Schweizer Schreibweise (ss statt ß).
+    { role: 'system', content: lang === 'en' ? ANNOTATE_EN : `Du hilfst einem Kundenberater einer Schweizer Bank. Antworte auf Deutsch in Schweizer Schreibweise (ss statt ß).
 Zu jeder Schlagzeile kennst du die Position im Portfolio des Kunden und deren Gewicht.
 Schema: {"items": [{"i": number, "relevant": boolean, "tone": "negativ" | "positiv" | "neutral", "why": string}]}
 - "relevant": false, wenn die Schlagzeile nichts mit der Position zu tun hat (Namensgleichheit, Werbung, anderes Thema) oder vor allem ein anderes Unternehmen betrifft, oder wenn es keine Nachricht ist (Kursseite, Rechner, Produktblatt).
@@ -399,7 +415,7 @@ const cache = new Map<string, { at: number; result: NewsAgentResult }>()
 const inflight = new Map<string, Promise<NewsAgentResult>>()
 const notes = new Map<string, Note>() // by item id, so a known headline is not classified twice
 
-export type NewsDeps = { get?: Fetcher; complete?: (m: Message[]) => Promise<unknown>; now?: () => number }
+export type NewsDeps = { get?: Fetcher; complete?: (m: Message[]) => Promise<unknown>; now?: () => number; lang?: Lang }
 
 /** News for one raw client. Never throws: failures end up in `errors`. */
 export async function newsFor(raw: Raw, industryOf: ((id: number) => string | undefined) | undefined, deps: NewsDeps = {}): Promise<NewsAgentResult> {
@@ -408,23 +424,24 @@ export async function newsFor(raw: Raw, industryOf: ((id: number) => string | un
   const errors: string[] = []
   let items: NewsAgentItem[] = []
   try {
-    const terms = searchTerms(raw, industryOf)
+    const lang = deps.lang
+    const terms = searchTerms(raw, industryOf, undefined, lang)
     const found = (await Promise.all(terms.map((t) => fetchTerm(t, deps.get ?? httpText, errors)))).flat()
     let picked = rank(found, now, 20)
     // The model's line names this client's weight, so its notes are kept per client and holding.
-    const idOf = (c: Candidate) => `${ref}|${c.term.query}|${toItem(c, ref).id}`
+    const idOf = (c: Candidate) => `${ref}|${lang ?? 'de'}|${c.term.query}|${toItem(c, ref).id}`
     if (deps.complete && picked.length) {
       const todo = picked.filter((c) => !notes.has(idOf(c)))
       if (todo.length) {
         try {
-          const got = await annotate(todo, deps.complete)
+          const got = await annotate(todo, deps.complete, lang)
           todo.forEach((c, i) => { const n = got.get(i); if (n) notes.set(idOf(c), n) })
         } catch (e) { errors.push(`Einordnung durch das Modell: ${e instanceof Error ? e.message : String(e)}`) }
       }
       const relevant = picked.filter((c) => notes.get(idOf(c))?.relevant !== false)
       if (relevant.length) picked = relevant
     }
-    items = picked.slice(0, 12).map((c) => toItem(c, ref, notes.get(idOf(c))))
+    items = picked.slice(0, 12).map((c) => toItem(c, ref, notes.get(idOf(c)), lang))
   } catch (e) {
     errors.push(e instanceof Error ? e.message : String(e))
   }
@@ -433,32 +450,36 @@ export async function newsFor(raw: Raw, industryOf: ((id: number) => string | un
 
 const providerFor = (llm: Llm): Provider | null => (llm.ready('openai') ? 'openai' : llm.ready('apertus') ? 'apertus' : null)
 
-/** GET /api/news-agent?ref=… Cached for 5 minutes per client, so polling is cheap. */
+/** GET /api/news-agent?ref=…&lang=de|en Cached for 5 minutes per client and language, so polling is cheap. */
 export async function newsAgentRoute(url: string, llm: Llm): Promise<{ status: number; data: NewsAgentResult }> {
-  const ref = new URL(url, 'http://local').searchParams.get('ref') ?? ''
+  const params = new URL(url, 'http://local').searchParams
+  const ref = params.get('ref') ?? ''
+  const lang = langOf(params.get('lang'))
+  const t = pick(lang)
+  const key = `${ref}|${lang}`
   const fetchedAt = new Date().toISOString()
-  if (!/^[\w.-]{1,64}$/.test(ref)) return { status: 400, data: { items: [], fetchedAt, errors: ['Parameter ref fehlt'] } }
-  const hit = cache.get(ref)
+  if (!/^[\w.-]{1,64}$/.test(ref)) return { status: 400, data: { items: [], fetchedAt, errors: [t('Parameter ref fehlt', 'Parameter ref is missing')] } }
+  const hit = cache.get(key)
   if (hit && Date.now() - hit.at < TTL) return { status: 200, data: hit.result }
-  let job = inflight.get(ref)
+  let job = inflight.get(key)
   if (!job) {
     job = (async () => {
       try {
         const { clients, industry } = await data()
         const raw = clients.find((c) => c.ClientRef === ref)
-        if (!raw) return { items: [], fetchedAt, errors: ['Kunde nicht gefunden'] }
+        if (!raw) return { items: [], fetchedAt, errors: [t('Kunde nicht gefunden', 'Client not found')] }
         const provider = providerFor(llm)
-        const result = await newsFor(raw, (id) => industry.get(id), { complete: provider ? (m) => llm.complete(provider, m) : undefined })
+        const result = await newsFor(raw, (id) => industry.get(id), { complete: provider ? (m) => llm.complete(provider, m) : undefined, lang })
         // An empty answer after errors is not cached, the next poll tries again.
-        if (result.items.length || !result.errors) cache.set(ref, { at: Date.now(), result })
+        if (result.items.length || !result.errors) cache.set(key, { at: Date.now(), result })
         return result
       } catch (e) {
         return { items: [], fetchedAt, errors: [e instanceof Error ? e.message : String(e)] }
       } finally {
-        inflight.delete(ref)
+        inflight.delete(key)
       }
     })()
-    inflight.set(ref, job)
+    inflight.set(key, job)
   }
   return { status: 200, data: await job }
 }

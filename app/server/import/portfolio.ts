@@ -6,7 +6,11 @@
 // fields and gets a best-guess classification written onto the position as SAA_* fields, which the engine
 // reads for securities reference.json does not know (engine/data.ts ownSecurity). How each position was
 // classified is in the report, so the advisor sees what is ours and what is a guess.
+//
+// Language: buildExCustody takes an optional `lang` (German when absent) for the report's issues and the
+// portfolio's labels. The labels are stored with the portfolio, so they keep the language of the import.
 
+import { pick, type Lang } from '../../engine/lang.ts'
 import { isIsin, type ParsedPosition, type ParsedStatement } from './statement.ts'
 
 type Raw = Record<string, unknown>
@@ -16,6 +20,9 @@ const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : unde
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined)
 
 export const EX_CUSTODY_LABEL = 'Fremddepot (ex-custody)'
+export const EX_CUSTODY_LABEL_EN = 'External custody account (ex-custody)'
+// PortfolioNr before numbering; attachExCustody numbers it «Fremddepot 1» / «External custody account 1».
+const EX_CUSTODY_NR = { de: 'Fremddepot', en: 'External custody account' } as const
 const NOT_CLASSIFIED = 'Not classified'
 
 /** How a position got its classification. */
@@ -44,7 +51,7 @@ export type ImportReport = {
   reconciles: boolean // parsed positions add up to the printed total (rounding tolerance)
   sections: { label: string; value: number; stated: number; ok: boolean }[]
   rows: ImportRow[]
-  issues: string[] // German, for the advisor
+  issues: string[] // for the advisor, in the language of the import (German unless lang is 'en')
   unparsed: number // position-like lines the rules could not read
 }
 
@@ -127,7 +134,9 @@ function hashOf(s: string): string {
 
 const round2 = (x: number) => Math.round(x * 100) / 100
 
-export function buildExCustody(statement: ParsedStatement, reference: IsinIndex): ExCustodyImport {
+export function buildExCustody(statement: ParsedStatement, reference: IsinIndex, lang?: Lang): ExCustodyImport {
+  const t = pick(lang)
+  const label = t(EX_CUSTODY_LABEL, EX_CUSTODY_LABEL_EN)
   const positions = statement.positions
   const issues: string[] = []
   const importId = `ex-${hashOf(positions.map((p) => `${p.isin ?? p.currency}:${p.value}`).join('|'))}`
@@ -139,8 +148,8 @@ export function buildExCustody(statement: ParsedStatement, reference: IsinIndex)
 
   positions.forEach((p, i) => {
     if (p.kind === 'account') {
-      rows.push({ name: p.name, currency: p.currency, quantity: p.quantity, value: p.value, weight: p.weight, section: p.section, assetClass: 'Liquidity', matchedBy: 'account' })
-      accountPositions.push({ AccountName: `Konto ${p.currency}`, Currency: p.currency, TotalAmountInPortfolioCurrency: p.value, PortfolioValuePercentage: p.weight })
+      rows.push({ name: t(p.name, `Account ${p.currency}`), currency: p.currency, quantity: p.quantity, value: p.value, weight: p.weight, section: p.section, assetClass: 'Liquidity', matchedBy: 'account' })
+      accountPositions.push({ AccountName: t(`Konto ${p.currency}`, `Account ${p.currency}`), Currency: p.currency, TotalAmountInPortfolioCurrency: p.value, PortfolioValuePercentage: p.weight })
       return
     }
     const known = p.isin ? reference.byIsin.get(p.isin) ?? [] : []
@@ -192,20 +201,23 @@ export function buildExCustody(statement: ParsedStatement, reference: IsinIndex)
   const tolerance = 0.5 * positions.length + 1 // market values are printed rounded to whole units
   const difference = statement.statedTotal !== undefined ? round2(total - statement.statedTotal) : undefined
   const reconciles = positions.length > 0 && difference !== undefined && Math.abs(difference) <= tolerance && Math.abs(weightSum - 1) <= 0.0001 * positions.length + 0.001
-  const sections = statement.sectionTotals.map((t) => {
-    const value = round2(positions.filter((p) => p.section.toLowerCase() === t.label.toLowerCase()).reduce((a, p) => a + p.value, 0))
-    return { label: t.label, value, stated: t.value, ok: Math.abs(value - t.value) <= tolerance }
+  const sections = statement.sectionTotals.map((st) => {
+    const value = round2(positions.filter((p) => p.section.toLowerCase() === st.label.toLowerCase()).reduce((a, p) => a + p.value, 0))
+    return { label: st.label, value, stated: st.value, ok: Math.abs(value - st.value) <= tolerance }
   })
 
-  if (!positions.length) issues.push('Keine Positionen erkannt. Ist das ein Vermögensausweis mit Positionsliste?')
-  if (statement.statedTotal === undefined && positions.length) issues.push('Kein Gesamtvermögen auf dem Auszug gefunden: die Summe ist nicht gegengeprüft.')
-  else if (difference !== undefined && !reconciles && positions.length) issues.push(`Summe der Positionen weicht um ${statement.currency} ${Math.round(difference).toLocaleString('de-CH')} vom ausgewiesenen Gesamtvermögen ab.`)
-  for (const s of sections) if (!s.ok) issues.push(`Teilsumme «${s.label}» stimmt nicht: gelesen ${Math.round(s.value)}, ausgewiesen ${Math.round(s.stated)}.`)
-  if (statement.unparsed.length) issues.push(`${statement.unparsed.length} Zeile(n) sehen wie Positionen aus, konnten aber nicht gelesen werden.`)
+  if (!positions.length) issues.push(t('Keine Positionen erkannt. Ist das ein Vermögensausweis mit Positionsliste?', 'No positions recognised. Is this a portfolio statement with a list of positions?'))
+  if (statement.statedTotal === undefined && positions.length) issues.push(t('Kein Gesamtvermögen auf dem Auszug gefunden: die Summe ist nicht gegengeprüft.', 'No total assets found on the statement: the sum is not cross-checked.'))
+  else if (difference !== undefined && !reconciles && positions.length) {
+    const amount = `${statement.currency} ${Math.round(difference).toLocaleString('de-CH')}`
+    issues.push(t(`Summe der Positionen weicht um ${amount} vom ausgewiesenen Gesamtvermögen ab.`, `The sum of the positions differs from the stated total assets by ${amount}.`))
+  }
+  for (const s of sections) if (!s.ok) issues.push(t(`Teilsumme «${s.label}» stimmt nicht: gelesen ${Math.round(s.value)}, ausgewiesen ${Math.round(s.stated)}.`, `Subtotal «${s.label}» does not match: read ${Math.round(s.value)}, stated ${Math.round(s.stated)}.`))
+  if (statement.unparsed.length) issues.push(t(`${statement.unparsed.length} Zeile(n) sehen wie Positionen aus, konnten aber nicht gelesen werden.`, `${statement.unparsed.length} line(s) look like positions but could not be read.`))
   const badIsins = rows.filter((r) => r.isinCheckDigit === false).length
-  if (badIsins) issues.push(`${badIsins} ISIN(s) mit ungültiger Prüfziffer (Tippfehler oder fiktive Daten); Zuordnung nur über die Bank-Stammdaten, sonst geschätzt.`)
+  if (badIsins) issues.push(t(`${badIsins} ISIN(s) mit ungültiger Prüfziffer (Tippfehler oder fiktive Daten); Zuordnung nur über die Bank-Stammdaten, sonst geschätzt.`, `${badIsins} ISIN(s) with an invalid check digit (typo or fictitious data); matched through the bank's master data only, otherwise estimated.`))
   const guessed = rows.filter((r) => r.matchedBy === 'statement' || r.matchedBy === 'issuer').length
-  if (guessed) issues.push(`${guessed} Position(en) nicht in den Bank-Stammdaten: Anlageklasse aus dem Auszug geschätzt.`)
+  if (guessed) issues.push(t(`${guessed} Position(en) nicht in den Bank-Stammdaten: Anlageklasse aus dem Auszug geschätzt.`, `${guessed} position(s) not in the bank's master data: asset class estimated from the statement (estimated classification).`))
 
   const byMatch = { reference: 0, isin: 0, issuer: 0, statement: 0, account: 0 } as Record<MatchedBy, number>
   for (const r of rows) byMatch[r.matchedBy]++
@@ -213,11 +225,11 @@ export function buildExCustody(statement: ParsedStatement, reference: IsinIndex)
 
   const portfolio: Raw = {
     PortfolioId: 900_000_000 + (parseInt(importId.slice(3), 36) % 1_000_000),
-    PortfolioNr: 'Fremddepot',
-    Name: `${EX_CUSTODY_LABEL}${statement.bank ? ` · ${statement.bank}` : ''}`,
+    PortfolioNr: t(EX_CUSTODY_NR.de, EX_CUSTODY_NR.en),
+    Name: `${label}${statement.bank ? ` · ${statement.bank}` : ''}`,
     PortfolioCurrency: statement.currency, ReferenceCurrency: statement.currency,
-    InvestmentServiceName: EX_CUSTODY_LABEL,
-    StrategyName: statement.mandate ? `Fremdmandat «${statement.mandate}»` : undefined,
+    InvestmentServiceName: label,
+    StrategyName: statement.mandate ? t(`Fremdmandat «${statement.mandate}»`, `External mandate «${statement.mandate}»`) : undefined,
     AssetsUnderManagementInDefaultCurrency: total,
     LiquidityInDefaultCurrency: liquidity,
     FactoryDateUtc: statement.asOf,
@@ -246,8 +258,9 @@ const importIdOf = (p: Raw) => (isObj(p.ExCustody) ? str(p.ExCustody.importId) :
 
 /**
  * A copy of the client with the ex-custody portfolio added (or replaced, same statement imported twice).
- * Ex-custody portfolios are numbered «Fremddepot 1», «Fremddepot 2», … and the client's totals include them,
- * the same way a client's totals include every portfolio at the bank.
+ * Ex-custody portfolios are numbered «Fremddepot 1», «Fremddepot 2», … (or «External custody account 1», … when
+ * imported in English: each keeps the label it was built with) and the client's totals include them, the same
+ * way a client's totals include every portfolio at the bank.
  */
 export function attachExCustody(client: Raw, portfolio: Raw): Raw {
   const id = importIdOf(portfolio)
@@ -268,7 +281,8 @@ function withTotals(client: Raw, portfolios: Raw[]): Raw {
   const sum = (ps: Raw[], f: string) => ps.reduce((a, p) => a + (num(p[f]) ?? 0), 0)
   const after = portfolios.filter(exOf)
   let n = 0
-  const numbered = portfolios.map((p) => (exOf(p) ? { ...p, PortfolioNr: `Fremddepot ${++n}` } : p))
+  const nrBase = (p: Raw) => (str(p.PortfolioNr)?.startsWith(EX_CUSTODY_NR.en) ? EX_CUSTODY_NR.en : EX_CUSTODY_NR.de)
+  const numbered = portfolios.map((p) => (exOf(p) ? { ...p, PortfolioNr: `${nrBase(p)} ${++n}` } : p))
   const out: Raw = { ...client, Portfolios: numbered }
   for (const f of ['AssetsUnderManagementInDefaultCurrency', 'LiquidityInDefaultCurrency']) {
     const own = num(client[f])

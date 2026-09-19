@@ -9,9 +9,14 @@
 // Storage reuses the client upload (uploadClients): the client is stored as a copy with the extra
 // portfolio, so /api/briefing, the chat and the outbound ranking all see it without a special case.
 // Logs carry counts only, never names, numbers or lines from the statement.
+//
+// Language: `?lang=de|en` on every route (the PDF upload has no JSON body), and the JSON routes also accept the
+// body field `language`; absent = English. It decides the report's issues, warnings, errors and the labels of
+// the portfolio that is built; a stored portfolio keeps the labels it was imported with.
 
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { langOf, pick, type Lang } from '../../engine/lang.ts'
 import { rawClientFor, uploadClients, type Llm } from '../ai/briefing-route.ts'
 import { assistUnparsed } from './llm-assist.ts'
 import { isPdf, pdfPages } from './pdf-text.ts'
@@ -33,7 +38,7 @@ const parsed = new Map<string, ExCustodyImport>()
 
 const providerOf = (llm: Llm) => (llm.ready('openai') ? 'openai' : llm.ready('apertus') ? 'apertus' : null)
 
-export async function parsePdf(bytes: Uint8Array, llm: Llm | null): Promise<ExCustodyImport & { llm?: { used: boolean; added: number; unverified: number; error?: string } }> {
+export async function parsePdf(bytes: Uint8Array, llm: Llm | null, lang?: Lang): Promise<ExCustodyImport & { llm?: { used: boolean; added: number; unverified: number; error?: string } }> {
   const statement = parseStatement(await pdfPages(bytes))
   let llmInfo: { used: boolean; added: number; unverified: number; error?: string } | undefined
   const provider = llm ? providerOf(llm) : null
@@ -43,12 +48,13 @@ export async function parsePdf(bytes: Uint8Array, llm: Llm | null): Promise<ExCu
       statement.positions.push(...a.positions)
       llmInfo = { used: true, added: a.positions.length, unverified: a.unverified.length }
     } catch (e) {
-      llmInfo = { used: false, added: 0, unverified: 0, error: e instanceof Error ? e.message.slice(0, 120) : 'Fehler' }
+      llmInfo = { used: false, added: 0, unverified: 0, error: e instanceof Error ? e.message.slice(0, 120) : pick(lang)('Fehler', 'Error') }
     }
   }
-  const result = buildExCustody(statement, await isins())
-  if (llmInfo?.added) result.report.issues.push(`${llmInfo.added} Position(en) von der KI gelesen; jede Zahl steht wörtlich im Auszug.`)
-  if (llmInfo?.unverified) result.report.issues.push(`${llmInfo.unverified} von der KI gelesene Position(en) nicht belegt und daher nicht übernommen.`)
+  const t = pick(lang)
+  const result = buildExCustody(statement, await isins(), lang)
+  if (llmInfo?.added) result.report.issues.push(t(`${llmInfo.added} Position(en) von der KI gelesen; jede Zahl steht wörtlich im Auszug.`, `${llmInfo.added} position(s) read by the AI; every number appears verbatim in the statement.`))
+  if (llmInfo?.unverified) result.report.issues.push(t(`${llmInfo.unverified} von der KI gelesene Position(en) nicht belegt und daher nicht übernommen.`, `${llmInfo.unverified} position(s) read by the AI could not be verified and were not imported.`))
   return { ...result, llm: llmInfo }
 }
 
@@ -61,14 +67,15 @@ function summary(p: Raw) {
   }
 }
 
-async function attach(ref: string, item: ExCustodyImport): Promise<Out> {
+async function attach(ref: string, item: ExCustodyImport, lang: Lang): Promise<Out> {
+  const t = pick(lang)
   const { raw } = await rawClientFor(ref)
-  if (!raw) return { status: 404, data: { error: 'Kunde nicht gefunden' } }
+  if (!raw) return { status: 404, data: { error: t('Kunde nicht gefunden', 'Client not found') } }
   const next = attachExCustody(raw, item.portfolio)
   const stored = uploadClients(Buffer.from(JSON.stringify(next)))
   if (stored.status !== 200) return stored
   const clientCurrency = typeof raw.ReportingCurrency === 'string' ? raw.ReportingCurrency : 'CHF'
-  const warning = clientCurrency !== item.report.currency ? `Der Auszug ist in ${item.report.currency}, der Kunde rechnet in ${clientCurrency}. Werte sind nicht umgerechnet.` : undefined
+  const warning = clientCurrency !== item.report.currency ? t(`Der Auszug ist in ${item.report.currency}, der Kunde rechnet in ${clientCurrency}. Werte sind nicht umgerechnet.`, `The statement is in ${item.report.currency}, the client reports in ${clientCurrency}. Values are not converted (no FX conversion).`) : undefined
   console.info(`[import] attached ${item.report.positions} positions to a client (${item.report.matched} matched)`)
   return { status: 200, data: { ok: true, ref, importId: item.importId, portfolios: exCustodyOf(next).map(summary), warning } }
 }
@@ -82,28 +89,33 @@ export async function importRoute(url: string, method: string, body: Buffer, llm
   const u = new URL(url, 'http://local')
   const path = u.pathname
   if (!path.startsWith('/api/import/')) return null
+  const queryLang = u.searchParams.get('lang')
 
   if (path === '/api/import/pdf' && method === 'POST') {
-    if (!isPdf(body)) return { status: 400, data: { error: 'Keine PDF-Datei' } }
+    const lang = langOf(queryLang)
+    const t = pick(lang)
+    if (!isPdf(body)) return { status: 400, data: { error: t('Keine PDF-Datei', 'Not a PDF file') } }
     let result
-    try { result = await parsePdf(body, llm) } catch { return { status: 422, data: { error: 'Die PDF-Datei konnte nicht gelesen werden.' } } }
+    try { result = await parsePdf(body, llm, lang) } catch { return { status: 422, data: { error: t('Die PDF-Datei konnte nicht gelesen werden.', 'The PDF file could not be read.') } } }
     parsed.set(result.importId, result)
     console.info(`[import] parsed ${result.report.positions} positions, ${result.report.matched} matched, reconciles=${result.report.reconciles}`)
     const ref = u.searchParams.get('ref')
-    const attached = ref && result.report.positions ? await attach(ref, result) : undefined
+    const attached = ref && result.report.positions ? await attach(ref, result, lang) : undefined
     return { status: 200, data: { importId: result.importId, portfolio: result.portfolio, report: result.report, llm: result.llm, attached: attached?.data } }
   }
 
   if ((path === '/api/import/attach' || path === '/api/import/detach') && method === 'POST') {
     const p = jsonOf(body)
+    const lang = langOf(p.language ?? queryLang)
+    const t = pick(lang)
     const ref = typeof p.ref === 'string' ? p.ref : '', importId = typeof p.importId === 'string' ? p.importId : ''
-    if (!ref || !importId) return { status: 400, data: { error: 'ref und importId fehlen' } }
+    if (!ref || !importId) return { status: 400, data: { error: t('ref und importId fehlen', 'ref and importId are missing') } }
     if (path === '/api/import/attach') {
       const item = parsed.get(importId)
-      return item ? attach(ref, item) : { status: 404, data: { error: 'Auszug nicht gefunden, bitte erneut hochladen' } }
+      return item ? attach(ref, item, lang) : { status: 404, data: { error: t('Auszug nicht gefunden, bitte erneut hochladen', 'Statement not found, please upload it again') } }
     }
     const { raw } = await rawClientFor(ref)
-    if (!raw) return { status: 404, data: { error: 'Kunde nicht gefunden' } }
+    if (!raw) return { status: 404, data: { error: t('Kunde nicht gefunden', 'Client not found') } }
     const next = detachExCustody(raw, importId)
     uploadClients(Buffer.from(JSON.stringify(next)))
     return { status: 200, data: { ok: true, ref, portfolios: exCustodyOf(next).map(summary) } }
@@ -112,8 +124,8 @@ export async function importRoute(url: string, method: string, body: Buffer, llm
   if (method === 'GET') {
     const ref = decodeURIComponent(path.slice('/api/import/'.length))
     const { raw } = await rawClientFor(ref)
-    if (!raw) return { status: 404, data: { error: 'Kunde nicht gefunden' } }
+    if (!raw) return { status: 404, data: { error: pick(langOf(queryLang))('Kunde nicht gefunden', 'Client not found') } }
     return { status: 200, data: { ref, portfolios: exCustodyOf(raw).map(summary) } }
   }
-  return { status: 405, data: { error: 'Methode nicht erlaubt' } }
+  return { status: 405, data: { error: pick(langOf(queryLang))('Methode nicht erlaubt', 'Method not allowed') } }
 }

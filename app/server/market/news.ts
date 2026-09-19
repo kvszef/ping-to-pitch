@@ -2,15 +2,20 @@
 // and has the model judge each one: relevant for an investor in it? how important? risk or opportunity?
 // The model only reads security names and headlines, never client data. Weights and scores are computed here.
 // No model: keyword rules judge. No network: the last saved snapshot answers, labelled offline.
+// Language: a judgement carries its sentence in German and English (one judging call, one cache), and what
+// is built from it takes an optional `lang` (German when absent). Headlines are data and never translated.
 
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { pick, sourceName, type Lang } from '../../engine/lang.ts'
 import type { Evidence, Finding } from '../../engine/types.ts'
 import { searchBing, type Article } from './bing.ts'
 import type { Holding } from './holdings.ts'
 
 export type Direction = 'risk' | 'opportunity' | 'neutral'
-export type Judgement = { relevant: boolean; importance: 0 | 1 | 2 | 3; direction: Direction; meaning: string; by: 'ai' | 'rules' }
+export type Judgement = { relevant: boolean; importance: 0 | 1 | 2 | 3; direction: Direction; meaning: string; meaningEn: string; by: 'ai' | 'rules' }
+/** The judgement's sentence in the advisor's language (German when absent). */
+export const meaningOf = (j: Judgement, lang?: Lang) => (lang === 'en' ? j.meaningEn || j.meaning : j.meaning)
 export type Hit = { holding: Holding; article: Article; judgement: Judgement }
 export type Complete = (messages: { role: 'system' | 'user'; content: string }[]) => Promise<unknown>
 export type Severity = 'risk' | 'warn' | 'ok' | 'info'
@@ -57,8 +62,8 @@ export async function saveSnapshot() {
   return Object.keys(base).length
 }
 
-export function pushArticle(a: { title: string; source?: string; snippet?: string; url?: string }, now: Date): Article {
-  const article: Article = { id: `N-push-${pushed.length + 1}`, title: a.title, url: a.url ?? '', source: a.source ?? 'Eingespielt (Demo)', published: now.toISOString(), snippet: a.snippet ?? '' }
+export function pushArticle(a: { title: string; source?: string; snippet?: string; url?: string }, now: Date, lang?: Lang): Article {
+  const article: Article = { id: `N-push-${pushed.length + 1}`, title: a.title, url: a.url ?? '', source: a.source ?? pick(lang)('Eingespielt (Demo)', 'Pushed (demo)'), published: now.toISOString(), snippet: a.snippet ?? '' }
   pushed.unshift(article)
   return article
 }
@@ -104,17 +109,23 @@ async function pool<T>(items: T[], size: number, work: (t: T) => Promise<void>) 
 // ---- judging --------------------------------------------------------------------------------------
 
 const RISK = /gewinnwarnung|einbruch|bricht ein|stürzt|sturz|verlust|klage|busse|strafe|rückruf|herabstuf|downgrade|abschreibung|wertberichtigung|beschlagnahm|enteign|sinkt|fällt|fallen|stellenabbau|warnt|senkt|kürzt|skandal|ermittl|untersuch|sanktion|russland|schlag gegen|kämpft|droht|verlust des|profit warning|plunge|lawsuit|fine|cut/i
+// English headlines (US names): whole words only, so they never fire inside a German word.
+const RISK_EN = /\b(drops|slumps?|tumbles?|plummets?|sinks|warns|layoffs|scandal|recall|sanctions|probe into|misses)\b/i
+const CHANCE_EN = /\b(rises|surges|jumps|soars|takeover|acquires|dividend|wins|tops estimates)\b/i
 const CHANCE = /übernahm|übernimmt|rekord|steigt|steigen|hebt|erhöht|dividende|rückkauf|aufstuf|upgrade|kaufempfehlung|übertrifft|zulassung|auftrag|gewinnt|wachstum|beat|raises|record|buyback|approval/i
 
 export function ruleJudgement(a: Pick<Article, 'title' | 'snippet'>, query: string): Judgement {
-  if (!mentions(a, query)) return { relevant: false, importance: 0, direction: 'neutral', meaning: '', by: 'rules' }
+  if (!mentions(a, query)) return { relevant: false, importance: 0, direction: 'neutral', meaning: '', meaningEn: '', by: 'rules' }
   const text = a.title
-  const risk = RISK.test(text), chance = CHANCE.test(text)
+  const risk = RISK.test(text) || RISK_EN.test(text), chance = CHANCE.test(text) || CHANCE_EN.test(text)
   const direction: Direction = risk && !chance ? 'risk' : chance && !risk ? 'opportunity' : 'neutral'
   const meaning = direction === 'risk' ? 'Negative Meldung zu einer Position im Portfolio: Einordnung bereithalten.'
     : direction === 'opportunity' ? 'Positive Meldung zu einer Position: guter Anlass für einen Anruf.'
       : 'Meldung zu einer Position im Portfolio.'
-  return { relevant: true, importance: direction === 'neutral' ? 1 : 2, direction, meaning, by: 'rules' }
+  const meaningEn = direction === 'risk' ? 'Negative news on a position in the portfolio: have your assessment ready.'
+    : direction === 'opportunity' ? 'Positive news on a position: a good reason to call.'
+      : 'News on a position in the portfolio.'
+  return { relevant: true, importance: direction === 'neutral' ? 1 : 2, direction, meaning, meaningEn, by: 'rules' }
 }
 
 const judged = new Map<string, Judgement>()
@@ -127,14 +138,15 @@ Decide for each item:
 - importance: 0 none, 1 routine, 2 worth mentioning to a client who holds it, 3 the client may call about it today (big price move, profit warning, takeover, scandal, sanctions, rating change).
 - direction: "risk" if it is bad for a holder, "opportunity" if it is good for a holder, else "neutral".
 - meaning: ONE sentence in German (Swiss spelling, ss not ß), max 18 words, what it means for someone holding this investment. Use no number that is not in the headline or snippet. No advice to buy or sell.
-Answer as JSON: {"items":[{"i":number,"relevant":boolean,"importance":0|1|2|3,"direction":"risk"|"opportunity"|"neutral","meaning":string}]}`
+- meaning_en: the same sentence in English (British spelling), max 18 words, same rules. The headline itself is never translated or quoted in another language.
+Answer as JSON: {"items":[{"i":number,"relevant":boolean,"importance":0|1|2|3,"direction":"risk"|"opportunity"|"neutral","meaning":string,"meaning_en":string}]}`
 
 const numbersIn = (s: string) => s.match(/\d+(?:[.,']\d+)*/g) ?? []
 
-function checkedMeaning(meaning: unknown, a: Article, fallback: string) {
+function checkedMeaning(meaning: unknown, a: Article, fallback: string, german = true) {
   if (typeof meaning !== 'string' || !meaning.trim()) return fallback
   const source = `${a.title} ${a.snippet}`
-  return numbersIn(meaning).every((n) => source.includes(n)) ? meaning.trim().replace(/ß/g, 'ss') : fallback
+  return numbersIn(meaning).every((n) => source.includes(n)) ? (german ? meaning.trim().replace(/ß/g, 'ss') : meaning.trim()) : fallback
 }
 
 // judgeWithinMs: answer after this long even if the model is still busy; unfinished items get the rules now
@@ -151,14 +163,14 @@ export async function judge(items: { holding: Holding; article: Article }[], com
         const answer = await complete([
           { role: 'system', content: JUDGE_RULES },
           { role: 'user', content: JSON.stringify(batch.map((x, i) => ({ i, investment: x.holding.label, headline: x.article.title, snippet: x.article.snippet.slice(0, 300), source: x.article.source, date: x.article.published?.slice(0, 10) }))) },
-        ]) as { items?: { i?: unknown; relevant?: unknown; importance?: unknown; direction?: unknown; meaning?: unknown }[] }
+        ]) as { items?: { i?: unknown; relevant?: unknown; importance?: unknown; direction?: unknown; meaning?: unknown; meaning_en?: unknown }[] }
         for (const r of answer.items ?? []) {
           const x = typeof r.i === 'number' ? batch[r.i] : undefined
           if (!x) continue
           const rules = ruleJudgement(x.article, x.holding.query)
           const importance = [0, 1, 2, 3].includes(Number(r.importance)) ? (Number(r.importance) as Judgement['importance']) : rules.importance
           const direction: Direction = r.direction === 'risk' || r.direction === 'opportunity' || r.direction === 'neutral' ? r.direction : rules.direction
-          judged.set(key(x), { relevant: r.relevant === true, importance, direction, meaning: checkedMeaning(r.meaning, x.article, rules.meaning), by: 'ai' })
+          judged.set(key(x), { relevant: r.relevant === true, importance, direction, meaning: checkedMeaning(r.meaning, x.article, rules.meaning), meaningEn: checkedMeaning(r.meaning_en, x.article, rules.meaningEn, false), by: 'ai' })
         }
       } catch { /* this batch falls back to the rules below */ }
     })
@@ -204,14 +216,15 @@ export type NewsItemOut = {
   affects: Record<string, { tag: string; position: string; meaning: string; severity: Severity; direction: Direction; importance: number }>
 }
 
-export function toNewsItems(ref: string, hits: (Hit & { offline?: boolean })[], now: Date, merge = new Map<string, NewsItemOut>()) {
+export function toNewsItems(ref: string, hits: (Hit & { offline?: boolean })[], now: Date, merge = new Map<string, NewsItemOut>(), lang?: Lang) {
+  const t = pick(lang)
   for (const h of hits) {
     const a = h.article
     const item = merge.get(a.id) ?? { id: a.id, time: timeText(a.published, now), title: a.title, source: a.source, reach: h.holding.fund ? 'Sektor' : 'Titel', url: a.url || undefined, published: a.published, offline: h.offline || undefined, affects: {} }
     if (!item.affects[ref]) item.affects[ref] = {
       tag: `${h.holding.label} ${pctText(h.holding.weight)}`,
-      position: `${h.holding.names[0]}, ${pctText(h.holding.weight)} des Portfolios`,
-      meaning: h.judgement.meaning, severity: severityOf(h.judgement), direction: h.judgement.direction, importance: h.judgement.importance,
+      position: `${h.holding.names[0]}, ${pctText(h.holding.weight)} ${t('des Portfolios', 'of the portfolio')}`,
+      meaning: meaningOf(h.judgement, lang), severity: severityOf(h.judgement), direction: h.judgement.direction, importance: h.judgement.importance,
     }
     merge.set(a.id, item)
   }
@@ -221,20 +234,22 @@ export function toNewsItems(ref: string, hits: (Hit & { offline?: boolean })[], 
 const SOURCE = (a: Article): Evidence => ({ source: a.source, ref: a.url || a.id, quote: a.title, date: a.published?.slice(0, 10) })
 
 /** news.hit findings, plus the top risk/opportunity from the last days as a call reason (inbound banner). */
-export function newsFindings(ref: string, hits: Hit[]): Finding[] {
+export function newsFindings(ref: string, hits: Hit[], lang?: Lang): Finding[] {
+  const t = pick(lang)
+  const share = (h: Hit) => `${pctText(h.holding.weight)} ${t('des Portfolios', 'of the portfolio')}`
   const out: Finding[] = hits.map((h) => ({
     id: `news.hit:${ref}:${h.article.id}`, check: 'news.hit', kind: 'fact', severity: severityOf(h.judgement),
-    title: `${h.holding.label} (${pctText(h.holding.weight)} des Portfolios): ${h.article.title}`,
-    detail: h.judgement.meaning,
+    title: `${h.holding.label} (${share(h)}): ${h.article.title}`,
+    detail: meaningOf(h.judgement, lang),
     numbers: { weight: h.holding.weight, importance: h.judgement.importance },
-    evidence: [SOURCE(h.article), ...h.holding.names.map((n) => ({ source: 'Position', quote: n }))],
+    evidence: [SOURCE(h.article), ...h.holding.names.map((n) => ({ source: sourceName('position', lang), quote: n }))],
     topic: 'news',
   }))
   const top = hits.find((h) => h.judgement.importance >= 2 && h.judgement.direction !== 'neutral')
   if (top) out.push({
     id: `profile.call-reason:${ref}:news:${top.article.id}`, check: 'profile.call-reason', kind: 'interpretation', severity: severityOf(top.judgement),
-    title: `Meldung zu ${top.holding.label} (${pctText(top.holding.weight)} des Portfolios): ${top.article.title}`,
-    detail: top.judgement.meaning,
+    title: `${t('Meldung zu', 'News on')} ${top.holding.label} (${share(top)}): ${top.article.title}`,
+    detail: meaningOf(top.judgement, lang),
     numbers: { score: 2 + top.judgement.importance, weight: top.holding.weight },
     evidence: [SOURCE(top.article)],
     topic: 'call-reason',

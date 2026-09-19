@@ -4,8 +4,12 @@
 //   GET  /api/outbound         "who to call today": every client ranked by news and engine findings
 //   POST /api/news             demo control: { title, source?, snippet? } is matched on the next request
 //   POST /api/news/snapshot    save what was fetched as the offline fallback (run once with network)
+// Language: the GET routes take `lang` ('de' | 'en') as their last argument, read by server/api.ts from
+// `?lang=` with langOf(); absent = English, as on every route. POST /api/news reads
+// body `language`. Headlines are never translated; the judged cache holds both languages.
 
 import { readClient } from '../../engine/data.ts'
+import { langOf, pick, type Lang } from '../../engine/lang.ts'
 import type { Finding } from '../../engine/types.ts'
 import { clientsWithFindings } from '../ai/briefing-route.ts'
 import { holdingsOf, type Holding } from './holdings.ts'
@@ -15,6 +19,10 @@ const INBOUND = { maxAgeMs: 60_000, judgeWithinMs: 4000 }
 let lastRefresh: string | undefined
 
 type Entry = Awaited<ReturnType<typeof clientsWithFindings>>[number]
+
+// Engine findings in the advisor's language (their titles become outbound reasons). Typed with the optional
+// `lang` so this compiles before and after ai/briefing-route.ts takes it; until then the findings stay German.
+const withFindings: (now: Date, lang?: Lang) => ReturnType<typeof clientsWithFindings> = clientsWithFindings
 
 const holdingsFor = (e: Entry) => holdingsOf(readClient(e.raw, e.index))
 
@@ -31,27 +39,27 @@ async function hitsForAll(entries: Entry[], now: Date, complete: Complete | null
   return newsHits([...unique.values()], now, complete)
 }
 
-export async function clientNews(ref: string, complete: Complete | null) {
+export async function clientNews(ref: string, complete: Complete | null, lang: Lang = 'en') {
   const now = new Date()
-  const e = (await clientsWithFindings(now)).find((x) => x.ref === ref)
-  if (!e) return { status: 404, data: { error: 'Kunde nicht gefunden' } }
+  const e = (await withFindings(now, lang)).find((x) => x.ref === ref)
+  if (!e) return { status: 404, data: { error: pick(lang)('Kunde nicht gefunden', 'Client not found') } }
   // A call is now: fetch this client's holdings fresh (under 1 s) and give the model 4 s for articles it has not seen.
   const hits = await newsHits(holdingsFor(e), now, complete, undefined, INBOUND)
-  const items = [...toNewsItems(ref, hits, now).values()]
-  return { status: 200, data: { items, findings: newsFindings(ref, hits), offline: hits.some((h) => h.offline), judgedBy: complete ? 'ai' : 'rules', fetchedAt: now.toISOString() } }
+  const items = [...toNewsItems(ref, hits, now, undefined, lang).values()]
+  return { status: 200, data: { items, findings: newsFindings(ref, hits, lang), offline: hits.some((h) => h.offline), judgedBy: complete ? 'ai' : 'rules', fetchedAt: now.toISOString() } }
 }
 
 /** News findings for the briefing's slow tier. Never throws: no news is an empty list. */
-export async function briefingNews(ref: string, complete: Complete | null): Promise<Finding[]> {
-  try { const out = await clientNews(ref, complete); return out.status === 200 ? (out.data as { findings: Finding[] }).findings : [] } catch { return [] }
+export async function briefingNews(ref: string, complete: Complete | null, lang: Lang = 'en'): Promise<Finding[]> {
+  try { const out = await clientNews(ref, complete, lang); return out.status === 200 ? (out.data as { findings: Finding[] }).findings : [] } catch { return [] }
 }
 
-export async function newsFeed(complete: Complete | null) {
+export async function newsFeed(complete: Complete | null, lang: Lang = 'en') {
   const now = new Date()
-  const entries = await clientsWithFindings(now)
+  const entries = await withFindings(now, lang)
   const all = await hitsForAll(entries, now, complete)
   const merged = new Map<string, NewsItemOut>()
-  for (const e of entries) toNewsItems(e.ref, ownHits(e, all), now, merged)
+  for (const e of entries) toNewsItems(e.ref, ownHits(e, all), now, merged, lang)
   const items = [...merged.values()].sort((a, b) => (b.published ?? '').localeCompare(a.published ?? ''))
   return { status: 200, data: items }
 }
@@ -80,9 +88,9 @@ function blockedByWish(h: Hit, findings: Finding[]) {
 const ENGINE_POINTS = { risk: 1, warn: 0.3 } as const
 const MAX_ENGINE = 3
 
-export async function outbound(complete: Complete | null) {
+export async function outbound(complete: Complete | null, lang: Lang = 'en') {
   const now = new Date()
-  const entries = await clientsWithFindings(now)
+  const entries = await withFindings(now, lang)
   const all = await hitsForAll(entries, now, complete)
   const ranked = entries.map((e) => {
     const reasons: Reason[] = []
@@ -114,10 +122,11 @@ export async function outbound(complete: Complete | null) {
 }
 
 export function pushNews(body: Buffer) {
-  const p = JSON.parse(body.toString('utf8') || '{}') as { title?: unknown; source?: unknown; snippet?: unknown; url?: unknown }
-  if (typeof p.title !== 'string' || !p.title.trim()) return { status: 400, data: { error: 'title fehlt' } }
+  const p = JSON.parse(body.toString('utf8') || '{}') as { title?: unknown; source?: unknown; snippet?: unknown; url?: unknown; language?: unknown }
+  const lang = langOf(p.language)
+  if (typeof p.title !== 'string' || !p.title.trim()) return { status: 400, data: { error: pick(lang)('title fehlt', 'title is missing') } }
   const s = (v: unknown) => (typeof v === 'string' ? v : undefined)
-  return { status: 200, data: pushArticle({ title: p.title.trim(), source: s(p.source), snippet: s(p.snippet), url: s(p.url) }, new Date()) }
+  return { status: 200, data: pushArticle({ title: p.title.trim(), source: s(p.source), snippet: s(p.snippet), url: s(p.url) }, new Date(), lang) }
 }
 
 export async function snapshotNews() {

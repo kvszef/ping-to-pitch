@@ -3,7 +3,8 @@
 // replaces it, e.g. one produced from the CIO's monthly publication. A broken file never stops the app:
 // the example stays and the server log says why.
 import { readFileSync } from 'node:fs'
-import { EXAMPLE_HOUSE_VIEW, type HouseView } from '../engine/houseview.ts'
+import { EXAMPLE_HOUSE_VIEW, houseViewIn, type HouseView } from '../engine/houseview.ts'
+import type { Lang } from '../engine/lang.ts'
 
 let cached: HouseView | undefined
 
@@ -21,3 +22,6 @@ export function houseView(): HouseView {
   }
   return (cached = EXAMPLE_HOUSE_VIEW)
 }
+
+/** The view for the screen (GET /api/house-view, the house-view card): the example comes out in the language, a bank's own file keeps its own words. */
+export const houseViewFor = (lang?: Lang): HouseView => houseViewIn(houseView(), lang)

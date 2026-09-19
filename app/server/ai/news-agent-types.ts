@@ -17,7 +17,7 @@ export type NewsAgentItem = {
   security: string // which holding it matched
   weight: number // that holding's share of the client's assets, 0–100
   tone?: Tone
-  why?: string // one German line: why it matters for this portfolio
+  why?: string // one line in the advisor's language: why it matters for this portfolio
 }
 
 export type NewsAgentResult = { items: NewsAgentItem[]; fetchedAt: string; errors?: string[] }

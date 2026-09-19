@@ -2,8 +2,11 @@
 // confirm before it becomes memory for the client's next call (server/memory/store.ts → ctx.memory →
 // engine/checks/memory-call-promise.ts). The model only reports what is actually in the transcript;
 // nothing here is shown to the client or reaches the screen unconfirmed.
+// The model writes the note in the advisor's language (German when `lang` is absent); a stored note keeps
+// the language it was written in.
 
 import { unsupportedNumbers } from '../../src/workspace/grounding.ts'
+import type { Lang } from '../../engine/lang.ts'
 import type { CallNote } from '../../engine/types.ts'
 import type { Briefing60 } from './briefing.ts'
 
@@ -20,6 +23,16 @@ Bestimme ausschliesslich, was im Transkript tatsächlich vorkommt:
 Nichts erfinden. Kein Punkt, keine Zahl, kein Datum, das nicht im Transkript steht. Kam ein Bereich im Gespräch gar nicht vor, lass ihn weg.
 Antworte als ein einziges JSON-Objekt ohne weiteren Text: {"proposed": [...], "promises": [...], "factUpdates": [...]}`
 
+const RULES_EN = `You summarise an advisory call that has just ended, for the client file. Write in English (British spelling).
+You get BRIEFING-PUNKTE (what the advisor meant to raise or ask according to the preparation, each with "id" and "text") and the TRANSKRIPT of the call.
+Report only what actually occurs in the transcript:
+- "proposed": for each briefing point that came up in the call: "findingId" (the id of the point), "text" (short, what it was about), "reaction" ("accepted" if the client agreed, "rejected" if the client declined, "open" if it stayed open), "why" (a short piece of evidence from the call).
+- "promises": open tasks for the advisor from the call, each with "text" and, if a date is named, "due" in the format YYYY-MM-DD. These are (a) commitments the ADVISOR makes (e.g. send documents, clarify something) and (b) orders, requests and open questions of the CLIENT to the advisor (e.g. reduce a position, suggest alternatives), even if the advisor did not explicitly agree. Start the text of (b) with "Client request: ".
+- The call may be held in German; your texts are in English all the same. Names of securities, numbers, amounts and dates stay exactly as spoken.
+- "factUpdates": for each briefing point that concerns an outdated client note, whether it was confirmed ("confirmed"), named as no longer true in the call ("outdated") or replaced by new information ("changed", then "newValue").
+Invent nothing. No point, no number, no date that is not in the transcript. If an area did not come up in the call at all, leave it out.
+Answer as one single JSON object without any other text: {"proposed": [...], "promises": [...], "factUpdates": [...]}`
+
 const words = (t: string) => t.split(/\s+/).filter(Boolean).length
 const MAX_WORDS = 30
 
@@ -31,14 +44,14 @@ function briefingPoints(b: Briefing60): { id: string; text: string }[] {
 const emptyNote = (ref: string): CallNote => ({ id: `call-${ref}-${Date.now()}`, clientRef: ref, date: new Date().toISOString(), confirmed: false, proposed: [], promises: [], factUpdates: [] })
 
 /** Never throws: a transcript the model can't make sense of just yields an empty draft for the advisor to fill in by hand. */
-export async function draftCallNote(ref: string, transcript: Segment[], briefing: Briefing60, complete: Complete): Promise<CallNote> {
+export async function draftCallNote(ref: string, transcript: Segment[], briefing: Briefing60, complete: Complete, lang?: Lang): Promise<CallNote> {
   const base = emptyNote(ref)
   if (!transcript.length) return base
   const transcriptText = transcript.map((s) => `${s.speaker}: ${s.text}`).join('\n')
   const points = briefingPoints(briefing)
   try {
     const answer = await complete([
-      { role: 'system', content: RULES },
+      { role: 'system', content: lang === 'en' ? RULES_EN : RULES },
       { role: 'user', content: `BRIEFING-PUNKTE:\n${JSON.stringify(points)}\n\nTRANSKRIPT:\n${transcriptText}` },
     ])
     const a = typeof answer === 'object' && answer !== null ? (answer as Record<string, unknown>) : {}

@@ -145,6 +145,47 @@ describe('router and phrasing', () => {
     expect(unsupportedTopic('Wie viel Neste?')).toBeUndefined()
   })
 
+  it('answers in English on request: a hit and "not in the data", same numbers as the German answer', () => {
+    const hit = holding(client('CASE-017'), ref, { query: 'Neste' }, 'en')
+    expect(r(hit).direkt[0].anteilPortfolioProzent).toBe(0.9)
+    expect(hit.source).toBe('Portfolio positions (securities)')
+    const text = phrase([hit], 'en')
+    expect(text).toMatch(/^Held directly: .*Neste.*0\.9%.*Total .*% of assets\./)
+    expect(text).not.toMatch(/Direkt gehalten|des Vermögens|Depot/)
+    const digits = (s: string) => s.match(/\d[\d'.]*/g)
+    expect(digits(text)).toEqual(digits(phrase([holding(client('CASE-017'), ref, { query: 'Neste' })])))
+
+    const miss = runTool(client('CASE-017'), ref, { name: 'holding', args: { query: 'Rheinmetall' } }, 'en')
+    expect(r(miss).gehalten).toBe(false)
+    expect(phrase([miss], 'en')).toMatch(/^No position «Rheinmetall» found in the portfolio\./)
+    expect(r(transactions(client('CASE-003'), ref, {}, 'en')).hinweis).toBe('No transactions are recorded for this client.')
+    expect(unsupportedTopic('Which fees does the client pay?', 'en')).toMatch(/not recorded in the client data/)
+    expect(unsupportedTopic('What does it cost him?')).toMatch(/nicht erfasst/) // English question, German answer when no language is passed
+  })
+
+  it('phrases every tool in English', () => {
+    expect(phrase([holding(client('CASE-004'), ref, { query: 'energy' }, 'en')], 'en')).toMatch(/^Energy: .*% of assets \(CHF .*\), of which 0% direct and .*% through funds\./)
+    expect(phrase([transactions(client('CASE-004'), ref, { direction: 'sell' }, 'en')], 'en')).toMatch(/orders from final investment proposals\. Sells .*Latest: \d{4}-\d{2}-\d{2} Sell /)
+    expect(phrase([history(client('CASE-001'), ref, {}, 'en')], 'en')).toMatch(/^Value \(all portfolios\) from CHF .* on \d{4}-\d{2}-\d{2} to CHF .*%\. Peak CHF /)
+    expect(phrase([cash(client('CASE-004'), ref, {}, 'en')], 'en')).toMatch(/accounts, together .*% of assets: Account .*Of which crypto: /)
+  })
+
+  it('routes English questions to the same tools', () => {
+    expect(routeQuestion('How much Neste does the client hold?', client('CASE-017'), ref)).toEqual([{ name: 'holding', args: { query: 'neste' } }])
+    expect(routeQuestion('How much Rheinmetall does the client hold?', client('CASE-017'), ref)).toEqual([{ name: 'holding', args: { query: 'Rheinmetall' } }])
+    const names = (q: string) => routeQuestion(q, client('CASE-004'), ref).map((c) => c.name)
+    expect(names('How much energy does the client hold through funds?')).toEqual(['holding'])
+    expect(names('What was sold recently?')).toEqual(['transactions'])
+    expect(routeQuestion('What was bought in August 2026?', client('CASE-004'), ref)).toEqual([{ name: 'transactions', args: { direction: 'kauf', from: '2026-08-01', to: '2026-08-31' } }])
+    expect(names('Does he have crypto on an account?')).toContain('cash')
+    expect(names('How much liquidity is there?')).toContain('cash')
+    expect(names('How was the performance?')).toEqual(['history'])
+    expect(names('What will the weather be like tomorrow?')).toEqual([])
+    expect(routeQuestion('How has the value developed since the start of 2025?', client('CASE-001'), ref)).toEqual([{ name: 'history', args: { from: '2025-01-01' } }])
+    expect(periodOf('What happened in March 2026?')).toEqual({ from: '2026-03-01', to: '2026-03-31' })
+    expect(periodOf('And since the end of 2025?')).toEqual({ from: '2025-12-01' })
+  })
+
   it('runs every tool on all 47 clients without throwing', () => {
     const tools: ToolName[] = ['holding', 'transactions', 'history', 'cash']
     for (const c of clients) for (const name of tools) {
@@ -153,6 +194,9 @@ describe('router and phrasing', () => {
       const text = phrase([out])
       expect(text).not.toMatch(/undefined|NaN/)
       expect(text).not.toMatch(/ß/)
+      const en = phrase([runTool(c, ref, { name, args: name === 'holding' ? { query: 'energy' } : {} }, 'en')], 'en')
+      expect(en).not.toMatch(/undefined|NaN/)
+      expect(en).not.toMatch(/ des Vermögens|Konten|Keine |Für diesen|nicht /)
     }
   })
 })

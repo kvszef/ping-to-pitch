@@ -3,7 +3,7 @@ import { readClient } from '../../engine/data.ts'
 import { client as caseClient, ref } from '../../engine/test-data.ts'
 import { parseRss } from './bing.ts'
 import { holdingsOf, searchTerm } from './holdings.ts'
-import { isQuotePage, newsFindings, newsHits, ruleJudgement } from './news.ts'
+import { isQuotePage, newsFindings, newsHits, ruleJudgement, toNewsItems } from './news.ts'
 
 const NOW = new Date('2026-09-19T08:00:00Z')
 
@@ -64,6 +64,29 @@ describe('news agent without a model', () => {
     expect(f.map((x) => x.check)).toEqual(['news.hit', 'profile.call-reason'])
     expect(f[0].severity).toBe('risk')
     expect(f[0].numbers?.weight).toBeCloseTo(hits[0].holding.weight)
+  })
+
+  it('writes the finding and the call reason in English on request, the headline untouched', async () => {
+    const holdings = holdingsOf(readClient(caseClient('CASE-017'), ref))
+    const hits = await newsHits(holdings, NOW, null, async (q: string) => (q === 'Nestle' ? parseRss(RSS) : []))
+    const [de] = newsFindings('CASE-017', hits)
+    const [hit, reason] = newsFindings('CASE-017', hits, 'en')
+    expect(hit.title).toMatch(/^Nestle \(\d+(\.\d)?% of the portfolio\): Nestlé kämpft um Russland-Geschäft$/)
+    expect(hit.detail).toBe('Negative news on a position in the portfolio: have your assessment ready.')
+    expect(hit.evidence[0].quote).toBe('Nestlé kämpft um Russland-Geschäft')
+    expect(reason.title).toMatch(/^News on Nestle \(.*% of the portfolio\): Nestlé kämpft/)
+    expect(de.title).toMatch(/% des Portfolios\): Nestlé kämpft/)
+    expect(de.detail).toMatch(/^Negative Meldung/)
+    expect({ id: hit.id, numbers: hit.numbers, severity: hit.severity }).toEqual({ id: de.id, numbers: de.numbers, severity: de.severity })
+    const item = [...toNewsItems('CASE-017', hits, NOW, undefined, 'en').values()][0]
+    expect(item.affects['CASE-017'].position).toMatch(/% of the portfolio$/)
+    expect(item.affects['CASE-017'].meaning).toMatch(/^Negative news/)
+    expect(item.title).toBe('Nestlé kämpft um Russland-Geschäft')
+  })
+
+  it('judges English headlines too, as whole words only', () => {
+    expect(ruleJudgement({ title: 'Nestle shares tumble after profit warning', snippet: '' }, 'Nestle')).toMatchObject({ direction: 'risk', meaningEn: 'Negative news on a position in the portfolio: have your assessment ready.' })
+    expect(ruleJudgement({ title: 'Nestle raises dividend', snippet: '' }, 'Nestle').direction).toBe('opportunity')
   })
 
   it('finds nothing when the search finds nothing', async () => {
