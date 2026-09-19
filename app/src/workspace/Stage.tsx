@@ -207,7 +207,14 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
   // Never an empty column: without the agent's picks, the graph (or figure) of the tile in focus.
   const focusTile = plan.focus ? byId.get(plan.focus) : undefined
   const picks = plan.widgets.length ? plan.widgets : focusTile ? [focusTile.chart ? `chart:${focusTile.chart}` : `tile:${focusTile.id}`] : []
-  const wanted = useMemo(() => [...pins, ...picks.filter((w) => !pins.includes(w) && !dismissed.includes(w))], [pins, dismissed, picks.join('|')]) // eslint-disable-line react-hooks/exhaustive-deps
+  // During a call what has come up stays where it is: a new pick is added below the others, nothing
+  // is swapped out or changes place until the advisor closes it. Outside a call the agent's picks
+  // replace each other as before.
+  const held = useRef<{ ref: string; ids: string[] }>({ ref: '', ids: [] })
+  if (!inCall || held.current.ref !== client.ref) held.current = { ref: client.ref, ids: [] }
+  if (inCall) { const fresh = picks.filter((w) => !held.current.ids.includes(w)); if (fresh.length) held.current = { ref: client.ref, ids: [...held.current.ids, ...fresh] } }
+  const stay = inCall ? held.current.ids : picks
+  const wanted = useMemo(() => [...pins, ...stay.filter((w) => !pins.includes(w) && !dismissed.includes(w))], [pins, dismissed, stay.join('|')]) // eslint-disable-line react-hooks/exhaustive-deps
   const [shown, setShown] = useState<Widget[]>([])
   const toWidget = useCallback((key: string): Widget | null => {
     const pinned = pins.includes(key)
@@ -242,6 +249,14 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
     const t = setTimeout(() => setShown((s) => s.filter((w) => !w.leaving)), 320)
     return () => clearTimeout(t)
   }, [wanted, toWidget])
+  // A widget added during a call lands at the bottom: scroll the column just far enough to show it.
+  const rail = useRef<HTMLDivElement>(null)
+  const lastHeld = held.current.ids[held.current.ids.length - 1]
+  useEffect(() => {
+    if (!inCall || !lastHeld) return
+    const t = setTimeout(() => rail.current?.querySelector<HTMLElement>(`[data-flip="${CSS.escape(lastHeld)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 360)
+    return () => clearTimeout(t)
+  }, [inCall, lastHeld])
   const pinnedTile = (id: string) => pins.includes(`tile:${id}`)
   const togglePin = (key: string) => { setPins((p) => (p.includes(key) ? p.filter((x) => x !== key) : [key, ...p])); setDismissed((d) => d.filter((x) => x !== key)) }
   const removeWidget = (key: string) => { setPins((p) => p.filter((x) => x !== key)); setDismissed((d) => (d.includes(key) ? d : [...d, key])) }
@@ -345,7 +360,7 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
         <div className={`relative min-h-0 shrink-0 overflow-hidden ${dragging ? '' : 'transition-[width] duration-500 ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none'}`} style={{ width: graphsOpen ? openWidth : 44 }}>
           {graphs.mounted && (
             <div style={{ width: openWidth }} className={`absolute inset-y-0 right-0 origin-right transition-[opacity,transform] duration-[450ms] ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none ${graphs.visible ? 'scale-100 opacity-100' : 'pointer-events-none scale-[0.97] opacity-0'}`}>
-              <div className={`absolute inset-0 overflow-y-auto p-3 ${inCall ? 'pb-[17rem]' : 'pb-20'} [scrollbar-width:none] ${GLASS}`}>
+              <div ref={rail} className={`absolute inset-0 overflow-y-auto scroll-pb-72 p-3 ${inCall ? 'pb-[17rem]' : 'pb-20'} [scrollbar-width:none] ${GLASS}`}>
                 <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-wide text-muted">
                   <span className="flex items-center gap-1.5"><BarChart3 size={12} /> {graphsChrome[0]}</span>
                   <button onClick={() => onGraphs(false)} aria-label="Grafiken einklappen" title="Grafiken einklappen" className="flex h-6 w-6 items-center justify-center rounded-full normal-case hover:bg-pill hover:text-ink"><PanelRightClose size={14} /></button>
