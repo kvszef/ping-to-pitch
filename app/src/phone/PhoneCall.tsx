@@ -240,7 +240,8 @@ export default function PhoneCall() {
       pc.oniceconnectionstatechange = () => log(`ice ${pc.iceConnectionState}`)
       pc.onconnectionstatechange = () => {
         log(`connection ${pc.connectionState}`)
-        if (pc.connectionState === 'failed') { setError('Die Verbindung ist abgebrochen.'); finish(true) }
+        // The transcript travels through the server, so a blocked direct audio link does not end the call.
+        if (pc.connectionState === 'failed') setError('Keine direkte Tonverbindung (Netzwerk blockiert). Das Transkript läuft weiter.')
       }
       await pc.setLocalDescription(await pc.createOffer())
       await gathered(pc)
