@@ -12,6 +12,9 @@ import { factCards, talkTrackCard } from './cards.ts'
 import type { Finding } from './findings.ts'
 import { provisionalFindings } from './provisional-findings.ts'
 import { peerStats, type PeerStats } from '../../engine/peers.ts'
+import { readClient } from '../../engine/data.ts'
+import { classifyNote } from '../../engine/wishes.ts'
+import { classifyNotes, type WishAnswers } from './wishes.ts'
 
 type Provider = 'openai' | 'apertus'
 type Message = { role: 'system' | 'user'; content: string }
@@ -26,6 +29,16 @@ function data() {
   })()
   loaded.catch(() => { loaded = null })
   return loaded
+}
+
+// Notes the engine's rules do not know go to the model as bare texts (never names or account data); the
+// answer reaches the engine as ctx.wishes. No model, no key or an error: nothing is passed and the engine
+// reports those notes as "not checked".
+async function wishesFor(raw: Record<string, unknown>, index: ReferenceIndex, llm: Llm): Promise<WishAnswers | undefined> {
+  const provider = providerFor(llm)
+  const unknown = readClient(raw, index).notes.map((n) => n.text).filter((t) => !classifyNote(t))
+  if (!provider || !unknown.length) return undefined
+  try { return await classifyNotes(unknown, (m) => llm.complete(provider, m)) } catch { return undefined }
 }
 
 const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
@@ -66,10 +79,11 @@ export async function briefing60(method: string, url: string, body: Buffer | nul
   if (!raw) return { status: 404, data: { error: 'Kunde nicht gefunden' } }
 
   const now = new Date()
+  const wishes = await wishesFor(raw, index, llm)
   let engine: Finding[] = []
   let engineError: string | undefined
   try {
-    engine = run(raw, { ref: index, now, memory: [], peers: peersOf(clients, index) })
+    engine = run(raw, { ref: index, now, memory: [], wishes, peers: peersOf(clients, index) })
   } catch (e) {
     engineError = e instanceof Error ? e.message : String(e)
   }
@@ -133,8 +147,9 @@ export async function appBriefing(url: string, llm: Llm) {
   if (tier === 'slow') return { status: 200, data: { cards: [], findings: [] } } // news and peers are not built yet
 
   const now = new Date()
+  const wishes = await wishesFor(raw, index, llm)
   let engine: Finding[] = []
-  try { engine = run(raw, { ref: index, now, memory: [], peers: peersOf(clients, index) }) } catch { /* the stopgap still answers */ }
+  try { engine = run(raw, { ref: index, now, memory: [], wishes, peers: peersOf(clients, index) }) } catch { /* the stopgap still answers */ }
   const { findings } = mergeFindings(engine, provisionalFindings(raw, reference, now))
   const template = composeBriefing(ref, findings)
   const provider = providerFor(llm)
