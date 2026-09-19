@@ -98,6 +98,21 @@ function Profile({ client, compact = false, language, loading = false }: { clien
   const summary = useSummary(persona?.type === 'profile' ? persona.persona : undefined, reasons, notes, language)
   const labels = useTranslated(facts.map(([label]) => label), language)
   const aumLabel = useTranslated(['Vermögen'], language)[0]
+  const [showLess, showMore] = useTranslated(['Weniger anzeigen', 'Mehr anzeigen'], language)
+  // Is the three-line summary cut? Measured after layout, again when the text or the card's width changes.
+  const summaryRef = useRef<HTMLParagraphElement>(null)
+  const [summaryOpen, setSummaryOpen] = useState(false)
+  const [clipped, setClipped] = useState(false)
+  useLayoutEffect(() => {
+    const el = summaryRef.current
+    if (!el || summaryOpen) return
+    const measure = () => setClipped(el.scrollHeight > el.clientHeight + 1)
+    measure()
+    const watch = new ResizeObserver(measure)
+    watch.observe(el)
+    return () => watch.disconnect()
+  }, [summary.text, summaryOpen])
+  useEffect(() => { setSummaryOpen(false) }, [client.ref])
   return (
     <section className="mb-3 snap-start rounded-xl bg-gradient-to-br from-brand-soft/70 to-white/90 px-4 py-3.5 shadow-card ring-1 ring-brand/25">
       <div className={`flex ${compact ? 'items-baseline gap-4' : 'flex-col gap-3'}`}>
@@ -110,15 +125,19 @@ function Profile({ client, compact = false, language, loading = false }: { clien
         {/* Room for two rows of facts from the start: the later tiers add facts, and the brief below must not be pushed down. */}
         <dl className={`min-w-0 flex-1 ${compact ? 'flex flex-wrap gap-x-4 gap-y-0.5' : 'grid min-h-[5rem] grid-cols-2 content-start gap-x-5 gap-y-2 sm:grid-cols-4'}`}>
           {facts.map(([label, value], i) => (
-            <div key={label} className={compact ? 'flex min-w-0 items-baseline gap-1' : 'min-w-0'}><dt className="text-[10px] uppercase tracking-wide text-muted">{labels[i]}</dt><dd className="truncate text-[14px] text-ink" title={value}>{value}</dd></div>
+            <div key={label} className={compact ? 'flex min-w-0 items-baseline gap-1' : 'min-w-0'}><dt className="text-[10px] uppercase tracking-wide text-muted">{labels[i]}</dt><dd className={`${compact ? 'truncate' : 'break-words leading-snug'} text-[14px] text-ink`} title={value}>{value}</dd></div>
           ))}
         </dl>
       </div>
       {/* The summary has its three lines of room while the data is still arriving, so it never pushes the brief down when it comes. */}
       {(summary.text || loading) && (
-        <p className={`mt-3 border-t border-brand/15 pt-2 line-clamp-3 min-h-[4.2rem] text-[14px] leading-snug ${summary.loading || !summary.text ? 'text-wait' : ''}`} title={[persona?.type === 'profile' ? persona.persona : '', reasons.join(' · '), ...notes.map((n) => n.text)].filter(Boolean).join(' — ')}>
+        <p ref={summaryRef} className={`mt-3 border-t border-brand/15 pt-2 ${summaryOpen ? '' : 'line-clamp-3'} min-h-[4.2rem] text-[14px] leading-snug ${summary.loading || !summary.text ? 'text-wait' : ''}`} title={[persona?.type === 'profile' ? persona.persona : '', reasons.join(' · '), ...notes.map((n) => n.text)].filter(Boolean).join(' — ')}>
           {summary.text}
         </p>
+      )}
+      {/* Three lines are the default; a longer summary opens on click, so nothing is cut without a way to read it. */}
+      {(clipped || summaryOpen) && (
+        <button type="button" onClick={() => setSummaryOpen((o) => !o)} className="mt-1 text-[12px] text-brand-dark underline-offset-2 hover:underline">{summaryOpen ? showLess : showMore}</button>
       )}
     </section>
   )
