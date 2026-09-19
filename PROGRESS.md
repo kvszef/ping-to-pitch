@@ -57,6 +57,7 @@ Shared "what is done, what is open" board for the 60-second client briefing. Pla
 
 ## Log
 
+- 2026-09-19 · Arash (engine session) · A1: the model now writes the whole briefing from the findings (lines must cite finding ids, numbers checked); template stays as no-key fallback (67bb00a)
 - 2026-09-19 · Arash · A1: main app shows the engine briefing via /api/briefing/:ref, server-side upload for demo files (7433c23)
 - 2026-09-19 · Claude (engine session) · PROGRESS.md board added
 - 2026-09-19 · Ahmet · phone: cXML bridge replaces Plivo, runs on SignalWire or Twilio (9511ffb, 2033021)
