@@ -8,7 +8,9 @@ import type { Chart, Tile } from './screen'
 
 export type DigestBullet = { id: string; figure?: string; text: string; source: string; severity?: Tile['severity'] }
 export type DigestSection = { group: string; bullets: DigestBullet[] }
-export type Digest = { ref: string; name: string; facts: [label: string, value: string][]; sections: DigestSection[]; charts: Chart[]; seconds: number }
+// How to talk to this client: the engine's profile.tone finding (one register, then short hints). Empty when it found no signal.
+export type DigestTone = { register?: string; hints: string[] }
+export type Digest = { ref: string; name: string; facts: [label: string, value: string][]; sections: DigestSection[]; charts: Chart[]; seconds: number; tone: DigestTone }
 
 const MAX_CHARTS = 2
 // A bar chart where one bar is nearly everything ("CHF 99%") tells little: it only fills a free slot.
@@ -33,6 +35,12 @@ function bulletsOf(tile: Tile, clientRef: string, text?: string): DigestBullet[]
   return []
 }
 
+function toneOf(client: Client): DigestTone {
+  const found = (client.findings ?? []).filter((f) => f.check === 'profile.tone')
+  const register = found.find((f) => f.id.endsWith(':register'))?.title.replace(/^(Ton|Tone):\s*/, '')
+  return { register, hints: found.filter((f) => !f.id.endsWith(':register')).map((f) => f.title) }
+}
+
 export function digestFor(client: Client, tiles: Tile[], charts: Chart[], texts: Record<string, string> = {}): Digest {
   const sections: DigestSection[] = []
   for (const t of tiles) {
@@ -50,7 +58,7 @@ export function digestFor(client: Client, tiles: Tile[], charts: Chart[], texts:
   const wanted = [...tiles.map((t) => t.chart), ...charts.map((c) => c.id)]
   const picked = [...new Set(wanted)].map((id) => charts.find((c) => c.id === id)).filter((c): c is Chart => !!c && (c.spec.type === 'balken' ? c.spec.bars.length > 0 : c.spec.points.length > 1))
   const shown = [...picked.filter((c) => !dull(c)), ...picked.filter(dull)].slice(0, MAX_CHARTS)
-  return { ref: client.ref, name: client.name, facts, sections, charts: shown, seconds: Math.round(tiles.reduce((n, t) => n + t.seconds, 0)) }
+  return { ref: client.ref, name: client.name, facts, sections, charts: shown, seconds: Math.round(tiles.reduce((n, t) => n + t.seconds, 0)), tone: toneOf(client) }
 }
 
 /** The digest as plain text, for the clipboard or an e-mail to oneself. `t` puts a German original into the display language. */
@@ -62,4 +70,11 @@ export function digestText(d: Digest, t: (german: string) => string = (x) => x):
   const body = d.sections.map((s) => [t(s.group), ...s.bullets.map((b) => `• ${b.figure ? `${b.figure} ` : ''}${t(b.text)} (${t(b.source)})`)].join('\n'))
   const charts = d.charts.length ? [[t('Grafiken'), ...d.charts.map((c) => `• ${chartLine(c)}`)].join('\n')] : []
   return [head.join('\n'), ...body, ...charts].join('\n\n')
+}
+
+// The running text without a model: the first points as plain sentences, fewer for a client who wants it brief.
+const BRIEF = ['kurz und sachlich', 'brief and factual']
+export function plainNarrative(d: Digest, t: (german: string) => string = (x) => x): string {
+  const bullets = d.sections.flatMap((s) => s.bullets).slice(0, BRIEF.includes(d.tone.register ?? '') ? 3 : 6)
+  return bullets.map((b) => `${b.figure ? `${b.figure}: ` : ''}${t(b.text)}`.trim().replace(/[.:;,]*$/, '.')).join(' ')
 }

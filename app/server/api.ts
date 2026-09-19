@@ -11,6 +11,7 @@ import { importRoute } from './import/route.ts'
 import { askData, chatWithData } from './ai/chat-route.ts'
 import { dataStatus, loadData } from './database.ts'
 import { langOf, type Lang } from '../engine/lang.ts'
+import { narrativePrompt } from './ai/narrative.ts'
 import { guardTranslation } from './ai/translate-guard.ts'
 import { narrativePrompt } from './ai/narrative.ts'
 
@@ -317,6 +318,7 @@ export function api(env: Env): Plugin {
           if (req.url === '/api/chat') return send(res, 200, await chatWithData(p, provider, providerConfig(env, provider, false), chatPrompt(p), (m) => complete(env, provider, false, m)))
           if (req.url === '/api/chat/data') return send(res, 200, await askData(p))
           if (req.url === '/api/summary') return send(res, 200, await complete(env, provider, true, summaryPrompt(p)))
+          if (req.url === '/api/narrative') return send(res, 200, await complete(env, provider, true, narrativePrompt(p)))
           if (req.url === '/api/narrative') return send(res, 200, await complete(env, provider, true, narrativePrompt(p)))
           if (req.url === '/api/translate') {
             if (!Array.isArray(p.texts) || !p.texts.length) return send(res, 200, { texts: [] })

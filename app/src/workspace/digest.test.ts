@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { clients } from '../data/mock'
 import { screenFor } from './brain'
-import { digestFor, digestText } from './digest'
+import { digestFor, digestText, plainNarrative } from './digest'
+import { grounded } from './grounding'
 
 const clientA = clients.find((c) => c.ref === 'CASE-A')!
 
@@ -44,5 +45,24 @@ describe('digestText', () => {
     const first = screen.tiles.find((t) => t.item)!.item!
     expect(text).toContain('• ')
     expect(text).toContain(`(${first.source})`)
+  })
+})
+
+describe('plainNarrative', () => {
+  const tone = (title: string, subject: string) => ({ id: `profile.tone:CASE-A:${subject}`, check: 'profile.tone', kind: 'action' as const, severity: 'info' as const, title, evidence: [] })
+
+  it('reads the tone from the engine and keeps it short for a client who wants it brief', () => {
+    const screen = screenFor(clientA)
+    const d = digestFor({ ...clientA, findings: [tone('Ton: kurz und sachlich', 'register'), tone('kurz halten', 'hint:short')] }, screen.tiles, screen.charts)
+    expect(d.tone).toEqual({ register: 'kurz und sachlich', hints: ['kurz halten'] })
+    const text = plainNarrative(d)
+    expect(text.split('. ').length).toBeLessThanOrEqual(3 + 2) // three points; a point may hold a full stop itself
+    expect(grounded(text, digestText(d))).toBe(true)
+  })
+
+  it('works without a tone finding and without points', () => {
+    const d = digestFor({ ...clientA, findings: undefined }, [], [])
+    expect(d.tone).toEqual({ register: undefined, hints: [] })
+    expect(plainNarrative(d)).toBe('')
   })
 })
