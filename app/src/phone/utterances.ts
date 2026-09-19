@@ -80,18 +80,19 @@ export function recordUtterances(
 }
 
 // Sends one utterance to the server and returns the text ('' when nothing was understood).
-export async function transcribeUtterance(audio: Blob): Promise<string> {
-  const r = await fetch('/api/transcribe', { method: 'POST', headers: { 'Content-Type': audio.type || 'audio/webm' }, body: audio })
+// `lang` is the language spoken on the call; the server's TRANSCRIBE_LANGUAGE wins over it when set.
+export async function transcribeUtterance(audio: Blob, lang?: 'de' | 'en'): Promise<string> {
+  const r = await fetch(`/api/transcribe${lang ? `?lang=${lang}` : ''}`, { method: 'POST', headers: { 'Content-Type': audio.type || 'audio/webm' }, body: audio })
   const data = (await r.json()) as { segments?: { text: string }[]; error?: string }
   if (!r.ok) throw new Error(data.error ?? `Transkription ${r.status}`)
   return (data.segments ?? []).map((s) => s.text.trim()).filter(Boolean).join(' ')
 }
 
 // Utterances are sent at once but delivered in spoken order, even when a later one finishes first.
-export function inOrder(deliver: (text: string) => void, onError: (e: unknown) => void) {
+export function inOrder(deliver: (text: string) => void, onError: (e: unknown) => void, lang?: 'de' | 'en') {
   let queue: Promise<void> = Promise.resolve()
   return (audio: Blob) => {
-    const text = transcribeUtterance(audio)
+    const text = transcribeUtterance(audio, lang)
     queue = queue.then(() => text).then((t) => { if (t) deliver(t) }).catch(onError)
   }
 }

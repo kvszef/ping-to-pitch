@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { Segment } from '../workspace/brain'
+import { useLanguage } from '../data/useLanguage'
 import { audioContext, onCaption } from './deskLine'
 import { inOrder, recordUtterances } from './utterances'
 
@@ -18,6 +19,7 @@ export function usePhoneAudio(
   onSegments: (s: Segment[]) => void,
   onError?: (error: string) => void,
 ) {
+  const language = useLanguage() // the advisor's display language is the language spoken on the call
   const handlers = useRef({ onSegments, onError })
   handlers.current = { onSegments, onError }
 
@@ -45,7 +47,7 @@ export function usePhoneAudio(
     // so they arrive even when the network blocks the direct audio link. The laptop records the advisor,
     // cut at speech pauses so no sentence is split (utterances.ts).
     const off = onCaption((text) => emit('Kunde', text))
-    const send = inOrder((text) => { console.info('[call] text Berater', text); emit('Berater', text) }, (e) => { if (!stopped) handlers.current.onError?.(e instanceof Error ? e.message : String(e)) })
+    const send = inOrder((text) => { console.info('[call] text Berater', text); emit('Berater', text) }, (e) => { if (!stopped) handlers.current.onError?.(e instanceof Error ? e.message : String(e)) }, language)
     const stop = recordUtterances(call.local, send, { audio: audioContext(), onLog: (t) => console.info('[call]', t) })
 
     return () => {
@@ -53,5 +55,5 @@ export function usePhoneAudio(
       off()
       stop()
     }
-  }, [call, active, transcribe])
+  }, [call, active, transcribe, language])
 }

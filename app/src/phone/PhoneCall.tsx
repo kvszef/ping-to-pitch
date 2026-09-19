@@ -220,9 +220,9 @@ export default function PhoneCall() {
     const send = inOrder((text) => {
       log(`transcribed: "${text.slice(0, 60)}"`)
       void sendCall('desk', { type: 'caption', speaker: 'Kunde', text }).catch(() => {})
-    }, (e) => log(`transcribe failed ${e}`))
+    }, (e) => log(`transcribe failed ${e}`), language)
     return recordUtterances(streamRef.current, (audio) => { log(`utterance ${audio.size} bytes`); send(audio) }, { onLog: log })
-  }, [phase, transcribe, log])
+  }, [phase, transcribe, log, language])
 
   // Fallback captions from the phone's own speech recognition when the server cannot transcribe.
   useEffect(() => {
