@@ -120,6 +120,21 @@ export default function PhoneCall() {
     return () => clearInterval(id)
   }, [phase])
 
+  // Keeps the screen on during the call: phones cut the mic of a browser page once the screen locks.
+  // The lock drops whenever the page is hidden, so it is taken again when the page comes back.
+  useEffect(() => {
+    if (phase !== 'ringing' && phase !== 'connected') return
+    type Lock = { release: () => Promise<void> }
+    const wake = (navigator as unknown as { wakeLock?: { request: (t: 'screen') => Promise<Lock> } }).wakeLock
+    if (!wake) return
+    let lock: Lock | null = null
+    let active = true
+    const take = () => { if (active && document.visibilityState === 'visible') wake.request('screen').then((l) => { if (active) lock = l; else void l.release() }).catch(() => {}) }
+    take()
+    document.addEventListener('visibilitychange', take)
+    return () => { active = false; document.removeEventListener('visibilitychange', take); void lock?.release().catch(() => {}) }
+  }, [phase])
+
   // Fallback captions from the phone's own speech recognition when the server cannot transcribe.
   useEffect(() => {
     if (phase !== 'connected' || transcribe !== false || !BrowserRecognition) return
@@ -222,7 +237,8 @@ export default function PhoneCall() {
           {phase === 'ended' && 'Anruf beendet'}
         </p>
         {phase !== 'idle' && clientLabel && <p className="mt-1 text-sm text-white/40">Als {clientLabel}</p>}
-        {phase === 'connected' && captionsOn && <p className="mt-3 text-xs text-emerald-300/80">Live-Untertitel vom Telefon</p>}
+        {phase === 'connected' && <p className="mt-3 text-xs text-white/50">Bildschirm bleibt an. Diese Seite während des Gesprächs offen lassen.</p>}
+        {phase === 'connected' && captionsOn &&<p className="mt-3 text-xs text-emerald-300/80">Live-Untertitel vom Telefon</p>}
       </div>
 
       <div className="flex w-full max-w-sm flex-col items-center gap-6">
