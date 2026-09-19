@@ -1,5 +1,19 @@
 import { ChevronDown, Search, User, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { useSettings } from '../workspace/settings'
+
+// The language switch lives here, in the one bar every page shares — the Kundenliste itself has no
+// settings gear (that only exists inside the call workspace), so this is the only place a user who
+// hasn't opened a client yet can find it.
+function LanguageSwitch() {
+  const [settings, update] = useSettings()
+  return (
+    <div className="flex items-center overflow-hidden rounded-full border border-white/40 text-[10px]">
+      <button onClick={() => update({ language: 'de' })} className={`px-2 py-0.5 ${settings.language === 'de' ? 'bg-white text-topbar' : 'text-white/80 hover:text-white'}`}>DE</button>
+      <button onClick={() => update({ language: 'en' })} className={`px-2 py-0.5 ${settings.language === 'en' ? 'bg-white text-topbar' : 'text-white/80 hover:text-white'}`}>EN</button>
+    </div>
+  )
+}
 
 export function TopBar() {
   return (
@@ -13,6 +27,7 @@ export function TopBar() {
           <Search size={12} strokeWidth={3} />
           <input className="ml-2 w-full bg-transparent text-xs outline-none" />
         </label>
+        <LanguageSwitch />
         <span className="flex items-center gap-1 text-xs"><User size={13} /> Hans Muster <ChevronDown size={12} fill="white" /></span>
       </div>
     </header>
