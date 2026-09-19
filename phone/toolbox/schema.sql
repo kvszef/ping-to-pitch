@@ -59,6 +59,7 @@ DROP TABLE IF EXISTS clients;
 DROP TABLE IF EXISTS securities;
 DROP TABLE IF EXISTS saa_targets;
 DROP TABLE IF EXISTS risk_profiles;
+DROP TABLE IF EXISTS reference_sets;
 
 -- ---------------------------------------------------------------- Kundenstamm
 
@@ -288,6 +289,22 @@ CREATE TABLE risk_profiles (
   max_prc           REAL,
   equity_quote_pct  REAL,
   raw_json          TEXT NOT NULL
+);
+
+-- Die Sammlungen aus reference.json, jede unverändert als ein Dokument. Gedacht für Leser,
+-- die die Nachschlagedatei ganz brauchen statt einer Auswahl daraus: die Engine in app/ liest
+-- FundUnbundlingMappings, SuitabilityRules, Strategies, EsgProfiles, ProposalStatuses,
+-- RecommendationLists und Tags, und keine dieser sieben hat eine eigene Tabelle. Ohne diese
+-- Tabelle müsste app/ reference.json doch wieder vom Dateisystem lesen.
+--
+-- Securities, StrategicAssetAllocations und RiskProfiles stehen doppelt: oben abfragbar in
+-- Spalten, hier als Original. Das ist Absicht und kostet 1.5 MB -- die Spalten sind das, was
+-- der Copilot am Telefon abfragt, die Zeile hier ist das, was die Engine einliest. Wer die
+-- Quelle ändert, ändert beides mit einem Lauf von scripts/load-data.ts.
+CREATE TABLE reference_sets (
+  name              TEXT PRIMARY KEY,          -- Schlüssel in reference.json, z. B. SuitabilityRules
+  entries           INTEGER,                   -- Anzahl Einträge, damit ein Blick zum Prüfen genügt
+  raw_json          TEXT NOT NULL              -- die Sammlung unverändert
 );
 
 -- ---------------------------------------------------------------- Indizes

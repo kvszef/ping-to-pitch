@@ -556,6 +556,174 @@ statement: |
   UNION ALL SELECT 'risk_profiles', COUNT(*) FROM risk_profiles
 
 ---
+# --------------------------------------------------------------------- Rohdaten fuer app/
+#
+# Die neun Werkzeuge oben sind Sichten fuer das Sprachmodell: aufbereitet, gerundet, auf
+# Deutsch benannt, je Kunde. Die Engine in app/ braucht das Gegenteil - den unveraenderten
+# Kundensatz in der Form von clients.json, ueber alle Kunden auf einmal, weil sie ihre
+# Pruefungen gegen die Rohfelder rechnet und die Vergleichswerte ueber alle Kunden bildet.
+#
+# Deshalb ein eigener Satz Werkzeuge, alle nach dem gleichen Muster: keine Parameter, alle
+# Zeilen, und in der Spalte `satz` das Quellobjekt, wie es in der Lieferung stand. Toolbox
+# parst JSON-Strings in Ergebniszellen selbst auf, `satz` kommt also als verschachteltes
+# Objekt an und nicht als maskierter Text.
+#
+# Zusammengesetzt wird in app/server/database.ts: clients.raw_json laesst Portfolios,
+# Proposals, Transactions, SuitabilityViolations und ClientNotes weg (siehe Regel 1 im Kopf
+# von schema.sql), portfolios.raw_json laesst SecurityPositions und AccountPositions weg.
+# Genau diese sieben Sammlungen liefern die Werkzeuge hier einzeln, mit dem Schluessel, an
+# dem sie wieder hingehoeren.
+
+kind: tool
+name: app_clients
+type: sqlite-sql
+source: unrisk-db
+description: |
+  Alle Kundensaetze als Rohobjekte, in der Form von clients.json, ohne die Sammlungen mit
+  eigener Tabelle. Nicht fuer das Gespraech gedacht, sondern fuer app/: Grundlage, auf die
+  app_portfolios, app_proposals, app_transactions, app_violations und app_notes gehaengt
+  werden. Die Spalte beschreibung ist der gepflegte Freitext inklusive der
+  Gespraechszusammenfassungen, die append_call_summary angehaengt hat - der steht so in
+  keiner Quelldatei und gewinnt deshalb gegen das Feld Description im Rohobjekt.
+annotations:
+  readOnlyHint: true
+statement: |
+  SELECT c.client_ref, c.description AS beschreibung, c.raw_json AS satz
+  FROM clients c
+  ORDER BY c.client_ref
+
+---
+kind: tool
+name: app_portfolios
+type: sqlite-sql
+source: unrisk-db
+description: |
+  Alle Portfolios aller Kunden als Rohobjekte, einschliesslich PerformanceHistory, aber ohne
+  SecurityPositions und AccountPositions - die liefern app_positions und app_accounts,
+  verbunden ueber portfolio_id. Gehoert unter Portfolios[] des Kunden mit client_ref.
+annotations:
+  readOnlyHint: true
+statement: |
+  SELECT p.client_ref, p.portfolio_id, p.raw_json AS satz
+  FROM portfolios p
+  ORDER BY p.client_ref, p.portfolio_id
+
+---
+kind: tool
+name: app_positions
+type: sqlite-sql
+source: unrisk-db
+description: |
+  Alle Wertschriftenpositionen aller Portfolios als Rohobjekte. Gehoert unter
+  SecurityPositions[] des Portfolios mit portfolio_id, in dieser Reihenfolge.
+annotations:
+  readOnlyHint: true
+statement: |
+  SELECT x.portfolio_id, x.raw_json AS satz
+  FROM positions x
+  ORDER BY x.portfolio_id, x.id
+
+---
+kind: tool
+name: app_accounts
+type: sqlite-sql
+source: unrisk-db
+description: |
+  Alle Kontopositionen aller Portfolios als Rohobjekte. Gehoert unter AccountPositions[] des
+  Portfolios mit portfolio_id. Achtung: diese Objekte enthalten AccountName und koennen eine
+  IBAN tragen - sie duerfen an kein Sprachmodell und in kein Protokoll.
+annotations:
+  readOnlyHint: true
+statement: |
+  SELECT a.portfolio_id, a.raw_json AS satz
+  FROM accounts a
+  ORDER BY a.portfolio_id, a.id
+
+---
+kind: tool
+name: app_proposals
+type: sqlite-sql
+source: unrisk-db
+description: |
+  Alle Anlagevorschlaege aller Kunden als Rohobjekte, samt ihrer SecurityPositions und
+  einschliesslich der abgelehnten - anders als get_open_proposals, das die Ablehnungen
+  weglaesst. Die Engine braucht sie: ein abgelehnter Vorschlag sagt, was man dem Kunden
+  nicht noch einmal antragen soll. Gehoert unter Proposals[] des Kunden mit client_ref.
+annotations:
+  readOnlyHint: true
+statement: |
+  SELECT pr.client_ref, pr.raw_json AS satz
+  FROM proposals pr
+  ORDER BY pr.client_ref, pr.proposal_id
+
+---
+kind: tool
+name: app_transactions
+type: sqlite-sql
+source: unrisk-db
+description: |
+  Alle Transaktionen aller Kunden als Rohobjekte. Gehoert unter Transactions[] des Kunden
+  mit client_ref.
+annotations:
+  readOnlyHint: true
+statement: |
+  SELECT t.client_ref, t.raw_json AS satz
+  FROM transactions t
+  ORDER BY t.client_ref, t.id
+
+---
+kind: tool
+name: app_violations
+type: sqlite-sql
+source: unrisk-db
+description: |
+  Alle Regelverstoesse aller Kunden als Rohobjekte, samt der Auswertungsspur ViolationPath.
+  Gehoert unter SuitabilityViolations[] des Kunden mit client_ref. Ausgesetzte Regeln
+  (is_override = 1) bleiben draussen: sie stehen als IndividualRuleOverrides schon im
+  Rohobjekt des Kunden und kaemen sonst doppelt an.
+annotations:
+  readOnlyHint: true
+statement: |
+  SELECT v.client_ref, v.raw_json AS satz
+  FROM violations v
+  WHERE v.is_override = 0
+  ORDER BY v.client_ref, v.id
+
+---
+kind: tool
+name: app_notes
+type: sqlite-sql
+source: unrisk-db
+description: |
+  Alle Beraternotizen aller Kunden als Rohobjekte. Gehoert unter ClientNotes[] des Kunden
+  mit client_ref.
+annotations:
+  readOnlyHint: true
+statement: |
+  SELECT n.client_ref, n.raw_json AS satz
+  FROM notes n
+  ORDER BY n.client_ref, n.id
+
+---
+kind: tool
+name: app_reference
+type: sqlite-sql
+source: unrisk-db
+description: |
+  Die Nachschlagedatei reference.json, eine Zeile je Sammlung: name ist der Schluessel
+  ("Securities", "SuitabilityRules", "Strategies", ...), satz die Sammlung unveraendert.
+  Zusammengesetzt ergibt das wieder die ganze Datei. Die Engine in app/ liest daraus
+  Securities, RecommendationLists, FundUnbundlingMappings, StrategicAssetAllocations,
+  RiskProfiles, Strategies, EsgProfiles, SuitabilityRules, ProposalStatuses und Tags - nur
+  drei davon haben eine eigene Tabelle, deshalb dieses Werkzeug.
+annotations:
+  readOnlyHint: true
+statement: |
+  SELECT r.name, r.entries, r.raw_json AS satz
+  FROM reference_sets r
+  ORDER BY r.name
+
+---
 # --------------------------------------------------------------------- Toolsets
 
 # Was die Anwendung laedt: erreichbar unter /mcp/call_copilot, ausschliesslich lesend.
@@ -621,3 +789,19 @@ kind: toolset
 name: write
 tools:
   - append_call_summary
+---
+# Was app/ laedt: die Rohdaten, ausschliesslich lesend. Getrennt von call_copilot, weil diese
+# Werkzeuge nie in den Kontext des Sprachmodells gehoeren - sie liefern ganze Lieferungen und
+# app_accounts traegt Kontonamen und IBANs.
+kind: toolset
+name: app_data
+tools:
+  - app_clients
+  - app_portfolios
+  - app_positions
+  - app_accounts
+  - app_proposals
+  - app_transactions
+  - app_violations
+  - app_notes
+  - app_reference

@@ -285,6 +285,8 @@ const stmt = {
     VALUES (:id, :name, :risk_level, :max_vola, :max_prc, :equity_quote_pct, :raw_json)`),
   phone: db.prepare(`INSERT INTO phone_map (phone_e164, client_ref, label, updated_at)
     VALUES (:phone_e164, :client_ref, :label, :updated_at)`),
+  referenceSet: db.prepare(`INSERT INTO reference_sets (name, entries, raw_json)
+    VALUES (:name, :entries, :raw_json)`),
 }
 
 // PortfolioId und ProposalId sind Primärschlüssel und müssen über alle Kundendateien hinweg
@@ -296,7 +298,7 @@ const proposalOwner = new Map<number, string>()
 const counts: Record<string, number> = {
   clients: 0, portfolios: 0, positions: 0, accounts: 0, proposals: 0,
   transactions: 0, violations: 0, notes: 0, securities: 0, saa_targets: 0,
-  risk_profiles: 0, phone_map: 0,
+  risk_profiles: 0, phone_map: 0, reference_sets: 0,
 }
 let unresolvedSecurities = 0
 
@@ -365,6 +367,19 @@ try {
       raw_json: JSON.stringify(r),
     })
     counts.risk_profiles++
+  }
+
+  // Jede Sammlung aus reference.json noch einmal unverändert, eine Zeile je Schlüssel. Die
+  // Tabellen oben sind eine Auswahl für den Copiloten; wer die Nachschlagedatei ganz braucht,
+  // liest hier. Bewusst ohne Wissen über die Schlüssel: kommt in einer späteren Lieferung eine
+  // Sammlung dazu, landet sie mit, statt stillschweigend zu fehlen.
+  for (const [name, value] of Object.entries(reference)) {
+    stmt.referenceSet.run({
+      name,
+      entries: Array.isArray(value) ? value.length : null,
+      raw_json: JSON.stringify(value ?? null),
+    })
+    counts.reference_sets++
   }
 
   for (const c of clients) {

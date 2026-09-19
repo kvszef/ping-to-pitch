@@ -104,6 +104,14 @@ npm run load-data       # data/unrisk.db aus den Case-Daten bauen
 npm run toolbox         # Toolbox auf 127.0.0.1:5000 (eigenes Terminal)
 ```
 
+**Dieselbe Datenbank versorgt auch die App.** Neben `call_copilot` liegt das Toolset `app_data`
+mit neun parameterlosen Werkzeugen, die die Rohobjekte liefern statt aufbereiteter Sichten:
+`app_clients` bis `app_notes` die sieben Sammlungen des Kundensatzes, `app_reference` die ganze
+`reference.json` aus der Tabelle `reference_sets`. `app/server/database.ts` setzt daraus die
+Kundensätze in der Form von `clients.json` zusammen, die die Engine erwartet. Getrennte Toolsets,
+weil diese Werkzeuge nie in den Kontext des Sprachmodells gehören: sie liefern ganze Lieferungen,
+und `app_accounts` trägt Kontonamen und IBANs.
+
 **Der Copilot läuft auf beiden Telefoniewegen.** Jede Transkriptzeile kommt in
 [src/live.ts](src/live.ts) an, gleich ob über Vapi oder über die Sprechbrücke; dort hängt der
 Copilot. Ein weiterer Telefonieweg muss davon nichts wissen, er schreibt einfach wie die anderen
@@ -157,7 +165,7 @@ vorführbar – auch am Demo-Tag ohne Netz.
 | [src/copilot/types.ts](src/copilot/types.ts) | Die Schnittstellen zwischen den Bausteinen, inklusive der neun Werkzeugnamen. |
 | [src/copilot/bus.ts](src/copilot/bus.ts) | Gesprächszustand und Verteilung an die Browser, mit Nachreichen des Verlaufs. |
 | [toolbox/schema.sql](toolbox/schema.sql) | Das SQLite-Schema für `clients.json` und `reference.json`. |
-| [toolbox/tools.yaml](toolbox/tools.yaml) | Quelle, die neun Werkzeuge und das Toolset `call_copilot`. |
+| [toolbox/tools.yaml](toolbox/tools.yaml) | Quelle, die Werkzeuge und die Toolsets `call_copilot`, `app_data`, `dev` und `write`. |
 | [scripts/load-data.ts](scripts/load-data.ts) | Baut `data/unrisk.db`, idempotent. |
 
 ## Warum der Assistent schweigt
