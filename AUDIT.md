@@ -8,9 +8,8 @@ Done means pushed. Everything else is open, ranked by demo impact within each pa
 
 The list is a news ticker. A headline gives up to 3 points per holding, uncapped; all engine findings of a client together give at most 3. Ran: reason no. 1 is news for all of the top 6; CASE-041 (6 rule breaches, 16 months without contact) ranks 31st, CASE-001 (all cash, 5 breaches) 19th; monthly losses, cash piles, maturing bonds and contact age can never score (severity filter).
 
-- **Done, not wired:** `server/market/score.ts` + 9 tests. One line per kind of finding with points per client, two best stories, news capped at 4 points, shared headlines dampened. Engine-only order on the real data: CASE-012 (13 breaches, CHF 328 cash against a CHF 15'000 tax payment), 042, 018, 022, 038, 044.
-- **Open:** wire it into `outbound()` (waits for the language pass on `route.ts`): `engineReasons(e.findings, lang)`, `newsPoints(hitScore(h), clientsSharingArticle)`, `weigh(news, engine, houseView)`.
-- **Open, `news.ts`:** keyword regexes without word boundaries ("cut", "fine", "beat"), "russland"/"kämpft" hard-coded as risk, fund pages and adverts pass `isQuotePage`, intraday tickers get importance 2, a falling price labelled "opportunity". Offline the recency filter is off and the snapshot reaches back to 2003: 9 clients get a fund page as reason no. 1.
+- **Done:** `server/market/score.ts` + tests, wired into `outbound()`. One line per kind of finding with points per client, two best stories, news capped at 4 points, shared headlines dampened. Live check after the change: 7 of the top 8 lead with a finding from the client's file (CASE-012: 13 breaches and CHF 328 cash against a CHF 15'000 tax payment).
+- **Done, `news.ts`:** intraday tickers, adverts, fund pages and bare company names are not news; English keywords match whole words only; the offline snapshot only uses the last 30 days; the judge prompt says tickers and adverts are routine and a falling price is no opportunity.
 - **Open:** `useOutbound.ts` drops `offline`/`fetchedAt`; the roster never says the news is stale.
 - Contact age is not a finding yet, so "not spoken to in 16 months" cannot score.
 - CASE-028: one position is 95.9% of the assets, the engine reports no concentration risk. Check the fund logic.
