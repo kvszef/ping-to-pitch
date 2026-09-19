@@ -166,6 +166,9 @@ export function composeBriefing(ref: string, findings: Finding[]): Briefing60 {
       : `${c.title.replace(/^Widerspruch: /, '')}. ${c.detail?.split('.')[0] ?? ''}.`, 'fact', [c]))
   }
   for (const r of risks.slice(0, 1)) mention.push(line(`mention-${r.id}`, clean(r.title), 'fact', [r]))
+  // N3: an imported statement from another bank. The advisor uploaded it for this call, so it is named.
+  const exCustody = of('portfolio.ex-custody')
+  for (const x of exCustody.slice(0, 1)) mention.push(line(`mention-${x.id}`, x.title, 'fact', [x]))
   const hardViolations = violations.filter((v) => v.severity === 'risk')
   const n = hardViolations.reduce((s, v) => s + (v.numbers?.count ?? 1), 0)
   // The allocation finding is computed from today's positions; the bank's violation list is an older snapshot of the same issue.
@@ -215,6 +218,7 @@ export function composeBriefing(ref: string, findings: Finding[]): Briefing60 {
     const ok = of('contradiction').find((f) => f.severity === 'ok')
     if (ok) questions.push({ id: 'q-esg', q: 'Wird mein Ausschlusswunsch eingehalten?', a: ok.title.replace(/^Wunsch /, 'Ja, Wunsch '), findings: [ok.id] })
   }
+  if (exCustody[0]) questions.push({ id: 'q-excustody', q: 'Wie steht mein Vermögen insgesamt da, mit dem Depot bei der anderen Bank?', a: `${exCustody[0].title}. Das Fremddepot ist in der Analyse enthalten.`, findings: [exCustody[0].id] })
   if (liquidityPlan && liquidity) questions.push({ id: 'q-liquidity', q: 'Wie viel kann ich kurzfristig beziehen?', a: `${liquidity.title}. ${liquidityPlan.title}.`, findings: [liquidity.id, liquidityPlan.id] })
   if (hardViolations.length) questions.push({ id: 'q-ok', q: 'Ist mit meinem Portfolio alles in Ordnung?', a: `Es gibt ${hardViolations.length} offene Regelverletzung${hardViolations.length > 1 ? 'en' : ''}, u. a.: ${clean(hardViolations[0].title)}.`, findings: hardViolations.map((f) => f.id) })
   if (risks[0]) questions.push({ id: 'q-risk', q: 'Warum schwankt mein Portfolio so stark?', a: `${clean(risks[0].title)}.${risks[0].detail ? ` ${risks[0].detail}` : ''}`, findings: [risks[0].id] })

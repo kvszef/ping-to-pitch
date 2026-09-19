@@ -7,6 +7,7 @@ import { plan } from './context-plan.ts'
 import { staleNote } from './context-stale-note.ts'
 import { callPromise } from './memory-call-promise.ts'
 import { liquidity } from './portfolio-liquidity.ts'
+import { exCustody } from './portfolio-ex-custody.ts'
 import { allocation } from './portfolio-allocation.ts'
 import { concentration } from './portfolio-concentration.ts'
 import { maturities } from './portfolio-maturities.ts'
@@ -34,6 +35,7 @@ export const checks: Record<string, Check> = {
   'portfolio.proposals': proposals,
   'portfolio.maturities': maturities,
   'portfolio.liquidity': liquidity,
+  'portfolio.ex-custody': exCustody,
   'context.stale-note': staleNote,
   'context.plan': plan,
   'context.peers': peers,

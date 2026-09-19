@@ -5,6 +5,7 @@ import { briefingNews, clientNews, newsFeed, newsStatus, outbound, pushNews, sna
 import { callRoute } from './call.ts'
 import { newsAgentRoute } from './ai/news-agent.ts'
 import { callsRoute } from './calls.ts'
+import { importRoute } from './import/route.ts'
 import { askData, chatWithData } from './ai/chat-route.ts'
 import { dataStatus, loadData } from './database.ts'
 
@@ -230,6 +231,7 @@ export function api(env: Env): Plugin {
             return send(res, out.status, out.data)
           }
           const path = req.url.split('?')[0]
+          if (path.startsWith('/api/import/')) { const out = await importRoute(req.url, req.method ?? 'GET', req.method === 'POST' ? await body(req) : Buffer.alloc(0), llm); if (out) return send(res, out.status, out.data) }
           if (path === '/api/news/status' && req.method === 'GET') return send(res, 200, newsStatus())
           if (path === '/api/outbound' && req.method === 'GET') { const out = await outbound(judgeLlm); return send(res, out.status, out.data) }
           if (path === '/api/news' && req.method === 'GET') { const out = await newsFeed(judgeLlm); return send(res, out.status, out.data) }

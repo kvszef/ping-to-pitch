@@ -174,9 +174,21 @@ export type Client = {
 
 const day = (v: unknown) => str(v)?.slice(0, 10)
 
+// A security reference.json does not know, classified by the position itself (an ex-custody import writes
+// SAA_* fields onto its positions). Without those fields the position stays unclassified, as before.
+function ownSecurity(p: Raw, securityId: number | undefined): Security | undefined {
+  const assetClass = str(p.SAA_AssetClassName)
+  if (!assetClass) return undefined
+  return {
+    id: securityId ?? -1, isin: str(p.Isin), name: str(p.SecurityName) ?? str(p.Isin) ?? 'Position ohne Namen', type: str(p.SecurityTypeName), currency: str(p.Currency),
+    assetClass, currencyGroup: str(p.SAA_CurrencyGroupName), countryGroup: str(p.SAA_CountryGroupName), industry: str(p.SAA_IndustryName),
+    recommended: false, lookThrough: false,
+  }
+}
+
 function readPosition(p: Raw, kind: Position['kind'], ref: ReferenceIndex): Position {
   const securityId = num(p.SecurityId)
-  const security = kind === 'security' ? ref.security(securityId) : undefined
+  const security = kind === 'security' ? ref.security(securityId) ?? ownSecurity(p, securityId) : undefined
   return {
     kind, securityId, isin: str(p.Isin), currency: str(p.Currency),
     // Account names can carry IBAN-like text: accounts are named by currency only.
