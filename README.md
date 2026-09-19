@@ -32,6 +32,7 @@ We do not "maximise revenue per client", we **never miss a suitable opportunity*
 
 | | |
 | --- | --- |
+| [SUMMARY.md](SUMMARY.md) | Start here: what we built, how it works, and what every piece of information on the screen means, in plain words. |
 | [PLAN.md](PLAN.md) | What we are building, architecture, contracts, tracks and owners, milestones, risks. |
 | [CLAUDE.md](CLAUDE.md) | How we work: git, tests, code rules, grounding rules, data traps. |
 | [task.md](task.md) | The official challenge brief and judging criteria. |
