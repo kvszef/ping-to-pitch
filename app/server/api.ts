@@ -170,18 +170,24 @@ type Word = { text: string; type?: string; speaker_id?: string }
 
 // Without an ElevenLabs key the OpenAI key transcribes. It has no speaker separation, so the whole
 // chunk comes back as one speaker and the screen agent assigns Kunde/Berater from the content.
-const TRANSCRIBE_PROMPT = 'Telefongespräch zwischen einem Kundenberater einer Schweizer Bank und seinem Kunden über das Portfolio.'
+// One fixed call language (TRANSCRIBE_LANGUAGE in .env.local: de or en, default de). Without it the model
+// follows whatever it hears and a German call gets English lines in between.
+const SPOKEN = {
+  de: { iso3: 'deu', prompt: 'Telefongespräch auf Deutsch zwischen einem Kundenberater einer Schweizer Bank und seinem Kunden über das Portfolio. Es wird ausschliesslich Deutsch gesprochen und geschrieben.' },
+  en: { iso3: 'eng', prompt: 'Phone call in English between a client advisor of a Swiss bank and a client about the portfolio. Only English is spoken and written.' },
+}
+const spoken = (env: Env) => (env.TRANSCRIBE_LANGUAGE === 'en' ? 'en' : 'de')
 async function transcribeOpenAI(env: Env, audio: Buffer, contentType: string) {
   const form = new FormData()
   form.append('model', env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-transcribe')
-  form.append('language', 'de')
-  form.append('prompt', TRANSCRIBE_PROMPT)
+  form.append('language', spoken(env))
+  form.append('prompt', SPOKEN[spoken(env)].prompt)
   form.append('file', new Blob([new Uint8Array(audio)], { type: contentType }), `abschnitt.${/mp4|m4a|aac/.test(contentType) ? 'mp4' : /ogg/.test(contentType) ? 'ogg' : 'webm'}`)
   const r = await fetch(`${env.OPENAI_BASE_URL || 'https://api.openai.com/v1'}/audio/transcriptions`, { method: 'POST', headers: { Authorization: `Bearer ${env.OPENAI_API_KEY}` }, body: form })
   if (!r.ok) throw new Error(`OpenAI-Transkription ${r.status}: ${(await r.text()).slice(0, 300)}`)
   const text = ((await r.json()) as { text?: string }).text?.trim() ?? ''
   // On silence the model tends to echo its own prompt back; that is not speech.
-  const echo = (t: string) => t.length < 2 || TRANSCRIBE_PROMPT.toLowerCase().includes(t.toLowerCase().replace(/[.…:]+$/, '')) || /^(context|kontext)/i.test(t)
+  const echo = (t: string) => t.length < 2 || SPOKEN[spoken(env)].prompt.toLowerCase().includes(t.toLowerCase().replace(/[.…:]+$/, '')) || /^(context|kontext)/i.test(t)
   return text && !echo(text) ? [{ speaker: 'speaker_0', text }] : []
 }
 
@@ -192,7 +198,7 @@ async function transcribe(env: Env, audio: Buffer, contentType: string) {
   }
   const form = new FormData()
   form.append('model_id', env.ELEVENLABS_STT_MODEL || 'scribe_v1')
-  form.append('language_code', 'deu')
+  form.append('language_code', SPOKEN[spoken(env)].iso3)
   form.append('diarize', 'true')
   form.append('file', new Blob([new Uint8Array(audio)], { type: contentType }), `abschnitt.${/mp4|m4a|aac/.test(contentType) ? 'mp4' : /ogg/.test(contentType) ? 'ogg' : 'webm'}`)
   const r = await fetch('https://api.elevenlabs.io/v1/speech-to-text', { method: 'POST', headers: { 'xi-api-key': env.ELEVENLABS_API_KEY }, body: form })
