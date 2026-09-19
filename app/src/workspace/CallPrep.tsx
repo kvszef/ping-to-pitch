@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import type { CallPlan, PlanLine } from '../../server/ai/callplan-types'
 import type { EngineFinding, TalkLine } from '../types'
 import { useTranslated, type Language } from '../data/useTranslate'
+import { callReasonsOf } from './callReasons'
 
 // Two ways to look at a client, one per call direction.
 //   prep      we call ("Heute anrufen"): why we call, what the call should achieve, how to convince
@@ -163,8 +164,7 @@ const WHY = {
 // or cannot be reached, so the card is there from the first moment of the call.
 export function WhyCalling({ findings, fallback = [], language }: { findings?: EngineFinding[]; fallback?: TalkLine[]; language: Language }) {
   const day = (iso?: string) => (iso && /^\d{4}-\d{2}-\d{2}/.test(iso) ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}` : iso)
-  const fromEngine = (findings ?? []).filter((f) => f.check === 'profile.call-reason').sort((a, b) => (a.numbers?.rank ?? 9) - (b.numbers?.rank ?? 9))
-    .map((f) => ({ id: f.id, title: f.title, detail: f.detail, source: f.evidence[0]?.source ?? 'Engine', date: day(f.evidence.find((e) => e.date)?.date), severity: f.severity }))
+  const fromEngine = callReasonsOf(findings).map((f) => ({ id: f.id, title: f.title, detail: f.detail, source: f.evidence[0]?.source ?? 'Engine', date: day(f.evidence.find((e) => e.date)?.date), severity: f.severity }))
   const reasons = (findings ? fromEngine : fallback.map((r, i) => ({ id: `talk-${i}`, title: r.text, detail: undefined, source: r.source, date: r.date, severity: r.severity }))).slice(0, 3)
   const texts = useTranslated(reasons.flatMap((r) => [r.title, r.detail ?? '', r.source]), language)
   return (

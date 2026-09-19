@@ -10,6 +10,7 @@
 import { unsupportedNumbers } from '../../src/workspace/grounding.ts'
 import { composeBriefing, type Complete, type Kind } from './briefing.ts'
 import type { CallPlan, CallReason, PlanLine } from './callplan-types.ts'
+import { reasonOf, stepOf } from '../../engine/checks/cio-house-view.ts'
 import { isSource, pick, stripPrefix, type Lang } from '../../engine/lang.ts'
 import { day, pct, type Finding } from './findings.ts'
 
@@ -27,13 +28,6 @@ const words = (text: string) => text.split(/\s+/).filter(Boolean).length
 const sentence = (text: string) => (/[.!?]$/.test(text) ? text : `${text}.`)
 // "Nestle SA (6.2%): Headline" → the holding's label, as the outbound ranking writes news reasons.
 const holdingOf = (title: string) => /^(.+?) \([\d.,]+%\): /.exec(title)?.[1]
-
-// The house-view finding's detail, read in both languages: 'reason. Vorschlag: step. Danach: effects. Gemessen mit …' /
-// 'reason. Proposal: step. After that: effects. Measured with …'. The effects hold decimal points ('20.5% → 30.4%'),
-// so they end at the full stop before the next sentence, not at the first one. Same contract as stepOf/reasonOf in
-// engine/checks/cio-house-view.ts: switch to those once they are on main.
-const HOUSE_VIEW_STEP = /(?:Vorschlag|Proposal): (.+?)\. (?:Danach|After that): (.+?)\.(?= (?:Neu zu beachten|New to watch|Gemessen mit|Measured with)|$)/
-const HOUSE_VIEW_REASON_END = / (?=Vorschlag: |Proposal: |Aufstocken |Topping up |Gemessen mit |Measured with )/
 
 const fromFinding = (id: string, f: Finding, text = clean(f.title), extra: Partial<PlanLine> = {}): PlanLine =>
   ({ id, text, kind: f.kind, source: sourceOf(f), date: dateOf(f), severity: f.severity, findings: [f.id], ...extra })
@@ -99,8 +93,8 @@ export function composeCallPlan(ref: string, findings: Finding[], ranked: CallRe
   if (forLead) goals.push(stepLine(forLead))
   else if (leadFinding?.check.startsWith('cio.')) {
     // The house-view check writes its re-checked trade into the detail; without one the reason of the fix stands in.
-    const trade = HOUSE_VIEW_STEP.exec(leadFinding.detail ?? '')
-    const text = trade ? `${agree}: ${trade[1]}; ${t('danach', 'afterwards')} ${trade[2]}`
+    const trade = stepOf(leadFinding.detail)
+    const text = trade ? `${agree}: ${trade.step}; ${t('danach', 'afterwards')} ${trade.after}`
       : leadFinding.fix ? `${agree}: ${fixText(leadFinding)}`
       : t('Neue Hausmeinung vorstellen und entscheiden, ob das Portfolio in diese Richtung angepasst wird', 'Present the new house view and decide whether the portfolio moves in that direction')
     goals.push({ ...fromFinding('goal-house-view', leadFinding, text), kind: 'action' })
@@ -125,7 +119,7 @@ export function composeCallPlan(ref: string, findings: Finding[], ranked: CallRe
   if (newsLed) ownExperience()
   // The bank's view changed: its own reasoning is the argument (the detail opens with it).
   if (leadFinding?.check.startsWith('cio.') && leadFinding.detail) {
-    const why = leadFinding.detail.split(HOUSE_VIEW_REASON_END)[0].split(/(?<=[.!?]) /).slice(0, 2).join(' ')
+    const why = reasonOf(leadFinding.detail).split(/(?<=[.!?]) /).slice(0, 2).join(' ')
     if (why) arg(t('Begründung der Bank', 'Reasoning of the bank'), leadFinding, `${t('Die Anlagestrategen begründen es so', 'How the investment strategists explain it')}: ${why.replace(/\.$/, '')}`)
   }
   const contradictions = of('contradiction').filter((f) => f.severity === 'risk' || f.severity === 'warn').sort((a, b) => rank[a.severity] - rank[b.severity])
