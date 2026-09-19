@@ -2,13 +2,14 @@ import { BarChart3, Ear, FileText, LayoutList, PanelRightClose, PanelRightOpen, 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { SeverityIcon } from '../cards/ui'
 import type { Client } from '../types'
-import { useTranslated, type Language } from '../data/useTranslate'
+import { isTranslated, useTranslated, type Language } from '../data/useTranslate'
 import type { Screen } from './brain'
 import { Wave } from './CallIsland'
 import { ChatPanel, FOLLOW_UPS } from './ChatPanel'
 import { TextView } from './TextView'
 import { digestFor } from './digest'
 import { Smooth, useFlip, usePresence } from './motion'
+import { useReveal } from './reveal'
 import { bestTile, sameTile, widgetMain, type Brought, type Plan, type Tile } from './screen'
 import type { ChatEntry, Detail, Hint, TranscriptLine } from './types'
 import { useSummary } from './useSummary'
@@ -28,11 +29,14 @@ const BUDGET = 60
 // One frosted-glass look for the four parts of the page.
 export const GLASS = 'rounded-2xl bg-white/55 shadow-[0_8px_32px_rgba(31,56,88,0.10)] ring-1 ring-white/70 backdrop-blur-xl'
 
-function TileBody({ tile, text, clientRef, chart, fresh, language }: { tile: Tile; text?: string; clientRef: string; chart?: Screen['charts'][number]; fresh?: Set<string>; language: Language }) {
+function TileBody({ tile, text, clientRef, chart, fresh, language, onReady }: { tile: Tile; text?: string; clientRef: string; chart?: Screen['charts'][number]; fresh?: Set<string>; language: Language; onReady?: () => void }) {
   const itemText = text && tile.item?.figure && text.startsWith(tile.item.figure) ? text.slice(tile.item.figure.length).replace(/^[\s,:]+/, '') : text ?? tile.item?.text ?? ''
   const newsTexts = useTranslated((tile.news ?? []).flatMap((n) => [n.title, n.affects[clientRef].meaning]), language)
   const [main, proposalSummary] = useTranslated([itemText, tile.card?.type === 'proposal' ? tile.card.summary : ''], language)
   const effectLabels = useTranslated(tile.card?.type === 'proposal' ? tile.card.effects.slice(0, 4).map((e) => e.label) : [], language)
+  // Ready once every text of this tile is there in the display language; until then the tile stays blurred (reveal.ts).
+  const ready = isTranslated([itemText, tile.card?.type === 'proposal' ? tile.card.summary : '', ...(tile.news ?? []).flatMap((n) => [n.title, n.affects[clientRef].meaning])], language)
+  useEffect(() => { if (ready) onReady?.() }, [ready]) // eslint-disable-line react-hooks/exhaustive-deps
   if (tile.item) return (
     <div className="flex items-center gap-4">
       <p className="min-w-0 flex-1 text-[16px] leading-snug">
@@ -109,7 +113,7 @@ function Profile({ client, compact = false, language }: { client: Client; compac
         </dl>
       </div>
       {summary.text && (
-        <p className={`mt-3 border-t border-brand/15 pt-2 text-[14px] leading-snug ${summary.loading ? 'animate-pulse' : ''}`} title={[persona?.type === 'profile' ? persona.persona : '', reasons.join(' · '), ...notes.map((n) => n.text)].filter(Boolean).join(' — ')}>
+        <p className={`mt-3 border-t border-brand/15 pt-2 text-[14px] leading-snug transition-[filter] duration-500 ${summary.loading ? 'tile-wait' : ''}`} title={[persona?.type === 'profile' ? persona.persona : '', reasons.join(' · '), ...notes.map((n) => n.text)].filter(Boolean).join(' — ')}>
           {summary.text}
         </p>
       )}
@@ -161,6 +165,7 @@ export function Stage({ client, screen, plan, brought, thinking, inCall, recordi
   // How far the advisor has scrolled through the brief, 0–1: drives the reading bar in the header.
   const [readShare, setReadShare] = useState(0)
   const feedKey = tiles.map((t) => t.id).join('|')
+  const reveal = useReveal(client.ref, tiles.map((t) => t.id))
   useFlip(box, feedKey)
   const paint = useCallback(() => {
     const el = box.current
@@ -330,9 +335,9 @@ export function Stage({ client, screen, plan, brought, thinking, inCall, recordi
             {!asText && <Profile client={client} compact={inCall} language={language} />}
             {asText && <TextView digest={digest} asOf={client.facts?.asOf} language={language} />}
             {!asText && tiles.map((t, i) => (
-              // Keyed per client, so opening a client mounts its tiles anew and they come in one after another.
-              <article key={`${client.ref}:${t.id}`} data-tile={t.id} data-flip={t.id} onClick={() => focus(t.id)} style={{ animationDelay: `${Math.min(i, 10) * 130}ms` }}
-                className={`tile-in group relative mb-3 rounded-xl bg-white/85 p-4 shadow-card ring-1 transition-[box-shadow] duration-500 ${flash === t.id ? 'ring-2 ring-brand' : 'ring-black/5'}`}>
+              // Tiles are revealed strictly top to bottom; one that is not ready yet stays blurred in place (reveal.ts).
+              <article key={`${client.ref}:${t.id}`} data-tile={t.id} data-flip={t.id} onClick={() => focus(t.id)} aria-busy={i >= reveal.shown}
+                className={`${i < reveal.shown ? '' : 'tile-wait'} group relative mb-3 rounded-xl bg-white/85 p-4 shadow-card ring-1 transition-[box-shadow,filter] duration-500 ${flash === t.id ? 'ring-2 ring-brand' : 'ring-black/5'}`}>
                 <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-muted">
                   {t.severity && <SeverityIcon severity={t.severity} size={11} />}
                   <span>{groupLabels[i]}</span>
@@ -343,7 +348,7 @@ export function Stage({ client, screen, plan, brought, thinking, inCall, recordi
                     <Pin size={12} className={pinnedTile(t.id) ? 'fill-current' : ''} />
                   </button>
                 </div>
-                <TileBody tile={t} text={plan.texts[t.id]} clientRef={client.ref} chart={t.chart ? chartById.get(t.chart) : undefined} fresh={freshNews} language={language} />
+                <TileBody tile={t} text={plan.texts[t.id]} clientRef={client.ref} chart={t.chart ? chartById.get(t.chart) : undefined} fresh={freshNews} language={language} onReady={() => reveal.markReady(t.id)} />
                 {t.item && <p className="mt-1.5 text-[10px] text-muted">{sourceLabels[i] || t.item.source}</p>}
               </article>
             ))}

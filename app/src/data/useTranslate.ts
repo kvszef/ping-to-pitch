@@ -37,6 +37,10 @@ export function useTranslated(texts: string[], language: Language): string[] {
   return state.key === key ? state.texts : texts
 }
 
+// Whether these texts are already there in the display language (German always is). Not reactive on
+// its own: read it in a component that also calls useTranslated, which re-renders when they arrive.
+export const isTranslated = (texts: string[], language: Language) => language === 'de' || texts.every((t) => !t || cache.has(t))
+
 // Single-string convenience wrapper over useTranslated.
 export function useTranslatedText(text: string, language: Language): string {
   return useTranslated([text], language)[0]
