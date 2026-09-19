@@ -5,6 +5,7 @@ import { push, reset, status, subscribe } from './live.ts'
 import { subscribe as copilotSubscribe, unsubscribe as copilotUnsubscribe } from './copilot/bus.ts'
 import { ask, callEnded, callStarted, pruefeDienste } from './copilot/session.ts'
 import { copilotPage } from './ui/copilot.ts'
+import { demoPage } from './ui/demo.ts'
 
 // Die Routen:
 //   POST /vapi       Vapis Server-Webhook mit den Transkript-Ereignissen
@@ -94,6 +95,11 @@ const server = createServer(async (req, res) => {
     if (req.method === 'GET' && url === '/pruefstand') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
       return res.end(page)
+    }
+    // Vorführung ohne Telefon: ein aufgezeichneter Anruf im Lesetempo.
+    if (req.method === 'GET' && url === '/demo') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+      return res.end(demoPage)
     }
     // Ein Strom für beide Seiten: live.ts schreibt die Kopfzeilen und die rohen Zeilen,
     // der Copilot legt seine Ereignisse unter eigenen Namen daneben. Wer einen Namen nicht

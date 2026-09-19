@@ -10,6 +10,7 @@ import { antwortXml } from './bridge/cxml.ts'
 import { subscribe as copilotSubscribe, unsubscribe as copilotUnsubscribe } from './copilot/bus.ts'
 import { ask, callEnded, callStarted, pruefeDienste } from './copilot/session.ts'
 import { copilotPage } from './ui/copilot.ts'
+import { demoPage } from './ui/demo.ts'
 
 // Die Brücke sitzt zwischen Kunde und Berater:
 //
@@ -112,6 +113,11 @@ const server = createServer(async (req, res) => {
     if (req.method === 'GET' && url === '/') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
       return res.end(copilotPage)
+    }
+    // Vorfuehrung ohne Telefon: ein aufgezeichneter Anruf im Lesetempo.
+    if (req.method === 'GET' && url === '/demo') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+      return res.end(demoPage)
     }
     if (req.method === 'GET' && url === '/pruefstand') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
