@@ -2,12 +2,12 @@
 //   GET  /api/briefing60/:ref?phrase=openai|apertus   a client from core-case clients.json
 //   POST /api/briefing60?phrase=…                     body { client }: one raw client from an uploaded file
 // Findings come from the engine; checks the engine does not deliver yet fall back to the stopgap.
-// The model only ever sees the briefing lines: no names, no account data.
+// The model only ever sees findings (titles and details): no names, no account data.
 
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { indexReference, run, type ReferenceIndex } from '../../engine/run.ts'
-import { composeBriefing, phraseBriefing, type Briefing60 } from './briefing.ts'
+import { composeBriefing, writeBriefing, type Briefing60 } from './briefing.ts'
 import { factCards, talkTrackCard } from './cards.ts'
 import type { Finding } from './findings.ts'
 import { provisionalFindings } from './provisional-findings.ts'
@@ -81,7 +81,7 @@ export async function briefing60(method: string, url: string, body: Buffer | nul
     if (!llm.ready(phrase)) llmError = `${phrase === 'openai' ? 'OpenAI' : 'Apertus'} ist nicht konfiguriert, es bleibt bei der Vorlage.`
     else {
       try {
-        briefing = await phraseBriefing(briefing, (messages) => llm.complete(phrase, messages), phrase)
+        briefing = await writeBriefing(briefing, merged.findings, (messages) => llm.complete(phrase, messages), phrase)
       } catch (e) {
         llmError = `KI nicht erreichbar, es bleibt bei der Vorlage (${e instanceof Error ? e.message.slice(0, 120) : 'Fehler'})`
       }
@@ -113,7 +113,7 @@ export function uploadClients(body: Buffer) {
 
 const providerFor = (llm: Llm): Provider | null => (llm.ready('openai') ? 'openai' : llm.ready('apertus') ? 'apertus' : null)
 
-/** Cards for the main app. Everything is instant; with a model configured, the phrased talk track follows as `fast`. */
+/** Cards for the main app. Everything is instant; with a model configured, the model-written talk track follows as `fast`. */
 export async function appBriefing(url: string, llm: Llm) {
   const u = new URL(url, 'http://local')
   const ref = decodeURIComponent(u.pathname.split('/')[3] ?? '')
@@ -135,9 +135,9 @@ export async function appBriefing(url: string, llm: Llm) {
     return { status: 200, data: { cards: provider ? cards : [talkTrackCard(template, findings), ...cards], findings } }
   }
   if (!provider) return { status: 200, data: { cards: [], findings: [] } }
-  let phrased = template
-  try { phrased = await phraseBriefing(template, (m) => llm.complete(provider, m), provider) } catch { /* keep the template */ }
-  return { status: 200, data: { cards: [talkTrackCard(phrased, findings)], findings: [] } }
+  let written = template
+  try { written = await writeBriefing(template, findings, (m) => llm.complete(provider, m), provider) } catch { /* keep the template */ }
+  return { status: 200, data: { cards: [talkTrackCard(written, findings)], findings: [] } }
 }
 
 /** Refs and names for the client picker. */

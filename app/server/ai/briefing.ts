@@ -3,9 +3,8 @@
 // client is calling. Every line keeps the ids of the findings it stands on, so the UI can show the
 // source of each sentence.
 //
-// composeBriefing is deterministic and needs no LLM: it is the fallback and the baseline. phraseBriefing
-// lets a model reword the lines in the client's tone; a reworded line survives only if every number
-// in it already stands in the template line, otherwise the template line stays.
+// composeBriefing is deterministic and needs no LLM: it is the fallback when no model is configured or it
+// fails. writeBriefing lets a model write the talk track from the findings; see its comment for the checks.
 
 import { unsupportedNumbers } from '../../src/workspace/grounding.ts'
 import { pct, type Finding } from './findings.ts'
@@ -235,44 +234,90 @@ function fitBudget(blocks: Record<Block, Line[]>): Record<Block, Line[]> {
   return out
 }
 
-// ---- LLM phrasing -------------------------------------------------------------------------------
+// ---- LLM writing --------------------------------------------------------------------------------
+// The model writes the whole talk track from the findings (Arash's call: 10–20 s of model time is fine for
+// better wording). Grounding stays deterministic: every line must cite finding ids that exist, and every
+// number in it must stand in the title or detail of the findings it cites. A line that fails is dropped;
+// a block left empty keeps the template's lines. Reasons and persona stay deterministic.
 
 export type Complete = (messages: { role: 'system' | 'user'; content: string }[]) => Promise<unknown>
 
-const PHRASE_RULES = `Du formulierst das Gesprächs-Briefing für einen Kundenberater einer Schweizer Bank um. Deutsch, Schweizer Schreibweise (ss statt ß).
-Du bekommst Zeilen mit id und text. Formuliere jede Zeile natürlicher und knapper, so wie ein erfahrener Berater sie sich notieren würde.
-- "open" ist ein Satz, den der Berater wörtlich zum Kunden sagt: Sie-Form, höchstens 25 Wörter, im Ton der Angaben unter TON.
-- Alle anderen Zeilen sind Stichworte für den Berater, höchstens 22 Wörter.
-- Übernimm jede Zahl, jedes Datum und jeden Titelnamen exakt so, wie er in der Zeile steht. Füge KEINE neue Zahl hinzu und rechne nicht.
-- Erfinde nichts dazu. Keine Floskeln.
-- Nenne keine Ursache für Gewinne oder Verluste einzelner Positionen: die Daten enthalten keine Einstandspreise.
-Antworte als JSON: {"lines": [{"id": string, "text": string}]}, gleiche ids, gleiche Reihenfolge.`
+const MAX_FINDINGS = 40 // most severe first; keeps the prompt small enough for a fast answer
+const MAX_LINE_WORDS = 30
 
-/** Rewords the lines with a model. Lines that fail the number check keep their template text. */
-export async function phraseBriefing(b: Briefing60, complete: Complete, provider: 'openai' | 'apertus'): Promise<Briefing60> {
-  const targets: { id: string; text: string }[] = [
-    ...(Object.entries(b.blocks) as [Block, Line[]][]).flatMap(([block, ls]) => ls.map((l) => ({ id: block === 'open' ? 'open' : `${block}:${l.id}`, text: l.text }))),
-    ...b.actions.map((l) => ({ id: `actions:${l.id}`, text: l.text })),
-  ]
+const WRITE_RULES = `Du schreibst das 60-Sekunden-Briefing für einen Kundenberater einer Schweizer Bank, kurz bevor er mit dem Kunden spricht. Deutsch, Schweizer Schreibweise (ss statt ß).
+Du bekommst BEFUNDE aus der Analyse des Kundenportfolios, jeder mit id, Art (fact/interpretation/action), Schwere (risk/warn/info/ok), Titel und Detail. Nur diese Befunde sind wahr; es gibt keine anderen Daten.
+Schreibe:
+- "open": EIN Satz, den der Berater wörtlich zum Kunden sagt, Sie-Form, höchstens 25 Wörter, im Ton unter TON.
+- "mention": höchstens 3 Punkte, die der Berater unbedingt ansprechen muss (Risiken, Regelverletzungen, offene Vorschläge, Widersprüche zu Kundenwünschen), wichtigstes zuerst.
+- "ask": höchstens 3 Fragen an den Kunden (veraltete Notizen, Pläne, was die Daten nicht beantworten).
+- "avoid": höchstens 3 Themen, die der Berater NICHT anbringen soll (abgelehnte Vorschläge, Kontaktwünsche).
+- "questions": höchstens 4 Fragen, die der Kunde wahrscheinlich stellt, je mit kurzer Antwort ("q", "a").
+- "actions": 3 bis 5 nächste Schritte, jeder beginnt mit einem Verb und nennt Gegenstand und Grösse.
+Regeln:
+- Jede Zeile nennt in "findings" die ids der Befunde, auf denen sie beruht. Ohne passenden Befund keine Zeile.
+- Übernimm Zahlen, Daten und Titelnamen exakt aus den zitierten Befunden. Keine neue Zahl, nicht rechnen, nicht runden.
+- Stichworte für den Berater höchstens 22 Wörter. Keine Floskeln, nichts erfinden.
+- Nenne keine Ursache für Gewinne oder Verluste einzelner Positionen: die Daten enthalten keine Einstandspreise.
+- "kind": "fact" für Gemessenes, "interpretation" für Einschätzungen, "action" für Schritte.
+Antworte als ein JSON-Objekt:
+{"open": {"text": string, "findings": string[]}, "mention": [{"text": string, "kind": string, "findings": string[]}], "ask": [...], "avoid": [...], "questions": [{"q": string, "a": string, "findings": string[]}], "actions": [{"text": string, "findings": string[]}]}`
+
+type ModelLine = { text?: unknown; kind?: unknown; findings?: unknown; q?: unknown; a?: unknown }
+const asLines = (v: unknown): ModelLine[] => (Array.isArray(v) ? v.filter((x) => typeof x === 'object' && x !== null) : typeof v === 'object' && v !== null ? [v as ModelLine] : [])
+const KINDS = new Set<Kind>(['fact', 'interpretation', 'action'])
+
+/** Writes the talk track with a model from the findings. The template supplies reasons, persona and any block the model leaves empty. */
+export async function writeBriefing(template: Briefing60, findings: Finding[], complete: Complete, provider: 'openai' | 'apertus'): Promise<Briefing60> {
+  const byId = new Map(findings.map((f) => [f.id, f]))
+  const input = [...findings].sort(bySeverity).slice(0, MAX_FINDINGS)
+    .map((f) => ({ id: f.id, art: f.kind, schwere: f.severity, titel: f.title, ...(f.detail ? { detail: f.detail } : {}) }))
   const answer = await complete([
-    { role: 'system', content: PHRASE_RULES },
-    { role: 'user', content: `TON: ${b.persona ? `${b.persona.text}. ${b.persona.tone.join(', ')}` : 'neutral, sachlich'}\n\nZEILEN:\n${JSON.stringify(targets)}` },
+    { role: 'system', content: WRITE_RULES },
+    { role: 'user', content: `TON: ${template.persona ? `${template.persona.text}. ${template.persona.tone.join(', ')}` : 'neutral, sachlich'}\n\nBEFUNDE:\n${JSON.stringify(input)}` },
   ])
-  const lines = (answer as { lines?: unknown }).lines
-  const byId = new Map(Array.isArray(lines) ? lines.filter((l): l is { id: string; text: string } => typeof l?.id === 'string' && typeof l?.text === 'string').map((l) => [l.id, l.text.trim()]) : [])
+  const a = (typeof answer === 'object' && answer !== null ? answer : {}) as Record<string, unknown>
   const rejected: Briefing60['rejected'] = []
-  const pick = (key: string, original: Line): Line => {
-    const text = byId.get(key)
-    if (!text) return original
-    const bad = unsupportedNumbers(text, original.text)
-    if (bad.length || words(text) > words(original.text) * 1.4 + 4) {
-      rejected.push({ id: original.id, text, numbers: bad })
-      return original
+
+  // A model line survives only if it cites real findings and every number in it stands in them.
+  const accept = (id: string, text: string, cited: unknown, open = false): string[] | null => {
+    const ids = (Array.isArray(cited) ? cited : []).filter((x): x is string => typeof x === 'string' && byId.has(x))
+    const evidence = ids.map((x) => `${byId.get(x)!.title} ${byId.get(x)!.detail ?? ''}`).join(' ')
+    const bad = unsupportedNumbers(text, evidence)
+    if (!text || (!ids.length && !open) || bad.length || words(text) > MAX_LINE_WORDS) {
+      if (text) rejected.push({ id, text, numbers: bad })
+      return null
     }
-    return { ...original, text }
+    return ids
   }
-  const blocks = Object.fromEntries((Object.entries(b.blocks) as [Block, Line[]][]).map(([block, ls]) => [block, ls.map((l) => pick(block === 'open' ? 'open' : `${block}:${l.id}`, l))])) as Record<Block, Line[]>
-  const actions = b.actions.map((l) => pick(`actions:${l.id}`, l))
+  const lines = (block: string, v: unknown, fallbackKind: Kind): Line[] => asLines(v).flatMap((m, i) => {
+    const text = typeof m.text === 'string' ? m.text.trim() : ''
+    const id = `${block}-${i + 1}`
+    const ids = accept(id, text, m.findings, block === 'open')
+    return ids ? [{ id, text, kind: KINDS.has(m.kind as Kind) ? (m.kind as Kind) : fallbackKind, findings: ids }] : []
+  })
+
+  const written: Record<Block, Line[]> = {
+    open: lines('open', a.open, 'action').slice(0, 1).map((l) => ({ ...l, id: 'open', kind: 'action' as const })),
+    mention: lines('mention', a.mention, 'fact'),
+    ask: lines('ask', a.ask, 'action'),
+    avoid: lines('avoid', a.avoid, 'action'),
+  }
+  const blocks = fitBudget(Object.fromEntries((Object.keys(written) as Block[]).map((k) => [k, written[k].length ? written[k] : template.blocks[k]])) as Record<Block, Line[]>)
+
+  const questions = asLines(a.questions).flatMap((m, i) => {
+    const q = typeof m.q === 'string' ? m.q.trim() : '', ans = typeof m.a === 'string' ? m.a.trim() : ''
+    const ids = q && ans ? accept(`q-${i + 1}`, ans, m.findings) : null
+    return ids && !unsupportedNumbers(q, ids.map((x) => byId.get(x)!.title).join(' ')).length ? [{ id: `q-${i + 1}`, q, a: ans, findings: ids }] : []
+  }).slice(0, 4)
+  const actions = lines('act', a.actions, 'action').map((l) => ({ ...l, kind: 'action' as const }))
+
   const count = Object.values(blocks).flat().reduce((n, l) => n + words(l.text), 0)
-  return { ...b, blocks, actions, words: count, seconds: Math.round((count / READ_WPM) * 60), phrasedBy: provider, rejected }
+  return {
+    ...template, blocks,
+    questions: questions.length ? questions : template.questions,
+    // The call note is a legal duty (FIDLEG), so it stays the last step whatever the model wrote.
+    actions: actions.length ? [...actions.slice(0, 4), ...template.actions.filter((l) => l.id === 'act-note')] : template.actions,
+    words: count, seconds: Math.round((count / READ_WPM) * 60), phrasedBy: provider, rejected,
+  }
 }

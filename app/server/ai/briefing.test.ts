@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { composeBriefing, phraseBriefing, type Briefing60 } from './briefing.ts'
+import { composeBriefing, writeBriefing, type Briefing60 } from './briefing.ts'
 import { provisionalFindings } from './provisional-findings.ts'
 import { mergeFindings } from './briefing-route.ts'
 import { indexReference, run } from '../../engine/run.ts'
@@ -103,25 +103,54 @@ describe('composeBriefing', () => {
   })
 })
 
-describe('phraseBriefing', () => {
-  it('keeps a model line only if it adds no number', async () => {
-    const b = briefingOf('CASE-004')
-    const mention = b.blocks.mention[0]
-    const complete = async () => ({ lines: [
-      { id: 'open', text: 'Guten Tag! Geht es um Ihre Pensionierung?' },
-      { id: `mention:${mention.id}`, text: 'Energie 7.9% im Portfolio, bitte sofort verkaufen.' },
-    ] })
-    const out = await phraseBriefing(b, complete, 'openai')
-    expect(out.blocks.open[0].text).toBe('Guten Tag! Geht es um Ihre Pensionierung?')
-    expect(out.blocks.mention[0].text).toBe(mention.text)
-    expect(out.rejected.map((r) => r.numbers)).toEqual([['7.9']])
+describe('writeBriefing', () => {
+  const findings = findingsOf('CASE-004')
+  const template = composeBriefing('CASE-004', findings)
+  const lead = findings.find((f) => f.check === 'contradiction.fossil-fuel')!
+  const leadNumber = /\d+\.\d%/.exec(lead.title)?.[0] ?? ''
+
+  it('keeps model lines that cite real findings and copy their numbers', async () => {
+    const complete = async () => ({
+      open: { text: 'Guten Tag, schön dass Sie anrufen. Worum geht es heute?', findings: [] },
+      mention: [{ text: `Energie trotz Ausschluss: ${leadNumber}, Fondsverkauf vorschlagen`, kind: 'fact', findings: [lead.id] }],
+      actions: [{ text: 'Verkauf des Energie-Fonds vorschlagen', findings: [lead.id] }],
+      questions: [{ q: 'Habe ich Energie im Portfolio?', a: `Ja, ${leadNumber} über Fonds.`, findings: [lead.id] }],
+    })
+    const out = await writeBriefing(template, findings, complete, 'openai')
+    expect(out.blocks.open[0].text).toMatch(/^Guten Tag/)
+    expect(out.blocks.mention[0]).toMatchObject({ kind: 'fact', findings: [lead.id] })
+    expect(out.actions[0].text).toBe('Verkauf des Energie-Fonds vorschlagen')
+    expect(out.actions.at(-1)!.id).toBe('act-note')
+    expect(out.questions[0].findings).toEqual([lead.id])
     expect(out.phrasedBy).toBe('openai')
+  })
+
+  it('drops a line with an invented number or without a real source', async () => {
+    const complete = async () => ({
+      mention: [
+        { text: 'Energie 97.3% im Portfolio, sofort verkaufen.', findings: [lead.id] },
+        { text: 'Alles bestens.', findings: ['erfunden:1'] },
+      ],
+    })
+    const out = await writeBriefing(template, findings, complete, 'openai')
+    expect(out.rejected.map((r) => r.numbers)).toEqual([['97.3'], []])
+    expect(out.blocks.mention).toEqual(template.blocks.mention.slice(0, out.blocks.mention.length))
   })
 
   it('keeps the template when the model answers garbage', async () => {
     const b = briefingOf('CASE-007')
-    const out = await phraseBriefing(b, async () => 'kein JSON', 'apertus')
+    const out = await writeBriefing(b, findingsOf('CASE-007'), async () => 'kein JSON', 'apertus')
     expect(out.blocks).toEqual(b.blocks)
+    expect(out.actions).toEqual(b.actions)
+  })
+
+  it('sends findings, never names or account data', async () => {
+    let prompt = ''
+    await writeBriefing(template, findings, async (m) => { prompt = m.map((x) => x.content).join('\n'); return {} }, 'openai')
+    const raw = client('CASE-004')
+    for (const field of ['FirstName', 'LastName', 'Company']) if (typeof raw[field] === 'string') expect(prompt).not.toContain(raw[field])
+    expect(prompt).not.toMatch(/\bCH\d{2}[ ]?\d{4}/)
+    expect(prompt).toContain(lead.id)
   })
 })
 
