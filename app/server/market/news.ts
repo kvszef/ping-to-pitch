@@ -17,7 +17,8 @@ export type Severity = 'risk' | 'warn' | 'ok' | 'info'
 
 const RECENT_DAYS = 3
 const PER_HOLDING = 4
-const CACHE_MS = 30 * 60_000
+export const CACHE_MS = 10 * 60_000 // the watcher refreshes this often; nothing older is served while online
+export type Freshness = { maxAgeMs?: number; judgeWithinMs?: number }
 const SNAPSHOT_PER_QUERY = 6
 const SNAPSHOT = resolve(process.cwd(), 'server/market/news-snapshot.json')
 
@@ -34,9 +35,9 @@ async function loadSnapshot() {
   return snapshot
 }
 
-export async function articlesFor(query: string, search: (q: string) => Promise<Article[]> = searchBing): Promise<Fetched> {
+export async function articlesFor(query: string, search: (q: string) => Promise<Article[]> = searchBing, maxAgeMs = CACHE_MS): Promise<Fetched> {
   const hit = fetched.get(query)
-  if (hit && Date.now() - hit.at < CACHE_MS) return hit
+  if (hit && !hit.offline && Date.now() - hit.at < maxAgeMs) return hit
   let out: Fetched
   try { out = { at: Date.now(), articles: await search(query), offline: false } } catch {
     out = { at: Date.now(), articles: (await loadSnapshot())[query] ?? [], offline: true }
@@ -76,10 +77,10 @@ export function recent(a: Article, now: Date, days = RECENT_DAYS) {
 }
 
 /** Articles to judge for these holdings: they must name the holding; live ones must be recent. Newest first. */
-export async function candidates(holdings: Holding[], now: Date, search?: (q: string) => Promise<Article[]>) {
+export async function candidates(holdings: Holding[], now: Date, search?: (q: string) => Promise<Article[]>, maxAgeMs = CACHE_MS) {
   const out: { holding: Holding; article: Article; offline: boolean }[] = []
   await pool(holdings, 4, async (h) => {
-    const f = await articlesFor(h.query, search)
+    const f = await articlesFor(h.query, search, maxAgeMs)
     const own = [...pushed, ...f.articles]
       .filter((a) => mentions(a, h.query) && !isQuotePage(a.title) && (f.offline || recent(a, now)))
       .sort((a, b) => (b.published ?? '').localeCompare(a.published ?? ''))
@@ -117,6 +118,7 @@ export function ruleJudgement(a: Pick<Article, 'title' | 'snippet'>, query: stri
 }
 
 const judged = new Map<string, Judgement>()
+const inflight = new Map<string, Promise<void>>() // items the model is judging right now (watcher and a call may overlap)
 const JUDGE_BATCH = 20
 
 export const JUDGE_RULES = `You screen news for a Swiss private banker. Each item names an INVESTMENT (a company, bond issuer or fund theme) and one headline with a snippet.
@@ -135,13 +137,16 @@ function checkedMeaning(meaning: unknown, a: Article, fallback: string) {
   return numbersIn(meaning).every((n) => source.includes(n)) ? meaning.trim().replace(/ß/g, 'ss') : fallback
 }
 
-export async function judge(items: { holding: Holding; article: Article }[], complete: Complete | null): Promise<Judgement[]> {
+// judgeWithinMs: answer after this long even if the model is still busy; unfinished items get the rules now
+// and the model's judgement lands in the cache for the next request.
+export async function judge(items: { holding: Holding; article: Article }[], complete: Complete | null, judgeWithinMs?: number): Promise<Judgement[]> {
   const key = (x: { holding: Holding; article: Article }) => `${x.holding.query}|${x.article.id}`
-  const todo = items.filter((x) => !judged.has(key(x)))
+  const todo = items.filter((x) => !judged.has(key(x)) && !inflight.has(key(x)))
+  const waiting = [...new Set(items.map(key).filter((k) => inflight.has(k)))].map((k) => inflight.get(k))
   if (complete) {
     const batches: (typeof todo)[] = []
     for (let i = 0; i < todo.length; i += JUDGE_BATCH) batches.push(todo.slice(i, i + JUDGE_BATCH))
-    await pool(batches, 3, async (batch) => {
+    const work = pool(batches, 3, async (batch) => {
       try {
         const answer = await complete([
           { role: 'system', content: JUDGE_RULES },
@@ -157,14 +162,19 @@ export async function judge(items: { holding: Holding; article: Article }[], com
         }
       } catch { /* this batch falls back to the rules below */ }
     })
+    const done = work.finally(() => { for (const x of todo) inflight.delete(key(x)) })
+    for (const x of todo) inflight.set(key(x), done)
+    waiting.push(done)
   }
+  const all = Promise.all(waiting)
+  await (judgeWithinMs === undefined ? all : Promise.race([all, new Promise((r) => setTimeout(r, judgeWithinMs))]))
   return items.map((x) => judged.get(key(x)) ?? ruleJudgement(x.article, x.holding.query))
 }
 
 /** Relevant hits for these holdings, most important first. */
-export async function newsHits(holdings: Holding[], now: Date, complete: Complete | null, search?: (q: string) => Promise<Article[]>) {
-  const found = await candidates(holdings, now, search)
-  const judgements = await judge(found, complete)
+export async function newsHits(holdings: Holding[], now: Date, complete: Complete | null, search?: (q: string) => Promise<Article[]>, fresh: Freshness = {}) {
+  const found = await candidates(holdings, now, search, fresh.maxAgeMs)
+  const judgements = await judge(found, complete, fresh.judgeWithinMs)
   const hits: (Hit & { offline: boolean })[] = found.map((x, i) => ({ ...x, judgement: judgements[i] })).filter((h) => h.judgement.relevant && h.judgement.importance > 0)
   return hits.sort((a, b) => hitScore(b) - hitScore(a) || (b.article.published ?? '').localeCompare(a.article.published ?? ''))
 }

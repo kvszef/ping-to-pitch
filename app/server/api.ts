@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { resolve } from 'node:path'
 import type { Plugin } from 'vite'
 import { appBriefing, briefing60, briefingClients, uploadClients } from './ai/briefing-route.ts'
-import { briefingNews, clientNews, newsFeed, outbound, pushNews, snapshotNews } from './market/route.ts'
+import { briefingNews, clientNews, newsFeed, newsStatus, outbound, pushNews, snapshotNews, startNewsWatcher } from './market/route.ts'
 import { callRoute } from './call.ts'
 import { newsAgentRoute } from './ai/news-agent.ts'
 
@@ -170,6 +170,11 @@ export function api(env: Env): Plugin {
   return {
     name: 'berater-api',
     configureServer(server) {
+      // News agent (server/market): fast model judges headlines; without a key, keyword rules.
+      // The watcher starts with the server and keeps news at most 10 minutes old.
+      const pick: Provider | null = ready(env, 'openai') ? 'openai' : ready(env, 'apertus') ? 'apertus' : null
+      const judgeLlm = pick ? (m: Message[]) => complete(env, pick, true, m) : null
+      if (env.NEWS_WATCHER !== 'off') startNewsWatcher(judgeLlm)
       server.middlewares.use(async (req, res, next) => {
         if (!req.url?.startsWith('/api/')) return next()
         try {
@@ -182,10 +187,8 @@ export function api(env: Env): Plugin {
             const out = await briefing60(req.method ?? 'GET', req.url, req.method === 'POST' ? await body(req) : null, llm)
             return send(res, out.status, out.data)
           }
-          // News agent (server/market): fast model judges headlines; without a key, keyword rules.
-          const pick: Provider | null = ready(env, 'openai') ? 'openai' : ready(env, 'apertus') ? 'apertus' : null
-          const judgeLlm = pick ? (m: Message[]) => complete(env, pick, true, m) : null
           const path = req.url.split('?')[0]
+          if (path === '/api/news/status' && req.method === 'GET') return send(res, 200, newsStatus())
           if (path === '/api/outbound' && req.method === 'GET') { const out = await outbound(judgeLlm); return send(res, out.status, out.data) }
           if (path === '/api/news' && req.method === 'GET') { const out = await newsFeed(judgeLlm); return send(res, out.status, out.data) }
           if (path === '/api/news' && req.method === 'POST') { const out = pushNews(await body(req)); return send(res, out.status, out.data) }

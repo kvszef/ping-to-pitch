@@ -9,7 +9,10 @@ import { readClient } from '../../engine/data.ts'
 import type { Finding } from '../../engine/types.ts'
 import { clientsWithFindings } from '../ai/briefing-route.ts'
 import { holdingsOf, type Holding } from './holdings.ts'
-import { newsFindings, newsHits, pushArticle, saveSnapshot, severityOf, toNewsItems, hitScore, pctText, type Complete, type Hit, type NewsItemOut, type Severity } from './news.ts'
+import { CACHE_MS, newsFindings, newsHits, pushArticle, saveSnapshot, severityOf, toNewsItems, hitScore, pctText, type Complete, type Hit, type NewsItemOut, type Severity } from './news.ts'
+
+const INBOUND = { maxAgeMs: 60_000, judgeWithinMs: 4000 }
+let lastRefresh: string | undefined
 
 type Entry = Awaited<ReturnType<typeof clientsWithFindings>>[number]
 
@@ -32,9 +35,10 @@ export async function clientNews(ref: string, complete: Complete | null) {
   const now = new Date()
   const e = (await clientsWithFindings(now)).find((x) => x.ref === ref)
   if (!e) return { status: 404, data: { error: 'Kunde nicht gefunden' } }
-  const hits = await newsHits(holdingsFor(e), now, complete)
+  // A call is now: fetch this client's holdings fresh (under 1 s) and give the model 4 s for articles it has not seen.
+  const hits = await newsHits(holdingsFor(e), now, complete, undefined, INBOUND)
   const items = [...toNewsItems(ref, hits, now).values()]
-  return { status: 200, data: { items, findings: newsFindings(ref, hits), offline: hits.some((h) => h.offline), judgedBy: complete ? 'ai' : 'rules' } }
+  return { status: 200, data: { items, findings: newsFindings(ref, hits), offline: hits.some((h) => h.offline), judgedBy: complete ? 'ai' : 'rules', fetchedAt: now.toISOString() } }
 }
 
 /** News findings for the briefing's slow tier. Never throws: no news is an empty list. */
@@ -51,6 +55,19 @@ export async function newsFeed(complete: Complete | null) {
   const items = [...merged.values()].sort((a, b) => (b.published ?? '').localeCompare(a.published ?? ''))
   return { status: 200, data: items }
 }
+
+// Keeps news and judgements fresh for everyone: runs the outbound pass at start and every CACHE_MS, so the
+// "who to call today" list and most inbound calls are answered from a cache that is at most 10 minutes old.
+let watcher: ReturnType<typeof setInterval> | undefined
+export function startNewsWatcher(complete: Complete | null) {
+  if (watcher) return
+  const tick = () => { outbound(complete).catch(() => { /* next tick tries again */ }) }
+  tick()
+  watcher = setInterval(tick, CACHE_MS)
+  watcher.unref?.()
+}
+
+export const newsStatus = () => ({ watching: !!watcher, lastRefresh })
 
 type Reason = { kind: 'risk' | 'opportunity'; title: string; severity: Severity; findingId?: string; newsId?: string; url?: string; points: number }
 
@@ -87,7 +104,8 @@ export async function outbound(complete: Complete | null) {
     return { ref: e.ref, name: e.name, score, opportunities: reasons.filter((r) => r.kind === 'opportunity').length, reasons: reasons.slice(0, 5) }
   })
   ranked.sort((a, b) => b.score - a.score)
-  return { status: 200, data: { date: now.toISOString().slice(0, 10), offline: all.some((h) => h.offline), judgedBy: complete ? 'ai' : 'rules', clients: ranked } }
+  lastRefresh = now.toISOString()
+  return { status: 200, data: { date: now.toISOString().slice(0, 10), fetchedAt: lastRefresh, offline: all.some((h) => h.offline), judgedBy: complete ? 'ai' : 'rules', clients: ranked } }
 }
 
 export function pushNews(body: Buffer) {
