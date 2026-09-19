@@ -158,6 +158,34 @@ export const simPage = `<!doctype html>
   .dossier .alt { font-size:12.5px; color:var(--ink-3); margin:0 0 9px; }
   .dossier .neu { font-size:13.5px; margin:0; padding:10px 12px; border-radius:8px; background:color-mix(in srgb,var(--live) 12%,var(--surface)); }
 
+  /* Kundendaten, wie sie in der Datenbank stehen: Spaltennamen und Rohwerte. */
+  .felder { max-height:76vh; overflow-y:auto; }
+  .felder .kopfzeile { display:flex; justify-content:space-between; align-items:baseline; gap:10px; flex-wrap:wrap; }
+  .felder .kopfzeile h3 { font-family:var(--f-display); font-size:18px; font-weight:600; margin:0; }
+  .felder .stand { font-family:var(--f-mono); font-size:11px; color:var(--ink-3); }
+  .felder .kopfzeile button { font-size:11.5px; padding:4px 9px; }
+  .abschnitt { border-top:1px solid var(--line-soft); margin-top:14px; padding-top:13px; }
+  .abschnitt .quelle { font-family:var(--f-mono); font-size:11px; color:var(--ink-3); margin:0 0 8px; word-break:break-all; }
+  .abschnitt .hinweis { font-size:12px; color:var(--ink-3); margin:8px 0 0; }
+  .abschnitt .leer { font-size:13px; color:var(--ink-3); margin:0; }
+  .abschnitt .fehlt { font-size:13px; color:var(--risk); margin:0; }
+  .feldliste { display:grid; grid-template-columns:minmax(110px,auto) 1fr; gap:1px 0;
+               background:var(--line-soft); border:1px solid var(--line-soft); border-radius:8px; overflow:hidden; }
+  .feldliste dt { background:var(--surface-2); padding:5px 9px; font-family:var(--f-mono); font-size:11.5px; color:var(--ink-3); }
+  .feldliste dd { background:var(--surface); padding:5px 9px; margin:0; font-size:13px;
+                  font-variant-numeric:tabular-nums; word-break:break-word; }
+  .tabelle { overflow-x:auto; border:1px solid var(--line-soft); border-radius:8px; }
+  .tabelle table { border-collapse:collapse; width:100%; font-size:12.5px; }
+  .tabelle th { background:var(--surface-2); text-align:left; font-family:var(--f-mono); font-size:11px;
+                font-weight:500; color:var(--ink-3); padding:6px 9px; white-space:nowrap; }
+  .tabelle td { padding:5px 9px; border-top:1px solid var(--line-soft); vertical-align:top;
+                font-variant-numeric:tabular-nums; }
+  .tabelle td.zahl { text-align:right; white-space:nowrap; }
+  .tabelle td.leerzelle { color:var(--ink-3); }
+  .freitext { font-size:13.5px; margin:0; white-space:pre-wrap; }
+  .roh { margin:0; padding:10px 11px; background:var(--surface-2); border-radius:8px; font-family:var(--f-mono);
+         font-size:11.5px; line-height:1.5; max-height:280px; overflow:auto; white-space:pre; }
+
   .ruhe { color:var(--ink-3); font-size:13.5px; margin:0; }
   .fehler { color:var(--risk); font-size:12.5px; margin:6px 0 0; }
   .fuss { margin-top:34px; padding-top:22px; border-top:1px solid var(--line); font-size:13.5px; color:var(--ink-2); max-width:70ch; }
@@ -204,7 +232,11 @@ export const simPage = `<!doctype html>
       <h2>Was der Berater sieht <span id="vorzaehler">0 Vorschläge</span></h2>
       <div class="panel client" id="kunde"><p class="ruhe">Kein Kunde erkannt.</p></div>
       <div class="panel dossier" id="dossier" hidden></div>
-      <div class="panel" id="briefing"><p class="ruhe">Das Briefing entsteht, sobald der Anruf läuft.</p></div>
+      <div class="panel felder" id="felder"><p class="ruhe">Die Kundendaten erscheinen, sobald der Kunde erkannt ist.</p></div>
+      <!-- Das formulierte Briefing ist ausgeblendet: hier sollen die Felder stehen, wie sie in der
+           Datenbank hinterlegt sind. Zum Zurückholen das hidden entfernen und in client.identified
+           wieder briefingZeigen(e.briefing) aufrufen; die Funktion steht unverändert weiter unten. -->
+      <div class="panel" id="briefing" hidden></div>
       <div id="vorschlaege" style="display:flex;flex-direction:column;gap:11px"></div>
     </section>
 

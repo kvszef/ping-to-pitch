@@ -348,6 +348,22 @@ export function createBrain(toolboxClient: ToolboxClient, opts: { log?: (zeile: 
   // Daten für den Mock-Betrieb: dieselben Werkzeuge, nur ohne Modell dazwischen.
   // -------------------------------------------------------------------------
 
+  /**
+   * Alles, was zum Kunden gespeichert ist, als Text fuer den Prompt. Die Zeilen kommen
+   * unveraendert aus den Werkzeugen -- was das Modell hier nicht findet, steht auch nicht
+   * in der Datenbank.
+   */
+  const dossierText = (g: Geladen): string => JSON.stringify({
+    uebersicht: g.uebersicht,
+    portfolios: g.portfolio,
+    positionen: g.positionen,
+    soll_ist: g.saa,
+    verstoesse: g.verstoesse,
+    ausgesetzte_regeln: g.ausnahmen,
+    vorschlaege: g.vorschlaege,
+    notizen: g.notizen,
+  })
+
   const geladen = (clientRef: string): Promise<Geladen> => {
     let vorhanden = daten.get(clientRef)
     if (!vorhanden) {
@@ -396,7 +412,7 @@ export function createBrain(toolboxClient: ToolboxClient, opts: { log?: (zeile: 
         return await versuche(
           'hints',
           async () => {
-            const { stabil, fluechtig } = hintsUser(input, LIMITS.transcriptWindow)
+            const { stabil, fluechtig } = hintsUser(input, 0, dossierText(await geladen(input.clientRef)))
             const { daten: roh, quellen } = await laufe({
               zweck: 'hints',
               system: SYSTEM_HINTS,
@@ -427,7 +443,7 @@ export function createBrain(toolboxClient: ToolboxClient, opts: { log?: (zeile: 
         return await versuche(
           'ask',
           async () => {
-            const { stabil, fluechtig } = askUser(input, LIMITS.transcriptWindow)
+            const { stabil, fluechtig } = askUser(input, 0, input.clientRef ? dossierText(await geladen(input.clientRef)) : undefined)
             const { daten: roh, quellen } = await laufe({
               zweck: 'ask',
               system: SYSTEM_ASK,

@@ -92,7 +92,14 @@ export const SYSTEM_BRIEFING = `${RULES}
 AUFGABE: DAS 60-SEKUNDEN-BRIEFING
 Der Anruf läuft gerade an. Der Berater überfliegt dein Briefing, während er den Kunden begrüsst. Es muss in rund 60 Sekunden lesbar sein: höchstens sechs Karten, zusammen etwa 180 Wörter.
 
-Hole dir mit den Werkzeugen die Lage des Kunden, die Portfolioentwicklung, die grössten Positionen, die Abweichungen von der Zielallokation, die offenen Vorschläge, die Regelverstösse und die letzten Notizen. Daraus baust du in dieser Reihenfolge:
+Hole dir mit den Werkzeugen die Lage des Kunden, die Portfolioentwicklung, die grössten Positionen, die Abweichungen von der Zielallokation, die offenen Vorschläge, die Regelverstösse und die letzten Notizen.
+
+WAS BEIM LETZTEN MAL BESPROCHEN WURDE
+Das Feld «beschreibung» aus get_client_overview ist das Gedächtnis der bisherigen Telefonate: nach jedem Anruf wird dort eine Zusammenfassung angehängt, jeweils mit «Telefon» und Datum davor. Lies es immer, und zwar zuerst.
+
+Alles Persönliche daraus gehört ins Briefing, auch wenn es mit Geld nichts zu tun hat: ein Todesfall in der Familie, eine Krankheit, eine Scheidung, ein Stellenwechsel, ein Umzug. So etwas darf der Berater auf keinen Fall vergessen haben, und keine Portfoliotabelle wird ihn daran erinnern. Solche Punkte stehen als erste «flags»-Karte mit severity «info», und wenn der Kunde im letzten Gespräch etwas erwartet hat, das noch offen ist, gehört das zusätzlich in «actions».
+
+Daraus baust du in dieser Reihenfolge:
 1. «headline» – die aktuelle Lage des Kunden in einem Satz, mit der wichtigsten Zahl. «sub» nennt Mandat, Risikoprofil und Währung.
 2. «metrics» – drei bis fünf Kennzahlen mit Wert und, wo vorhanden, Veränderung. «tone» ist risk, warn, ok oder info.
 3. «allocation» – nur wenn Soll-Ist-Daten vorliegen: je Kategorie min, target, max und actual als Brüche von 0 bis 1, unverändert aus den Daten.
@@ -168,13 +175,32 @@ export const briefingUser = (clientRef: string): string =>
  * Zwei Blöcke: `stabil` ändert sich während eines Anrufs nicht und bekommt den Cache-Punkt,
  * `fluechtig` trägt Transkript und Auslöser und steht danach.
  */
-export const hintsUser = (input: HintInput, fenster: number): { stabil: string; fluechtig: string } => ({
-  stabil: `Kundennummer: ${input.clientRef}\n\nBRIEFING (bereits erstellt, gilt für das ganze Gespräch):\n${JSON.stringify(input.briefing)}`,
+/**
+ * Der stabile Block. Er enthält alles, was der Kunde in der Datenbank hat, und das Briefing.
+ * Beides ändert sich während eines Anrufs nicht und liegt deshalb vor dem Cache-Punkt -- die
+ * Rohdaten kosten damit nur beim ersten Hinweis etwas.
+ *
+ * Warum die Rohdaten und nicht nur das Briefing: das Briefing ist eine Verdichtung auf sechs
+ * Karten. Was dort nicht hineinpasste, war für den Rest des Gesprächs verloren -- auch ein
+ * Todesfall aus dem letzten Telefonat. Mit den Rohdaten kann das Modell jederzeit nachsehen.
+ */
+const stabilerBlock = (clientRef: string | null, briefing: unknown, dossier?: string): string => [
+  `Kundennummer: ${clientRef ?? '(noch nicht erkannt)'}`,
+  '',
+  'ALLES, WAS ZU DIESEM KUNDEN GESPEICHERT IST:',
+  dossier ?? '(nicht geladen, bei Bedarf die Werkzeuge nutzen)',
+  '',
+  'BRIEFING (bereits erstellt, gilt für das ganze Gespräch):',
+  JSON.stringify(briefing),
+].join('\n')
+
+export const hintsUser = (input: HintInput, fenster: number, dossier?: string): { stabil: string; fluechtig: string } => ({
+  stabil: stabilerBlock(input.clientRef, input.briefing, dossier),
   fluechtig: `Heutiges Datum: ${heute()}\n\nBISHERIGES GESPRÄCH:\n${transkript(input.transcript, fenster)}\n\nNEUE AUSSAGE DES KUNDEN:\n${input.trigger}`,
 })
 
-export const askUser = (input: AskInput, fenster: number): { stabil: string; fluechtig: string } => ({
-  stabil: `Kundennummer: ${input.clientRef ?? '(noch nicht erkannt)'}\n\nBRIEFING (bereits erstellt, gilt für das ganze Gespräch):\n${JSON.stringify(input.briefing)}`,
+export const askUser = (input: AskInput, fenster: number, dossier?: string): { stabil: string; fluechtig: string } => ({
+  stabil: stabilerBlock(input.clientRef, input.briefing, dossier),
   fluechtig: `Heutiges Datum: ${heute()}\n\nBISHERIGES GESPRÄCH:\n${transkript(input.transcript, fenster)}\n\nFRAGE DES BERATERS:\n${input.question}`,
 })
 

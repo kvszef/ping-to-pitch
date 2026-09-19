@@ -4,6 +4,8 @@ import { page } from './page.ts'
 import { push, reset, status, subscribe } from './live.ts'
 import { subscribe as copilotSubscribe, unsubscribe as copilotUnsubscribe } from './copilot/bus.ts'
 import { ask, callEnded, callStarted, pruefeDienste } from './copilot/session.ts'
+import { ladeDossier } from './copilot/dossier.ts'
+import { toolbox } from './copilot/toolbox.ts'
 import { copilotPage } from './ui/copilot.ts'
 import { demoPage } from './ui/demo.ts'
 import { simPage } from './ui/sim.ts'
@@ -17,6 +19,7 @@ import { simPage } from './ui/sim.ts'
 //   GET  /pruefstand die schlichte Seite für die Telefonie allein
 //   GET  /sim        Sandkasten: Anruf ohne Telefon, beide Rollen von Hand
 //   POST /api/sim/*  start | say | end -- steuert den Sandkasten
+//   GET  /api/dossier?ref=  die Kundendaten, wie sie in der Datenbank stehen
 
 const PORT = Number(process.env.PORT || 3100)
 // Nummer, mit der der Sandkasten anruft. Zeigt ueber data/callers.json auf den Testkunden.
@@ -121,6 +124,15 @@ const server = createServer(async (req, res) => {
       return
     }
     if (req.method === 'GET' && url === '/health') return json(res, 200, { ok: true })
+
+    // Die Kundendaten, wie sie in der Datenbank stehen: Spaltennamen und Rohwerte, kein Modell
+    // dazwischen. Bewusst der unbeobachtete Toolbox-Zugang -- das ist eine Ansicht und keine
+    // Arbeit des Agenten, die Aufrufe gehören deshalb nicht in die Agentenspur.
+    if (req.method === 'GET' && url === '/api/dossier') {
+      const ref = (new URL(req.url ?? '/', 'http://localhost').searchParams.get('ref') ?? '').trim()
+      if (!ref) return json(res, 400, { error: 'Parameter ref fehlt' })
+      return json(res, 200, await ladeDossier(toolbox, ref))
+    }
 
     // Der Sandkasten: ein Anruf ohne Telefon, aber mit allem anderen echt -- echte Werkzeuge,
     // echtes Modell, echter Eintrag ins Dossier. Die Rolle kommt hier vom Absender, es wird

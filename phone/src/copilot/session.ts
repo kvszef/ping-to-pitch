@@ -227,7 +227,9 @@ async function hinweiseHolen(trigger: string): Promise<void> {
   state.zuletzt = Date.now()
 
   const t0 = Date.now()
-  const zeilen = bus.recentLines(LIMITS.transcriptWindow)
+  // Das ganze Gespraech, nicht nur die letzten Zeilen: der Kunde bezieht sich oft auf
+  // etwas, das er vor fuenf Minuten gesagt hat.
+  const zeilen = bus.recentLines(LIMITS.transcriptVoll)
   bus.schritt('info', `Hinweis mit ${state.briefing.length} Briefing-Karten und ${zeilen.length} Zeilen Kontext`)
   try {
     const vorschlaege = await brain.hints({
@@ -268,7 +270,7 @@ export async function ask(question: string): Promise<void> {
       callId: call.callId,
       clientRef: call.clientRef,
       briefing: state.briefing,
-      transcript: bus.recentLines(LIMITS.transcriptWindow),
+      transcript: bus.recentLines(LIMITS.transcriptVoll),
       question: frage,
     })
     bus.publish(antwort)

@@ -138,8 +138,10 @@ export type AskInput = {
 export const LIMITS = {
   /** Höchstens ein Modellaufruf in diesem Abstand. */
   hintIntervalMs: 2000,
-  /** So viele Transkriptzeilen bekommt das Modell als Kontext. */
+  /** Fenster fuer die Rollenzuordnung: mehr Kontext bringt dort nichts. */
   transcriptWindow: 12,
+  /** Hinweise und Rueckfragen bekommen das ganze Gespraech, gedeckelt gegen Ausreisser. */
+  transcriptVoll: 200,
   /** Obergrenze für die Antwortlänge der Live-Schleife. */
   hintMaxTokens: 800,
 } as const
