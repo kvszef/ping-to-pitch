@@ -6,6 +6,7 @@ import { appBriefing, briefing60, briefingClients, uploadClients } from './ai/br
 import { briefingNews, clientNews, newsFeed, newsStatus, outbound, pushNews, snapshotNews, startNewsWatcher } from './market/route.ts'
 import { callRoute } from './call.ts'
 import { newsAgentRoute } from './ai/news-agent.ts'
+import { callsRoute } from './calls.ts'
 
 // Kleine API im Vite-Server. Die Schlüssel bleiben hier und erreichen den Browser nie.
 // Apertus wird über eine OpenAI-kompatible Schnittstelle angesprochen (Basis-URL in .env.local).
@@ -218,6 +219,10 @@ export function api(env: Env): Plugin {
           if (req.url.startsWith('/api/news-agent') && req.method === 'GET') { const out = await newsAgentRoute(req.url, llm); return send(res, out.status, out.data) }
           if (req.url.startsWith('/api/briefing/') && req.method === 'GET') { const out = await appBriefing(req.url, llm); return send(res, out.status, out.data) }
           if (req.url === '/api/clients/upload' && req.method === 'POST') { const out = uploadClients(await body(req)); return send(res, out.status, out.data) }
+          if (path.startsWith('/api/calls/') && req.method === 'POST') {
+            const out = await callsRoute(path, req.method, await body(req), llm)
+            if (out) return send(res, out.status, out.data)
+          }
           if (req.method !== 'POST') return send(res, 405, { error: 'Nur POST' })
           const raw = await body(req)
           if (req.url === '/api/transcribe') { const segments = await transcribe(env, raw, req.headers['content-type'] || 'audio/webm'); console.info(`[transcribe] ${raw.length} bytes -> ${segments.length} segments`); return send(res, 200, { segments }) }

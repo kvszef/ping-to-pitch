@@ -16,6 +16,7 @@ import { peerStats, type PeerStats } from '../../engine/peers.ts'
 import { readClient } from '../../engine/data.ts'
 import { classifyNote } from '../../engine/wishes.ts'
 import { classifyNotes, type WishAnswers } from './wishes.ts'
+import { notesFor } from '../memory/store.ts'
 
 type Provider = 'openai' | 'apertus'
 type Message = { role: 'system' | 'user'; content: string }
@@ -84,7 +85,7 @@ export async function briefing60(method: string, url: string, body: Buffer | nul
   let engine: Finding[] = []
   let engineError: string | undefined
   try {
-    engine = run(raw, { ref: index, now, memory: [], wishes, peers: peersOf(clients, index) })
+    engine = run(raw, { ref: index, now, memory: notesFor(str(raw.ClientRef)), wishes, peers: peersOf(clients, index) })
   } catch (e) {
     engineError = e instanceof Error ? e.message : String(e)
   }
@@ -137,6 +138,19 @@ export function uploadClients(body: Buffer) {
 
 const providerFor = (llm: Llm): Provider | null => (llm.ready('openai') ? 'openai' : llm.ready('apertus') ? 'apertus' : null)
 
+/** The talk track (mention/ask points) and findings for one client, for server/calls.ts to draft a CallNote against once a call ends. */
+export async function templateFor(ref: string, llm: Llm): Promise<{ template: Briefing60; findings: Finding[] } | null> {
+  const { clients, reference, index } = await data()
+  const raw = uploaded.get(ref) ?? clients.find((c) => c.ClientRef === ref)
+  if (!raw) return null
+  const now = new Date()
+  const wishes = await wishesFor(raw, index, llm)
+  let engine: Finding[] = []
+  try { engine = run(raw, { ref: index, now, memory: notesFor(ref), wishes, peers: peersOf(clients, index) }) } catch { /* the stopgap still answers */ }
+  const { findings } = mergeFindings(engine, provisionalFindings(raw, reference, now))
+  return { template: composeBriefing(ref, findings), findings }
+}
+
 /** Cards for the main app. Everything is instant; with a model configured, the model-written talk track follows as `fast`. */
 export async function appBriefing(url: string, llm: Llm) {
   const u = new URL(url, 'http://local')
@@ -150,7 +164,7 @@ export async function appBriefing(url: string, llm: Llm) {
   const now = new Date()
   const wishes = await wishesFor(raw, index, llm)
   let engine: Finding[] = []
-  try { engine = run(raw, { ref: index, now, memory: [], wishes, peers: peersOf(clients, index) }) } catch { /* the stopgap still answers */ }
+  try { engine = run(raw, { ref: index, now, memory: notesFor(ref), wishes, peers: peersOf(clients, index) }) } catch { /* the stopgap still answers */ }
   const { findings } = mergeFindings(engine, provisionalFindings(raw, reference, now))
   const template = composeBriefing(ref, findings)
   const provider = providerFor(llm)
@@ -182,7 +196,7 @@ export async function clientsWithFindings(now: Date): Promise<{ raw: Record<stri
   const peers = peersOf(clients, index)
   return all.map((raw) => {
     let findings: Finding[] = []
-    try { findings = run(raw, { ref: index, now, memory: [], peers }) } catch { /* ranked on news only */ }
+    try { findings = run(raw, { ref: index, now, memory: notesFor(str(raw.ClientRef)), peers }) } catch { /* ranked on news only */ }
     return { raw, ref: str(raw.ClientRef), name: header(raw).name, index, findings }
   })
 }

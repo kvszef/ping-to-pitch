@@ -48,7 +48,7 @@ function fixOf(f: Finding): { summary: string; count: number; change: string } |
   return { summary, count: names.length, change: before !== undefined && after !== undefined ? `, ${pct(before)} → ${pct(after)}` : '' }
 }
 // 'Pensionierung: noch 20 Monate …' → 'Pensionierung'; 'Veraltet: Immobilienkauf – …' → 'Immobilienkauf'
-const labelOf = (f: Finding) => f.title.replace(/^(Veraltet|Offener Wunsch seit [^:]+|Seit \d+ Monaten offen): /, '').split(/: | – /)[0].replace(/^«|»$/g, '')
+const labelOf = (f: Finding) => f.title.replace(/^(Veraltet|Offener Wunsch seit [^:]+|Seit \d+ Monaten offen|Zugesagt|Offen aus dem letzten Gespräch): /, '').split(/: | – /)[0].replace(/^«|»$/g, '')
 const line = (id: string, text: string, kind: Kind, findings: Finding[]): Line => ({ id, text, kind, findings: findings.map((f) => f.id) })
 // The engine prefixes portfolio findings with the portfolio number; the talk track does not need it.
 const clean = (title: string) => {
@@ -90,6 +90,10 @@ export function composeBriefing(ref: string, findings: Finding[]): Briefing60 {
   const draft = proposals.find((f) => /:draft/.test(f.id))
   const contact = of('profile.contact')
   const temperament = of('profile.temperament')
+  // memory.promise: a client wish read from notes (server/ai/provisional-findings.ts).
+  // memory.call-promise: a promise the advisor made on a previous confirmed call (engine/checks/memory-call-promise.ts, A3).
+  // Same shape, same treatment here: something the advisor is on the hook for.
+  promises.push(...of('memory.call-promise'))
 
   // ---- why is the client calling --------------------------------------------------------------
   const reasons: Line[] = []

@@ -15,6 +15,7 @@ const CHECK_SOURCE: Record<string, string> = {
   'portfolio.maturities': 'Fälligkeiten', 'portfolio.liquidity': 'Kundendatei', 'context.stale-note': 'Kundennotiz', 'context.plan': 'Kundennotiz',
   'context.note': 'Kundennotiz', 'memory.promise': 'Kundennotiz', 'profile.contact': 'Kundennotiz', 'profile.temperament': 'Kundennotiz',
   'contradiction.fossil-fuel': 'Kundennotiz und Fonds-Durchsicht', 'contradiction.region': 'Kundennotiz und Fonds-Durchsicht', 'contradiction.unverifiable': 'Kundennotiz',
+  'memory.call-promise': 'Gesprächsnotiz',
 }
 const EXCLUSIONS = new Set<string>(['fossil', 'fossil-direct', 'emerging-markets'])
 const sourceOf = (f: Finding) => CHECK_SOURCE[f.check] ?? f.evidence[0]?.source ?? f.check
@@ -93,11 +94,15 @@ function profileCard(b: Briefing60, findings: Finding[]): CardOf<'profile'> | nu
 }
 
 function todosCard(findings: Finding[]): CardOf<'todos'> | null {
-  const promises = findings.filter((f) => f.check === 'memory.promise')
+  const promises = findings.filter((f) => f.check === 'memory.promise' || f.check === 'memory.call-promise')
   if (!promises.length) return null
   return {
     type: 'todos', title: 'Offene Zusagen',
-    items: promises.map((f) => ({ text: f.title.replace(/^Offener Wunsch seit [^:]+: /, ''), owner: 'Berater' as const, done: false, overdue: (f.numbers?.ageMonths ?? 0) >= 3, source: `Kundennotiz vom ${dateOf(f) ?? '–'}` })),
+    items: promises.map((f) => ({
+      text: f.title.replace(/^(Offener Wunsch seit [^:]+|Zugesagt|Offen aus dem letzten Gespräch): /, ''), owner: 'Berater' as const, done: false,
+      overdue: f.check === 'memory.call-promise' ? f.severity === 'warn' : (f.numbers?.ageMonths ?? 0) >= 3,
+      source: f.check === 'memory.call-promise' ? `Gesprächsnotiz vom ${dateOf(f) ?? '–'}` : `Kundennotiz vom ${dateOf(f) ?? '–'}`,
+    })),
   }
 }
 

@@ -5,6 +5,7 @@ import { peerBehaviour } from './context-peer-behaviour.ts'
 import { peers } from './context-peers.ts'
 import { plan } from './context-plan.ts'
 import { staleNote } from './context-stale-note.ts'
+import { callPromise } from './memory-call-promise.ts'
 import { liquidity } from './portfolio-liquidity.ts'
 import { allocation } from './portfolio-allocation.ts'
 import { concentration } from './portfolio-concentration.ts'
@@ -38,6 +39,7 @@ export const checks: Record<string, Check> = {
   'context.peers': peers,
   'context.history': history,
   'context.peer-behaviour': peerBehaviour,
+  'memory.call-promise': callPromise,
   'profile.trait': traits,
   'profile.persona': persona,
   'profile.tone': tone,
