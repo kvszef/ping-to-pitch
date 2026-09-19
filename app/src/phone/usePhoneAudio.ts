@@ -43,6 +43,15 @@ export function usePhoneAudio(
 
     const timers: ReturnType<typeof setTimeout>[] = []
     const recorders: MediaRecorder[] = []
+    // Chrome refuses to record a remote WebRTC stream directly (MediaRecorder.start throws), so both
+    // sides are routed through Web Audio and the recorder takes the resulting local stream.
+    const audio = new AudioContext()
+    void audio.resume()
+    const recordable = (stream: MediaStream) => {
+      const out = audio.createMediaStreamDestination()
+      audio.createMediaStreamSource(stream).connect(out)
+      return out.stream
+    }
     const record = (stream: MediaStream, speaker: Speaker) => {
       if (stopped || !stream.getAudioTracks().length) return
       // Every chunk is a complete file of its own, hence a new recorder per chunk.
@@ -65,16 +74,21 @@ export function usePhoneAudio(
           if (!stopped) handlers.current.onError?.(e instanceof Error ? e.message : String(e))
         }
       }
-      current.start()
+      try { current.start() } catch (e) {
+        recorders.splice(recorders.indexOf(current), 1)
+        if (!stopped) handlers.current.onError?.(`Aufnahme (${speaker}) nicht möglich: ${e instanceof Error ? e.message : String(e)}`)
+        return
+      }
       timers.push(setTimeout(() => current.state === 'recording' && current.stop(), CHUNK_MS))
     }
-    record(call.remote, 'Kunde')
-    record(call.local, 'Berater')
+    record(recordable(call.remote), 'Kunde')
+    record(recordable(call.local), 'Berater')
 
     return () => {
       stopped = true
       timers.forEach(clearTimeout)
       recorders.forEach((r) => { if (r.state === 'recording') r.stop() })
+      void audio.close()
     }
   }, [call, active, transcribe])
 }
