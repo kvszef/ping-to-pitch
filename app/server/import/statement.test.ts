@@ -30,7 +30,7 @@ describe('statement parser on the sample PDFs', () => {
 
   it('reads every sample statement completely', async () => {
     const files = readdirSync(DIR).filter((f) => f.endsWith('.pdf'))
-    expect(files).toHaveLength(10)
+    expect(files.length).toBeGreaterThanOrEqual(10) // the ten from the organisers; more may be added
     for (const f of files) {
       const s = parseStatement(await pdfPages(readFileSync(DIR + f)))
       const sum = s.positions.reduce((a, p) => a + p.value, 0)
