@@ -35,6 +35,8 @@ export const CATALOGUE = {
 
 const severityRank: Record<Severity, number> = { risk: 0, warn: 1, ok: 2, info: 3 }
 const rankOf = (n: NewsItem, ref: string) => severityRank[n.affects[ref].severity]
+// The holding's share of the client's assets in %: the news agent sends it as `weight`, the engine's news only in the tag ("Nestle 3.4%").
+const weightOf = (n: NewsItem & { weight?: number }, ref: string) => n.weight ?? (Number(/([\d.,]+)%$/.exec(n.affects[ref].tag)?.[1]?.replace(',', '.')) || 0)
 
 const tokens = (text: string) => text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 3).map((w) => w.slice(0, 6))
 const pct = (v: number) => Math.round(v * 1000) / 10
@@ -68,12 +70,13 @@ export function chartsFor(client: Client, topicCharts: { id: string; spec: Modul
 
 export function tilesFor(client: Client, charts: Chart[], news: NewsItem[] = []): Tile[] {
   const tiles: Tile[] = briefFor(client).map((item) => ({ id: item.id, group: item.group, topics: item.topics ?? [], words: `${item.figure ?? ''} ${item.text}`, seconds: readSeconds(item), severity: item.severity, item }))
-  // Live news on this client's holdings: one tile, the three most important, right after the reason for the call.
-  // One item per holding first, so the tile covers the portfolio rather than one story three times.
-  const sorted = news.filter((n) => n.affects[client.ref]).sort((a, b) => rankOf(a, client.ref) - rankOf(b, client.ref))
+  // Live news on this client's biggest holdings: one tile, right after the reason for the call.
+  // Only news naming a position itself (reach 'Titel'); currency, sector and fund-theme news is market
+  // noise here. Biggest position first, one story per position, at most three; severity breaks ties.
   const holding = (n: NewsItem) => n.affects[client.ref].tag.replace(/\s*[\d.,]+%$/, '')
-  const firsts = sorted.filter((n, i) => sorted.findIndex((m) => holding(m) === holding(n)) === i)
-  const relevant = [...firsts, ...sorted.filter((n) => !firsts.includes(n))].slice(0, 3)
+  const sorted = news.filter((n) => n.affects[client.ref] && n.reach === 'Titel')
+    .sort((a, b) => weightOf(b, client.ref) - weightOf(a, client.ref) || rankOf(a, client.ref) - rankOf(b, client.ref))
+  const relevant = sorted.filter((n, i) => sorted.findIndex((m) => holding(m) === holding(n)) === i).slice(0, 3)
   if (relevant.length) {
     const at = tiles.findIndex((t) => t.group !== 'Anlass')
     tiles.splice(at < 0 ? tiles.length : at, 0, { id: 'news', group: 'Markt heute', topics: ['news', 'markt'], words: relevant.map((n) => `${n.title} ${n.affects[client.ref].meaning} ${n.affects[client.ref].tag}`).join(' '), seconds: relevant.length * 3, severity: relevant[0].affects[client.ref].severity, news: relevant })
