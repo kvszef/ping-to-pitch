@@ -9,9 +9,8 @@
 // without one the items still arrive, just without tone and "why".
 // Items carry the UI's NewsItem shape (src/types.ts) plus the raw fields, so N1 can adopt the fetchers.
 
-import { readFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
 import type { Llm } from './briefing-route.ts'
+import { loadData } from '../database.ts'
 import type { NewsAgentItem, NewsAgentResult, Tone } from './news-agent-types.ts'
 
 type Provider = 'openai' | 'apertus'
@@ -382,11 +381,11 @@ async function fetchTerm(term: SearchTerm, get: Fetcher, errors: string[]): Prom
 
 // ---- data + cache ----------------------------------------------------------------------------------
 
-const DATA = resolve(process.cwd(), '../core-case/portfolio-data')
+// Same source as the briefing: the SQLite database via MCP Toolbox, case files as the fallback.
 let loaded: Promise<{ clients: Raw[]; industry: Map<number, string> }> | null = null
 function data() {
   loaded ??= (async () => {
-    const [clients, reference] = await Promise.all(['clients.json', 'reference.json'].map(async (f) => JSON.parse(await readFile(resolve(DATA, f), 'utf8')) as unknown))
+    const { clients, reference } = await loadData()
     const industry = new Map<number, string>()
     for (const s of arr((reference as Raw | null)?.Securities)) if (str(s.SAA_IndustryName)) industry.set(num(s.Id), str(s.SAA_IndustryName))
     return { clients: arr(clients), industry }

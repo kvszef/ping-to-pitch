@@ -1,6 +1,4 @@
-import { readFile } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { resolve } from 'node:path'
 import type { Plugin } from 'vite'
 import { appBriefing, briefing60, briefingClients, uploadClients } from './ai/briefing-route.ts'
 import { briefingNews, clientNews, newsFeed, newsStatus, outbound, pushNews, snapshotNews, startNewsWatcher } from './market/route.ts'
@@ -8,6 +6,7 @@ import { callRoute } from './call.ts'
 import { newsAgentRoute } from './ai/news-agent.ts'
 import { callsRoute } from './calls.ts'
 import { askData, chatWithData } from './ai/chat-route.ts'
+import { dataStatus, loadData } from './database.ts'
 
 // Kleine API im Vite-Server. Die Schlüssel bleiben hier und erreichen den Browser nie.
 // Apertus wird über eine OpenAI-kompatible Schnittstelle angesprochen (Basis-URL in .env.local).
@@ -154,17 +153,16 @@ Bei Begrüssungen und Belanglosem sind "customer", "advisor" und "insight" null.
   ]
 }
 
-// Stopgap until the engine serves /api/clients: the case file as it is, minus every account field
-// that can hold an IBAN or an account name. Same path and shape, so the engine replaces it silently.
-const CLIENT_FILE = resolve(process.cwd(), '../core-case/portfolio-data/clients.json')
+// The clients as the database holds them, minus every account field that can hold an IBAN or an
+// account name: this goes to the browser, and the IBANs in the data are real.
 async function caseClients(): Promise<unknown[]> {
-  const data: unknown = JSON.parse(await readFile(CLIENT_FILE, 'utf8'))
+  const { clients } = await loadData()
   const strip = (v: unknown): unknown => {
     if (Array.isArray(v)) return v.map(strip)
     if (typeof v !== 'object' || v === null) return v
     return Object.fromEntries(Object.entries(v).filter(([k]) => !/^(iban|accountname|accountnumber)$/i.test(k)).map(([k, x]) => [k, strip(x)]))
   }
-  return Array.isArray(data) ? data.map(strip) : []
+  return clients.map(strip)
 }
 
 type Word = { text: string; type?: string; speaker_id?: string }
@@ -223,7 +221,7 @@ export function api(env: Env): Plugin {
         if (!req.url?.startsWith('/api/')) return next()
         try {
           if (req.url.startsWith('/api/call/') && await callRoute(req, res)) return
-          if (req.url === '/api/status') return send(res, 200, { openai: ready(env, 'openai'), apertus: ready(env, 'apertus'), elevenlabs: !!env.ELEVENLABS_API_KEY, transcribe: !!env.ELEVENLABS_API_KEY || !!env.OPENAI_API_KEY })
+          if (req.url === '/api/status') return send(res, 200, { openai: ready(env, 'openai'), apertus: ready(env, 'apertus'), elevenlabs: !!env.ELEVENLABS_API_KEY, transcribe: !!env.ELEVENLABS_API_KEY || !!env.OPENAI_API_KEY, daten: await dataStatus() })
           if (req.url === '/api/clients' && req.method === 'GET') return send(res, 200, await caseClients())
           const llm = { complete: (p: Provider, m: Message[]) => complete(env, p, true, m), ready: (p: Provider) => ready(env, p) }
           if (req.url.startsWith('/api/briefing60')) {

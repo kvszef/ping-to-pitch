@@ -1,11 +1,9 @@
 // HTTP side of the briefing writer, mounted by server/api.ts.
-//   GET  /api/briefing60/:ref?phrase=openai|apertus   a client from core-case clients.json
+//   GET  /api/briefing60/:ref?phrase=openai|apertus   a client from the database (server/database.ts)
 //   POST /api/briefing60?phrase=…                     body { client }: one raw client from an uploaded file
 // Findings come from the engine; checks the engine does not deliver yet fall back to the stopgap.
 // The model only ever sees findings (titles and details): no names, no account data.
 
-import { readFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
 import { indexReference, run, type ReferenceIndex } from '../../engine/run.ts'
 import { composeBriefing, writeBriefing, type Briefing60 } from './briefing.ts'
 import { factCards, talkTrackCard } from './cards.ts'
@@ -17,17 +15,20 @@ import { readClient } from '../../engine/data.ts'
 import { classifyNote } from '../../engine/wishes.ts'
 import { classifyNotes, type WishAnswers } from './wishes.ts'
 import { notesFor } from '../memory/store.ts'
+import { loadData } from '../database.ts'
 
 type Provider = 'openai' | 'apertus'
 type Message = { role: 'system' | 'user'; content: string }
 export type Llm = { complete: (provider: Provider, messages: Message[]) => Promise<unknown>; ready: (provider: Provider) => boolean }
 
-const DATA = resolve(process.cwd(), '../core-case/portfolio-data')
+// Clients and reference data come from the SQLite database via MCP Toolbox; server/database.ts falls
+// back to the case files when the toolbox is not running. The index is built once on top of whatever
+// came back, so the engine does not care which of the two sources answered.
 let loaded: Promise<{ clients: Record<string, unknown>[]; reference: unknown; index: ReferenceIndex }> | null = null
 function data() {
   loaded ??= (async () => {
-    const [clients, reference] = await Promise.all(['clients.json', 'reference.json'].map(async (f) => JSON.parse(await readFile(resolve(DATA, f), 'utf8'))))
-    return { clients: Array.isArray(clients) ? clients : [], reference, index: indexReference(reference) }
+    const { clients, reference } = await loadData()
+    return { clients, reference, index: indexReference(reference) }
   })()
   loaded.catch(() => { loaded = null })
   return loaded
