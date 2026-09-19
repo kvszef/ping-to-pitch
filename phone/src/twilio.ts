@@ -46,16 +46,36 @@ const verifizierte = async () =>
 let verifiziert = await verifizierte()
 if (!verifiziert.includes(berater)) {
   if (!berater) abbruch('ADVISOR_NUMBER fehlt in .env. Dein Handy in E.164 eintragen, z. B. +41791234567 – Twilio muss es verifizieren, bevor es eine Nummer verkauft.')
-  console.log(`${berater} ist noch nicht verifiziert. Twilio ruft gleich an.`)
-  const p = await twilio<{ validation_code: string }>('POST', '/OutgoingCallerIds.json', { PhoneNumber: berater, FriendlyName: 'Berater' })
-  console.log(`\n  ☎ Twilio ruft ${berater} an. Abheben und diesen Code eintippen:\n\n        ${p.validation_code}\n`)
-  for (let i = 0; i < 40; i++) {
+  console.log(`${berater} ist noch nicht verifiziert. Versuche es über die API …`)
+
+  const r = await fetch(`${basis}/OutgoingCallerIds.json`, {
+    method: 'POST',
+    headers: { ...kopf, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ PhoneNumber: berater, FriendlyName: 'Berater' }).toString(),
+  })
+  const antwort = await r.text()
+
+  if (r.ok) {
+    const code = (JSON.parse(antwort) as { validation_code: string }).validation_code
+    console.log(`\n  ☎ Twilio ruft ${berater} an. Abheben und diesen Code eintippen:\n\n        ${code}\n`)
+  } else {
+    // Fehler 10002: Trial-Konten dürfen den Verifizierungsanruf nicht über die API auslösen.
+    // Die Konsole benutzt einen anderen Weg und lässt es zu.
+    const blockiert = antwort.includes('10002')
+    if (!blockiert) abbruch(`Verifizierung fehlgeschlagen (${r.status}):\n${antwort.slice(0, 500)}`)
+    console.log(`\n  Twilio erlaubt den Verifizierungsanruf im Trial nicht über die API.`)
+    console.log(`  Einmalig in der Konsole erledigen – das Skript wartet so lange:\n`)
+    console.log(`    https://console.twilio.com/us1/develop/phone-numbers/manage/verified`)
+    console.log(`    → «Add a new Caller ID» → ${berater} → Code eintippen\n`)
+  }
+
+  for (let i = 0; i < 60; i++) {
     await warte(3000)
     verifiziert = await verifizierte()
     if (verifiziert.includes(berater)) break
-    if (i % 5 === 4) console.log(`  … warte auf die Bestätigung (${(i + 1) * 3}s)`)
+    if (i % 10 === 9) console.log(`  … warte auf die Bestätigung (${(i + 1) * 3}s)`)
   }
-  if (!verifiziert.includes(berater)) abbruch('Die Verifizierung kam nicht durch. `npm run twilio` erneut ausführen und den Anruf annehmen.')
+  if (!verifiziert.includes(berater)) abbruch('Die Verifizierung kam nicht durch. Nach dem Eintragen in der Konsole einfach `npm run twilio` erneut ausführen.')
   console.log(`✓ ${berater} ist verifiziert.`)
 }
 

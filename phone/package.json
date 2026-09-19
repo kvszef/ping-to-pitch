@@ -12,6 +12,7 @@
     "simulate": "node --env-file-if-exists=.env src/simulate.ts",
     "bridge": "node --env-file-if-exists=.env src/bridge.ts",
     "twilio": "node --env-file-if-exists=.env src/twilio.ts",
+    "signalwire": "node --env-file-if-exists=.env src/signalwire.ts",
     "toolbox:get": "node scripts/get-toolbox.ts",
     "toolbox": "node --env-file-if-exists=.env scripts/run-toolbox.ts",
     "load-data": "node --env-file-if-exists=.env --no-warnings=ExperimentalWarning scripts/load-data.ts"
