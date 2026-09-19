@@ -1,5 +1,6 @@
 import { Mic, MicOff, PanelLeftClose, Phone, PhoneCall, PhoneOff, Search, Settings as SettingsIcon, Users } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useBriefing } from '../data/useBriefing'
 import { useNews } from '../data/useNews'
 import * as deskLine from '../phone/deskLine'
@@ -54,6 +55,13 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
   const [chat, setChat] = useState<ChatEntry[]>([])
   const [busy, setBusy] = useState(false)
   const [demoMenu, setDemoMenu] = useState(false)
+  const [menuAt, setMenuAt] = useState<{ left: number; bottom: number }>({ left: 0, bottom: 0 })
+  useEffect(() => {
+    if (!demoMenu) return
+    const close = (e: Event) => { if (e instanceof KeyboardEvent ? e.key === 'Escape' : !(e.target as HTMLElement).closest('[data-demo-menu], [aria-label="Demo-Anruf"]')) setDemoMenu(false) }
+    window.addEventListener('pointerdown', close); window.addEventListener('keydown', close)
+    return () => { window.removeEventListener('pointerdown', close); window.removeEventListener('keydown', close) }
+  }, [demoMenu])
   const [rosterQuery, setRosterQuery] = useState('')
   const [identifying, setIdentifying] = useState(!!initialCall && !initialRef)
 
@@ -301,9 +309,9 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
                   <SettingsIcon size={14} className="shrink-0" /><span className="truncate">KI: {providerLabel[activeProvider(settings, status) ?? 'beispiel']}</span>
                 </button>
                 <div className="relative">
-                  <button onClick={() => setDemoMenu((v) => !v)} aria-label="Demo-Anruf" title="Demo-Anruf" aria-expanded={demoMenu} className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg hover:bg-pill hover:text-ink ${demoMenu ? 'bg-pill text-ink' : 'text-muted'}`}><PhoneCall size={14} /></button>
-                  {demoMenu && (
-                    <div className="anim-rise absolute bottom-9 left-0 z-30 w-64 rounded-xl bg-white/90 p-1.5 shadow-[0_12px_40px_rgba(31,56,88,0.18)] ring-1 ring-black/5 backdrop-blur-xl">
+                  <button onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setMenuAt({ left: r.left, bottom: window.innerHeight - r.top + 6 }); setDemoMenu((v) => !v) }} aria-label="Demo-Anruf" title="Demo-Anruf" aria-expanded={demoMenu} className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg hover:bg-pill hover:text-ink ${demoMenu ? 'bg-pill text-ink' : 'text-muted'}`}><PhoneCall size={14} /></button>
+                  {demoMenu && createPortal(
+<div data-demo-menu style={menuAt} className="anim-rise fixed z-[70] w-72 rounded-xl bg-white/90 p-1.5 shadow-[0_12px_40px_rgba(31,56,88,0.18)] ring-1 ring-black/5 backdrop-blur-xl">
                       {(['eingehend', 'ausgehend'] as const).map((dir) => (
                         <div key={dir}>
                           <div className="px-2 pb-0.5 pt-1.5 text-[10px] uppercase tracking-wide text-muted">{dir === 'eingehend' ? 'Eingehender Anruf' : 'Ausgehender Anruf'}</div>
@@ -325,7 +333,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
                         </div>
                       ))}
                     </div>
-                  )}
+                  , document.body)}
                 </div>
               </div>
             </>
