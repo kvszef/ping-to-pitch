@@ -5,6 +5,7 @@ import type { Plugin } from 'vite'
 import { appBriefing, briefing60, briefingClients, uploadClients } from './ai/briefing-route.ts'
 import { briefingNews, clientNews, newsFeed, outbound, pushNews, snapshotNews } from './market/route.ts'
 import { callRoute } from './call.ts'
+import { newsAgentRoute } from './ai/news-agent.ts'
 
 // Kleine API im Vite-Server. Die Schlüssel bleiben hier und erreichen den Browser nie.
 // Apertus wird über eine OpenAI-kompatible Schnittstelle angesprochen (Basis-URL in .env.local).
@@ -193,6 +194,7 @@ export function api(env: Env): Plugin {
           if (path.startsWith('/api/briefing/') && req.method === 'GET' && new URL(req.url, 'http://local').searchParams.get('tier') === 'slow') {
             return send(res, 200, { cards: [], findings: await briefingNews(decodeURIComponent(path.split('/')[3] ?? ''), judgeLlm) })
           }
+          if (req.url.startsWith('/api/news-agent') && req.method === 'GET') { const out = await newsAgentRoute(req.url, llm); return send(res, out.status, out.data) }
           if (req.url.startsWith('/api/briefing/') && req.method === 'GET') { const out = await appBriefing(req.url, llm); return send(res, out.status, out.data) }
           if (req.url === '/api/clients/upload' && req.method === 'POST') { const out = uploadClients(await body(req)); return send(res, out.status, out.data) }
           if (req.method !== 'POST') return send(res, 405, { error: 'Nur POST' })
