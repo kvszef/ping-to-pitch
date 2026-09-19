@@ -1,7 +1,9 @@
-import { MessageSquare, Pin, Sparkles, X } from 'lucide-react'
-import { useRef } from 'react'
+import { Maximize2, MessageSquare, Pin, Sparkles, X } from 'lucide-react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { SeverityIcon } from '../cards/ui'
 import type { Severity } from '../types'
+import { ModuleView } from './modules'
 import { useFlip } from './motion'
 import type { ModuleSpec } from './types'
 
@@ -13,6 +15,38 @@ export type Widget = { id: string; group: string; main?: string; text?: string; 
 
 const MARK = '#3f7fd9' // brand-dark: the brand blue fails 3:1 contrast on white
 
+// Every small chart opens large on click: an overlay with the full chart module (axes, values, note).
+// The click stays here, so the card or tile underneath does not also react.
+function Zoomable({ spec, children }: { spec: ModuleSpec; children: ReactNode }) {
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open])
+  return (
+    <>
+      <div role="button" tabIndex={0} aria-label={`${spec.title} gross anzeigen`} title="Gross anzeigen"
+        onClick={(e) => { e.stopPropagation(); setOpen(true) }}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setOpen(true) } }}
+        className="group/zoom relative cursor-zoom-in rounded-md outline-none focus-visible:ring-2 focus-visible:ring-brand">
+        {children}
+        <Maximize2 size={11} className="pointer-events-none absolute right-0 top-0 text-muted opacity-0 transition-opacity group-hover/zoom:opacity-100" />
+      </div>
+      {open && createPortal(
+        <div onClick={() => setOpen(false)} className="fixed inset-0 z-50 flex items-center justify-center bg-ink/25 p-6 backdrop-blur-sm">
+          <div role="dialog" aria-label={spec.title} onClick={(e) => e.stopPropagation()} className="anim-rise relative max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl">
+            <button onClick={() => setOpen(false)} aria-label="Schliessen" className="absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full text-muted hover:bg-pill hover:text-ink"><X size={16} /></button>
+            <ModuleView spec={spec} detail="detailliert" />
+          </div>
+        </div>,
+        document.body,
+      )}
+    </>
+  )
+}
+
 export function Spark({ spec, tall = false }: { spec: Extract<ModuleSpec, { type: 'verlauf' }>; tall?: boolean }) {
   const v = spec.points.map((p) => p.value)
   if (v.length < 2) return null
@@ -21,17 +55,19 @@ export function Spark({ spec, tall = false }: { spec: Extract<ModuleSpec, { type
   const line = xy.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')
   const [lx, ly] = xy[xy.length - 1]
   return (
-    <div title={`${spec.title}: ${spec.points[0].label} ${v[0]} → ${spec.points[v.length - 1].label} ${v[v.length - 1]}`}>
-      <div className="relative">
-        <svg viewBox="0 0 100 32" preserveAspectRatio="none" className={`${tall ? 'h-20' : 'h-10'} w-full overflow-visible`}>
-          <polygon points={`0,32 ${line} 100,32`} fill={MARK} opacity="0.1" />
-          <polyline points={line} fill="none" stroke={MARK} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
-        </svg>
-        {/* The end dot sits outside the stretched SVG, so it stays round at any widget width. */}
-        <span className="absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full ring-[1.5px] ring-white" style={{ left: `${lx}%`, top: `${(ly / 32) * 100}%`, background: MARK }} />
+    <Zoomable spec={spec}>
+      <div title={`${spec.title}: ${spec.points[0].label} ${v[0]} → ${spec.points[v.length - 1].label} ${v[v.length - 1]}`}>
+        <div className="relative">
+          <svg viewBox="0 0 100 32" preserveAspectRatio="none" className={`${tall ? 'h-20' : 'h-10'} w-full overflow-visible`}>
+            <polygon points={`0,32 ${line} 100,32`} fill={MARK} opacity="0.1" />
+            <polyline points={line} fill="none" stroke={MARK} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
+          </svg>
+          {/* The end dot sits outside the stretched SVG, so it stays round at any widget width. */}
+          <span className="absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full ring-[1.5px] ring-white" style={{ left: `${lx}%`, top: `${(ly / 32) * 100}%`, background: MARK }} />
+        </div>
+        <div className="flex justify-between text-[9px] tabular-nums text-muted"><span>{spec.points[0].label}</span><span>{spec.points[v.length - 1].label}</span></div>
       </div>
-      <div className="flex justify-between text-[9px] tabular-nums text-muted"><span>{spec.points[0].label}</span><span>{spec.points[v.length - 1].label}</span></div>
-    </div>
+    </Zoomable>
   )
 }
 
@@ -39,15 +75,17 @@ export function Bars({ spec, rows = 4 }: { spec: Extract<ModuleSpec, { type: 'ba
   const bars = spec.bars.slice(0, rows)
   const max = Math.max(...bars.map((b) => Math.abs(b.value)), 1)
   return (
-    <ul className="space-y-1">
-      {bars.map((b) => (
-        <li key={b.label} title={`${b.label}: ${b.value}${spec.unit}`} className="grid grid-cols-[1fr_auto] items-center gap-x-2 text-[10px]">
-          <span className="truncate text-muted">{b.label}</span>
-          <span className="tabular-nums">{b.value}{spec.unit}</span>
-          <span className="col-span-2 h-1.5 rounded-full bg-track"><span className="block h-full rounded-full" style={{ width: `${(Math.abs(b.value) / max) * 100}%`, background: MARK }} /></span>
-        </li>
-      ))}
-    </ul>
+    <Zoomable spec={spec}>
+      <ul className="space-y-1">
+        {bars.map((b) => (
+          <li key={b.label} title={`${b.label}: ${b.value}${spec.unit}`} className="grid grid-cols-[1fr_auto] items-center gap-x-2 text-[10px]">
+            <span className="truncate text-muted">{b.label}</span>
+            <span className="tabular-nums">{b.value}{spec.unit}</span>
+            <span className="col-span-2 h-1.5 rounded-full bg-track"><span className="block h-full rounded-full" style={{ width: `${(Math.abs(b.value) / max) * 100}%`, background: MARK }} /></span>
+          </li>
+        ))}
+      </ul>
+    </Zoomable>
   )
 }
 
