@@ -30,11 +30,12 @@ const TOPICS: Record<string, string[]> = {
 }
 const GROUP: [RegExp, BriefGroup][] = [
   [/^portfolio\.performance/, 'Anlass'],
-  [/^(contradiction\.|portfolio\.(violations|concentration|allocation|liquidity))/, 'Positionen'],
+  [/^(contradiction\.|portfolio\.(violations|concentration|allocation|liquidity|ex-custody))/, 'Positionen'],
   [/^(portfolio\.(proposals|maturities)|memory\.)/, 'Verlauf'],
   [/^(context\.|profile\.)/, 'Kunde'],
   [/^cio\./, 'Hausmeinung'],
 ]
+const EX_CUSTODY = 'portfolio.ex-custody'
 const rank: Record<Severity, number> = { risk: 0, warn: 1, info: 2, ok: 3 }
 const LIMIT: Partial<Record<BriefGroup, number>> = { Anlass: 1, Positionen: 4, Hausmeinung: 2, Verlauf: 2, Kunde: 2 }
 
@@ -50,7 +51,9 @@ function fromFindings(client: Client, findings: EngineFinding[], lang: Lang): Br
     const group = GROUP.find(([re]) => re.test(f.check))?.[1] ?? (f.kind === 'action' ? 'Vorschlag' : undefined)
     if (!group) continue
     const list = picked.get(group) ?? []
-    if (list.length < (LIMIT[group] ?? 1)) picked.set(group, [...list, f])
+    // A statement the advisor imported from another bank always shows: first in its group, outside the limit.
+    if (f.check === EX_CUSTODY) picked.set(group, [f, ...list])
+    else if (list.filter((x) => x.check !== EX_CUSTODY).length < (LIMIT[group] ?? 1)) picked.set(group, [...list, f])
   }
   const out: BriefItem[] = []
   for (const group of ['Anlass', 'Positionen', 'Hausmeinung', 'Verlauf', 'Kunde', 'Vorschlag'] as BriefGroup[]) {

@@ -85,7 +85,7 @@ function TileBody({ tile, text, clientRef, chart, fresh, language, onReady }: { 
 
 // Who the client is, in a few facts: the first card of the scrolling brief, set apart from the tiles (the assets
 // as a big figure, never dimmed), but not fixed, so the advisor can scroll past it to the brief.
-function Profile({ client, compact = false, language, loading = false }: { client: Client; compact?: boolean; language: Language; loading?: boolean }) {
+function Profile({ client, compact = false, language, loading = false, footer }: { client: Client; compact?: boolean; language: Language; loading?: boolean; footer?: ReactNode }) {
   const context = client.briefing.find((c) => c.type === 'context')
   const persona = client.briefing.find((c) => c.type === 'profile')
   const fact = (label: string) => context?.type === 'context' ? context.facts.find((f) => f.label === label)?.value : undefined
@@ -140,16 +140,19 @@ function Profile({ client, compact = false, language, loading = false }: { clien
       {(clipped || summaryOpen) && (
         <button type="button" onClick={() => setSummaryOpen((o) => !o)} className="mt-1 text-[12px] text-brand-dark underline-offset-2 hover:underline">{summaryOpen ? showLess : showMore}</button>
       )}
+      {/* Assets at another bank belong to the client's picture: the statement import sits with the client card. */}
+      {footer && <div className="mt-2 border-t border-brand/15 pt-2">{footer}</div>}
     </section>
   )
 }
 
-export function Stage({ client, screen, plan, brought, thinking, inCall, recording, lines, pending, note, hints, freshNews, lead, prep, reason, loading, actions, chat, busy, detail, chatSuggestions, onAsk, onShowChart, graphsOpen, onGraphs, graphWidth, onGraphWidth, language }: {
+export function Stage({ client, screen, plan, brought, thinking, inCall, recording, lines, pending, note, hints, freshNews, lead, prep, reason, profileFooter, loading, actions, chat, busy, detail, chatSuggestions, onAsk, onShowChart, graphsOpen, onGraphs, graphWidth, onGraphWidth, language }: {
   client: Client; screen: Screen; plan: Plan; brought: Brought[]; thinking: boolean
   inCall: boolean; recording: boolean; lines: TranscriptLine[]; pending: string[]; note: string | null; hints: Hint[]; freshNews: Set<string>
   lead: ReactNode; actions: ReactNode
   prep?: ReactNode // outbound mode: the call plan (CallPrep.tsx), shown above the brief
   reason?: ReactNode // incoming mode: why the client probably calls, always second, right under the client card
+  profileFooter?: ReactNode // bottom of the client card: the ex-custody statement import (ExCustodyUpload)
   loading?: boolean // the client's briefing tiers (and the call plan) are still arriving
   chat: ChatEntry[]; busy: boolean; detail: Detail; chatSuggestions: string[]; onAsk: (text: string) => void; onShowChart: (id: string) => void
   graphsOpen: boolean; onGraphs: (open: boolean) => void; graphWidth?: number; onGraphWidth: (width: number) => void; language: Language
@@ -373,7 +376,7 @@ export function Stage({ client, screen, plan, brought, thinking, inCall, recordi
             {waitAll && <PanelWait />}
             {/* While waiting, the real content is mounted (so its texts load) but takes no room. */}
             <div className={waitAll ? 'pointer-events-none invisible h-0 overflow-hidden' : together ? 'panel-in' : undefined}>
-            {!asText && <Profile client={client} compact={inCall || !!prep} language={language} loading={!!loading} />}
+            {!asText && <Profile client={client} compact={inCall || !!prep} language={language} loading={!!loading} footer={profileFooter} />}
             {!asText && prep}
             {!asText && reason}
             {asText && <TextView digest={digest} asOf={client.facts?.asOf} language={language} />}

@@ -18,6 +18,7 @@ import { CallPrep, ModeSwitch, WhyCalling, type CallMode } from './CallPrep'
 import { sinceCallStart } from './callNote'
 import { localPlan, nameIn, rebasePlan, type Brought, type Plan, type Suggestion } from './screen'
 import { SettingsPanel } from './SettingsPanel'
+import { ExCustodyUpload } from '../components/ExCustodyUpload'
 import { useSettings } from './settings'
 import { Stage, Transcript } from './Stage'
 import type { ChatEntry, Hint, TranscriptLine } from './types'
@@ -81,7 +82,9 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
 
   // The client, enriched with the engine's briefing once the server answered.
   const listed = clients.find((c) => c.ref === ref) ?? clients[0]
-  const engine = useBriefing(listed.ref)
+  // An imported statement from another bank changes the client on the server: the briefing is fetched again.
+  const [importVersion, setImportVersion] = useState(0)
+  const engine = useBriefing(listed.ref, importVersion)
   // Live during a call: which talk-track lines the agent has heard addressed, and its current
   // read on which insight cards matter most right now (server/ai/insights.ts ranks them pre-call;
   // this re-ranks live from the transcript). Reset whenever the advisor moves to another client.
@@ -443,6 +446,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
             loading={engine.pending.length > 0 || (mode === 'prep' && callPlan.writing)}
             prep={mode === 'prep' ? <CallPrep plan={callPlan.plan} writing={callPlan.writing} language={settings.language} /> : undefined}
             reason={mode === 'inbound' ? <WhyCalling findings={client.findings} fallback={client.briefing.find((c) => c.type === 'talktrack')?.reasons} language={settings.language} /> : undefined}
+            profileFooter={inCall ? undefined : <ExCustodyUpload clientRef={client.ref} onChanged={() => setImportVersion((v) => v + 1)} />}
             lead={
               <div className="flex min-w-0 shrink-0 items-baseline gap-2">
                 <span className="truncate text-[15px]">{client.name}</span>
