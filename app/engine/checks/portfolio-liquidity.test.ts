@@ -20,4 +20,13 @@ describe('portfolio.liquidity', () => {
     expect(f.title).toBe("Liquidität 1.6% (CHF 8'810)")
     expect(liquidity({}, ctx)).toEqual([])
   })
+
+  it('phrases the finding in English with the same numbers (CASE-012, CASE-004)', () => {
+    const en = { ...ctx, lang: 'en' as const }
+    const [f] = liquidity(client('CASE-012'), en)
+    expect(f.title).toBe("Liquidity CHF 328 (0.7%), below the CHF 15'000 needed for tax payment")
+    expect(f.numbers).toEqual(liquidity(client('CASE-012'), ctx)[0].numbers)
+    expect(f.evidence.some((e) => e.source === 'Client note')).toBe(true)
+    expect(liquidity(client('CASE-004'), en)[0].title).toBe("Liquidity 1.6% (CHF 8'810)")
+  })
 })

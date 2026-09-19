@@ -22,4 +22,13 @@ describe('wish.cash', () => {
     expect(f.evidence[0]).toMatchObject({ source: 'Kundennotiz', date: '2025-04-14' })
     expect(cash(client('CASE-002'), ctx)).toEqual([])
   })
+
+  it('phrases the same finding in English (ctx.lang)', () => {
+    const [de] = cash(client('CASE-012'), ctx)
+    const [f] = cash(client('CASE-012'), { ...ctx, lang: 'en' })
+    expect(f).toMatchObject({ id: de.id, severity: de.severity, numbers: de.numbers })
+    expect(f.title).toMatch(/^Wish «Needs around CHF 15'000 liquid» not covered: accounts CHF [\d']+, short by CHF [\d']+$/)
+    expect(f.evidence.map((e) => e.source)).toEqual(['Client note', 'Accounts', 'Client file'])
+    expect(f.evidence[0].quote).toBe(de.evidence[0].quote) // the note is quoted as written
+  })
 })

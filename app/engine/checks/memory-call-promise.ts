@@ -4,6 +4,7 @@
 // CallNotes from server/memory/store.ts, so it needs a real call to have happened and been confirmed.
 // Absent ctx.memory (no call yet, or the caller did not pass it): no findings, never throws.
 import { dateCh } from '../format.ts'
+import { pick, prefix, sourceName } from '../lang.ts'
 import type { CallNote, Check, Finding } from '../types.ts'
 import { clientOf, findingId } from './common.ts'
 
@@ -16,6 +17,8 @@ function notesFor(ref: string, memory: CallNote[] | undefined): CallNote[] {
 
 export const callPromise: Check = (raw, ctx) => {
   const client = clientOf(raw, ctx.ref)
+  const lang = ctx.lang, t = pick(lang)
+  const source = sourceName('callNote', lang)
   const out: Finding[] = []
   for (const note of notesFor(client.ref, ctx.memory)) {
     const ageDays = Math.round((ctx.now.getTime() - Date.parse(note.date)) / DAY)
@@ -24,19 +27,21 @@ export const callPromise: Check = (raw, ctx) => {
       out.push({
         id: findingId(CHECK, client.ref, `${note.id}-promise-${i}`), check: CHECK, kind: 'action',
         severity: p.due && Date.parse(p.due) < ctx.now.getTime() ? 'warn' : 'info',
-        title: `Zugesagt: ${p.text}`,
-        detail: p.due ? `Fällig bis ${dateCh(p.due)}, zugesagt am ${dateCh(note.date)}.` : `Zugesagt am ${dateCh(note.date)}, noch offen (${ageDays} Tage).`,
+        title: `${prefix('promised', lang)}${p.text}`, // the promise itself is stored data, never translated
+        detail: p.due
+          ? t(`Fällig bis ${dateCh(p.due)}, zugesagt am ${dateCh(note.date)}.`, `Due by ${dateCh(p.due, lang)}, promised on ${dateCh(note.date, lang)}.`)
+          : t(`Zugesagt am ${dateCh(note.date)}, noch offen (${ageDays} Tage).`, `Promised on ${dateCh(note.date, lang)}, still open (${ageDays} days).`),
         numbers: { ageDays },
-        evidence: [{ source: 'Gesprächsnotiz', date: note.date, quote: p.text }],
+        evidence: [{ source, date: note.date, quote: p.text }],
       })
     })
     note.proposed.forEach((item, i) => {
       if (item.reaction !== 'open') return
       out.push({
         id: findingId(CHECK, client.ref, `${note.id}-open-${i}`), check: CHECK, kind: 'action', severity: 'info',
-        title: `Offen aus dem letzten Gespräch: ${item.text}`,
-        detail: item.why ? `Damals: ${item.why}` : undefined,
-        evidence: [{ source: 'Gesprächsnotiz', date: note.date, quote: item.text }],
+        title: `${prefix('openFromCall', lang)}${item.text}`,
+        detail: item.why ? `${t('Damals', 'At the time')}: ${item.why}` : undefined,
+        evidence: [{ source, date: note.date, quote: item.text }],
       })
     })
   }

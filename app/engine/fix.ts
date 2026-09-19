@@ -8,6 +8,7 @@
 // portfolio checks then run on the copy; any risk or warning that was not there before is reported.
 import { exposure, readClient, type Client, type Portfolio, type ReferenceIndex } from './data.ts'
 import { chf, shortName } from './format.ts'
+import type { Lang } from './lang.ts'
 import { allocation } from './checks/portfolio-allocation.ts'
 import { concentration } from './checks/portfolio-concentration.ts'
 import { risk } from './checks/portfolio-risk.ts'
@@ -121,7 +122,7 @@ const RECHECKS = [allocation, concentration, risk]
 const bad = (f: Finding) => f.severity === 'risk' || f.severity === 'warn'
 const rank = { risk: 0, warn: 1, info: 2, ok: 3 } as const
 
-/** Risk and warning findings on `after` that `before` did not have, or had milder. */
+/** Risk and warning findings on `after` that `before` did not have, or had milder. Phrased in ctx.lang, like the finding that quotes them. */
 export function newIssues(before: RawClient, after: RawClient, ctx: CheckContext): Finding[] {
   const was = new Map(RECHECKS.flatMap((c) => c(before, ctx)).map((f) => [f.id, f]))
   return RECHECKS.flatMap((c) => c(after, ctx)).filter((f) => bad(f) && (!was.has(f.id) || rank[f.severity] < rank[was.get(f.id)!.severity]))
@@ -142,12 +143,12 @@ export function smallestFix(raw: RawClient, ctx: CheckContext, wish: ExclusionWi
     holding, before: breachOf(m, wish), after: Math.max(0, after),
     fix: {
       PortfolioId: holding.portfolioId,
-      Reason: `${holding.name} verkaufen`,
+      Reason: ctx.lang === 'en' ? `Sell ${holding.name}` : `${holding.name} verkaufen`,
       SecurityPositions: [{ SecurityId: holding.securityId, Isin: holding.isin, SecurityName: holding.name, ProposalValuePercentage: 0, TotalAmountInProposalCurrency: holding.value }],
     },
     newIssues: newIssues(raw, copy, ctx),
   }
 }
 
-/** "Verkauf SPDR MSCI World Energy UCITS ETF über CHF 12'345" — the sale as the briefing quotes it. */
-export const saleText = (h: Holding) => `Verkauf ${h.name} über ${chf(h.value, h.currency)}`
+/** "Verkauf SPDR MSCI World Energy UCITS ETF über CHF 12'345" / "Sale of … for CHF 12'345" — the sale as the briefing quotes it. */
+export const saleText = (h: Holding, lang?: Lang) => (lang === 'en' ? `Sale of ${h.name} for ${chf(h.value, h.currency)}` : `Verkauf ${h.name} über ${chf(h.value, h.currency)}`)

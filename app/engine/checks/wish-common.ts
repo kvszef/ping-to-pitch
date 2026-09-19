@@ -1,6 +1,7 @@
 // Shared helpers for the wish checks (E2): note evidence, unique ids, client-wide holdings and the ESG floor.
 import { exposure, type Client, type Dimension, type ReferenceIndex, type Security } from '../data.ts'
 import { fundName } from '../fix.ts'
+import { sourceName, type Lang } from '../lang.ts'
 import type { Evidence } from '../types.ts'
 import type { ClientWish } from '../wishes.ts'
 
@@ -11,8 +12,10 @@ export const ESG_FLOOR = 5.714
 /** ESG scores carry up to five decimals in the data; one is enough to read. */
 export const score = (v: number | undefined) => (v === undefined ? '–' : String(Math.round(v * 10) / 10))
 
-export const noteEvidence = (w: Pick<ClientWish, 'note'>): Evidence => ({ source: 'Kundennotiz', quote: w.note.text, date: w.note.date })
-export const aiHint = (w: Pick<ClientWish, 'by'>) => (w.by === 'ai' ? ' Wunsch von der KI aus der Notiz gelesen, bitte bestätigen.' : '')
+// The note is quoted as written; only the source name follows the language. Pass lang explicitly (never as a bare .map callback).
+export const noteEvidence = (w: Pick<ClientWish, 'note'>, lang?: Lang): Evidence => ({ source: sourceName('note', lang), quote: w.note.text, date: w.note.date })
+export const aiHint = (w: Pick<ClientWish, 'by'>, lang?: Lang) =>
+  w.by !== 'ai' ? '' : lang === 'en' ? ' Wish read from the note by the AI, please confirm.' : ' Wunsch von der KI aus der Notiz gelesen, bitte bestätigen.'
 export const subjectOf = (w: Pick<ClientWish, 'note'>) => w.note.date ?? 'ohne-datum'
 
 /** Several wishes can share a note date: the second id gets a suffix, so ids stay unique and stable. */

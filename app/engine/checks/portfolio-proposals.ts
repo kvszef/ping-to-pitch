@@ -1,8 +1,9 @@
 // portfolio.proposals — open drafts, drafts that repeat a rejected idea, the rejected history and the acceptance ratio.
 import type { Proposal } from '../data.ts'
 import { dateCh, pct, shortName } from '../format.ts'
+import { pick, prefix, rejectedTitle, type Lang } from '../lang.ts'
 import type { Check, Finding } from '../types.ts'
-import { clientOf, findingId, SRC } from './common.ts'
+import { clientOf, findingId, srcOf } from './common.ts'
 
 const CHECK = 'portfolio.proposals'
 const TOPIC = 'proposals'
@@ -19,6 +20,7 @@ const RECENT_REJECTED = 3
 const MIN_DECIDED = 3
 
 // Reason texts in clients.json are English and a finite set (15 values): translated here, unknown ones pass through.
+// The English run shows the data's own text.
 const REASON_DE: Record<string, string> = {
   'Annual review meeting': 'Jahresgespräch', 'Change of investment strategy': 'Wechsel der Anlagestrategie', 'Change of risk tolerance': 'Geänderte Risikobereitschaft',
   'Client called': 'Anruf des Kunden', 'Client relocation': 'Umzug des Kunden', 'Estate planning discussion': 'Nachlassplanung',
@@ -27,9 +29,9 @@ const REASON_DE: Record<string, string> = {
   'Portfolio rebalancing': 'Rebalancing des Portfolios', 'Risk profile update': 'Aktualisierung des Risikoprofils', 'Tax year-end rebalancing': 'Steueroptimierung zum Jahresende',
   'Withdrawal request': 'Auszahlungswunsch',
 }
-const reasonDe = (p: Proposal) => (p.reason ? REASON_DE[p.reason] ?? p.reason : 'ohne Anlass')
+const reasonDe = (p: Proposal, lang?: Lang) => (lang === 'en' ? p.reason ?? 'no reason given' : p.reason ? REASON_DE[p.reason] ?? p.reason : 'ohne Anlass')
 const dateOf = (p: Proposal) => p.proposed ?? p.finalized ?? p.submitted
-const vom = (p: Proposal) => (dateOf(p) ? ` vom ${dateCh(dateOf(p))}` : '')
+const vom = (p: Proposal, lang?: Lang) => (dateOf(p) ? ` ${lang === 'en' ? 'of' : 'vom'} ${dateCh(dateOf(p), lang)}` : '')
 const keyOf = (s: Proposal['securities'][number]) => s.isin ?? s.name
 const subject = (p: Proposal, i: number) => (p.id !== undefined ? String(p.id) : `idx${i}`)
 
@@ -38,6 +40,9 @@ const topSecurities = (p: Proposal) =>
 
 export const proposals: Check = (raw, ctx) => {
   const client = clientOf(raw, ctx.ref)
+  const t = pick(ctx.lang)
+  const SRC = srcOf(ctx.lang)
+  const reason = (p: Proposal) => reasonDe(p, ctx.lang)
   const all = client.proposals
   const out: Finding[] = []
   const base = (subj: string) => ({ id: findingId(CHECK, client.ref, subj), check: CHECK, topic: TOPIC })
@@ -52,7 +57,7 @@ export const proposals: Check = (raw, ctx) => {
     const tops = topSecurities(p)
     out.push({
       ...base(`draft:${subject(p, i)}`), kind: 'action', severity: 'warn',
-      title: `Offener Entwurf: «${reasonDe(p)}»${vom(p)}${tops ? ` mit ${tops}` : ''}`,
+      title: `${prefix('draft', ctx.lang)}«${reason(p)}»${vom(p, ctx.lang)}${tops ? ` ${t('mit', 'with')} ${tops}` : ''}`,
       numbers: { positions: p.securities.length },
       evidence: [ev(p)],
     })
@@ -68,8 +73,14 @@ export const proposals: Check = (raw, ctx) => {
     if (best) {
       out.push({
         ...base(`repeat:${subject(p, i)}`), kind: 'interpretation', severity: 'info',
-        title: `Entwurf ähnelt abgelehntem Vorschlag${vom(best.r)} («${reasonDe(best.r)}»): ${pct(best.overlap, 0)} gleiche Titel`,
-        detail: `Der Kunde hat einen Vorschlag mit weitgehend denselben Titeln abgelehnt. Vorschläge enthalten das ganze Zielportfolio, ein Teil der Übereinstimmung sind also bestehende Positionen. Vor dem Gespräch prüfen, was sich seither geändert hat.`,
+        title: t(
+          `Entwurf ähnelt abgelehntem Vorschlag${vom(best.r)} («${reasonDe(best.r)}»): ${pct(best.overlap, 0)} gleiche Titel`,
+          `Draft resembles the rejected proposal${vom(best.r, 'en')} («${reason(best.r)}»): ${pct(best.overlap, 0)} of its securities are the same`,
+        ),
+        detail: t(
+          `Der Kunde hat einen Vorschlag mit weitgehend denselben Titeln abgelehnt. Vorschläge enthalten das ganze Zielportfolio, ein Teil der Übereinstimmung sind also bestehende Positionen. Vor dem Gespräch prüfen, was sich seither geändert hat.`,
+          `The client rejected a proposal with largely the same securities. Proposals list the whole target portfolio, so part of the overlap is existing positions. Before the call, check what has changed since.`,
+        ),
         numbers: { overlap: best.overlap, positions: p.securities.length },
         evidence: [ev(p), ev(best.r)],
       })
@@ -80,8 +91,14 @@ export const proposals: Check = (raw, ctx) => {
     const recent = rejectedByDate.slice(0, RECENT_REJECTED)
     out.push({
       ...base('rejected-summary'), kind: 'fact', severity: 'info',
-      title: `${rejected.length} ${rejected.length === 1 ? 'Vorschlag' : 'Vorschläge'} abgelehnt, zuletzt${vom(recent[0]) || ' ohne Datum'}: «${reasonDe(recent[0])}»`,
-      detail: recent.map((p) => `${dateOf(p) ? dateCh(dateOf(p)) : 'ohne Datum'}: «${reasonDe(p)}» mit ${topSecurities(p) || 'keinen Titeln'}`).join('; '),
+      title: t(
+        `${rejected.length} ${rejected.length === 1 ? 'Vorschlag' : 'Vorschläge'} abgelehnt, zuletzt${vom(recent[0]) || ' ohne Datum'}: «${reasonDe(recent[0])}»`,
+        `${rejected.length} ${rejected.length === 1 ? 'proposal' : 'proposals'} rejected, the latest${vom(recent[0], 'en') || ' undated'}: «${reason(recent[0])}»`,
+      ),
+      detail: recent.map((p) => t(
+        `${dateOf(p) ? dateCh(dateOf(p)) : 'ohne Datum'}: «${reasonDe(p)}» mit ${topSecurities(p) || 'keinen Titeln'}`,
+        `${dateOf(p) ? dateCh(dateOf(p), 'en') : 'undated'}: «${reason(p)}» with ${topSecurities(p) || 'no securities'}`,
+      )).join('; '),
       numbers: { rejected: rejected.length },
       evidence: recent.map(ev),
     })
@@ -89,7 +106,7 @@ export const proposals: Check = (raw, ctx) => {
       if (p.status !== REJECTED) return
       out.push({
         ...base(`rejected:${subject(p, i)}`), kind: 'fact', severity: 'info',
-        title: `Abgelehnt${vom(p)}: «${reasonDe(p)}»`,
+        title: rejectedTitle(dateOf(p) ? dateCh(dateOf(p), ctx.lang) : undefined, reason(p), ctx.lang),
         detail: topSecurities(p) || undefined,
         numbers: { positions: p.securities.length },
         evidence: [ev(p)],
@@ -102,7 +119,7 @@ export const proposals: Check = (raw, ctx) => {
   if (decided >= MIN_DECIDED) {
     out.push({
       ...base('acceptance'), kind: 'fact', severity: 'info',
-      title: `${accepted} von ${all.length} Vorschlägen angenommen, ${rejected.length} abgelehnt`,
+      title: t(`${accepted} von ${all.length} Vorschlägen angenommen, ${rejected.length} abgelehnt`, `${accepted} of ${all.length} proposals accepted, ${rejected.length} rejected`),
       numbers: { accepted, rejected: rejected.length, total: all.length, acceptanceRate: accepted / decided },
       evidence: all.filter((p) => p.status === ACCEPTED || p.status === REJECTED).slice(0, 5).map(ev),
     })

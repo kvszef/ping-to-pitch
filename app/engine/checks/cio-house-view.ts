@@ -12,13 +12,17 @@
 // - a named product comes from the bank's recommendation list, meets the ESG floor if the client has an ESG
 //   profile, and is not already held.
 // Without ctx.houseView the check says nothing. The model never sees a task here: numbers and wording are fixed.
+//
+// Language: the wording follows ctx.lang. The example view exists in both languages (houseViewIn), so an English
+// run has no German even when the caller passes the German example; a bank's own view keeps its own words.
 import type { Dimension } from '../data.ts'
-import { ratingDe, type Stance } from '../houseview.ts'
-import { categoryDe, chf, dateCh, pct, pts, shortName } from '../format.ts'
+import { houseViewIn, ratingName, type Stance } from '../houseview.ts'
+import { categoryName, chf, dateCh, pct, pts, shortName } from '../format.ts'
+import { pick, prefix, sourceName } from '../lang.ts'
 import { rebalance, type Rebalance } from '../rebalance.ts'
 import { wishesOf } from '../wishes.ts'
 import type { Check, Evidence, Finding } from '../types.ts'
-import { clientOf, findingId, SRC } from './common.ts'
+import { clientOf, findingId, srcOf } from './common.ts'
 import { clientExposure, esgFloor, hasEsgProfile, heldSecurities } from './wish-common.ts'
 
 const CHECK = 'cio.house-view'
@@ -37,11 +41,20 @@ const productName = (name: string) => shortName(name
   .replace(/\s*\(R\)/g, '')
   .trim())
 
+// Detail contract with readers (call plan, house-view card): 'reason. Vorschlag: step. Danach: effects. Gemessen mit …',
+// in English 'reason. Proposal: step. After that: effects. Measured with …'. Both are read with these two.
+// The effects hold decimal points ('20.5% → 30.4%'), so they end at the full stop before the next sentence.
+const STEP = /(?:Vorschlag|Proposal): (.+?)\. (?:Danach|After that): (.+?)\.(?= (?:Neu zu beachten|New to watch|Gemessen mit|Measured with)|$)/
+export const stepOf = (detail: string | undefined) => { const m = STEP.exec(detail ?? ''); return m ? { step: m[1], after: m[2] } : undefined }
+export const reasonOf = (detail: string | undefined) => (detail ?? '').split(/ (?=Vorschlag: |Proposal: |Aufstocken |Topping up |Gemessen mit |Measured with )/)[0]
+
 type Hit = { stance: Stance; actual: number; target?: number; gap: number; kind: 'chance' | 'abweichung'; product?: { id: number; name: string }; trade?: Rebalance }
 
 export const houseView: Check = (raw, ctx) => {
-  const view = ctx.houseView
-  if (!view) return []
+  if (!ctx.houseView) return []
+  const lang = ctx.lang, t = pick(lang), SRC = srcOf(lang)
+  const view = houseViewIn(ctx.houseView, lang)
+  const cashLabel = t('Liquidität CHF', 'Liquidity CHF')
   const client = clientOf(raw, ctx.ref)
   if (!client.portfolios.some((p) => p.positions.length)) return []
 
@@ -98,26 +111,34 @@ export const houseView: Check = (raw, ctx) => {
     const s = h.stance
     const source = deviation && !(deviation.stance.dimension === 'AssetClass' && deviation.stance.category === 'Liquidity')
       ? { kind: 'position' as const, dimension: deviation.stance.dimension as Dimension, category: deviation.stance.category, label: deviation.stance.label }
-      : { kind: 'cash' as const, label: 'Liquidität CHF' }
+      : { kind: 'cash' as const, label: cashLabel }
     h.trade = rebalance(raw, ctx, { dimension: s.dimension as Dimension, category: s.category, label: s.label, target: h.target! }, h.product!, source)
-      ?? (source.kind === 'position' ? rebalance(raw, ctx, { dimension: s.dimension as Dimension, category: s.category, label: s.label, target: h.target! }, h.product!, { kind: 'cash', label: 'Liquidität CHF' }) : undefined)
+      ?? (source.kind === 'position' ? rebalance(raw, ctx, { dimension: s.dimension as Dimension, category: s.category, label: s.label, target: h.target! }, h.product!, { kind: 'cash', label: cashLabel }) : undefined)
   }
   // Recent changes of the view first, then opportunities with a ready step, then the largest gaps.
   const weightOf = (h: Hit) => (h.stance.changed ? 2 : 0) + (h.trade ? 1 : 0)
-  const changedNote = (s: Stance) => (s.changed && s.previous !== undefined ? `Neu seit ${dateCh(s.changed)} (vorher ${ratingDe(s.previous)}): ` : '')
+  const rating = (s: Stance['rating']) => ratingName(s, lang)
+  const changedNote = (s: Stance) => (s.changed && s.previous !== undefined
+    ? t(`Neu seit ${dateCh(s.changed)} (vorher ${rating(s.previous)}): `, `New since ${dateCh(s.changed, lang)} (previously ${rating(s.previous)}): `) : '')
   // "Verkauf Alphabet CHF 4'000, Kauf PIMCO … CHF 4'000"; from cash: "aus der Liquidität CHF 618'000 in …".
-  const legText = (t: Rebalance) => {
-    const [sell, buy] = t.legs
-    return sell.name === 'Liquidität CHF' ? `aus der Liquidität ${chf(buy.amount)} in ${productName(buy.name)} investieren` : `Verkauf ${productName(sell.name)} ${chf(sell.amount)}, Kauf ${productName(buy.name)} ${chf(buy.amount)}`
+  // English: "sell Alphabet CHF 4'000, buy PIMCO … CHF 4'000"; "invest CHF 618'000 of the liquidity in …".
+  const legText = (r: Rebalance) => {
+    const [sell, buy] = r.legs
+    return sell.name === cashLabel
+      ? t(`aus der Liquidität ${chf(buy.amount)} in ${productName(buy.name)} investieren`, `invest ${chf(buy.amount)} of the liquidity in ${productName(buy.name)}`)
+      : t(`Verkauf ${productName(sell.name)} ${chf(sell.amount)}, Kauf ${productName(buy.name)} ${chf(buy.amount)}`, `sell ${productName(sell.name)} ${chf(sell.amount)}, buy ${productName(buy.name)} ${chf(buy.amount)}`)
   }
-  const effectText = (t: Rebalance) => t.effects.map((e) => `${e.label} ${e.unit === '%' ? `${pct(e.before)} → ${pct(e.after)}` : `${e.before} → ${e.after}`}`).join(', ')
+  const effectText = (r: Rebalance) => r.effects.map((e) => `${e.label} ${e.unit === '%' ? `${pct(e.before)} → ${pct(e.after)}` : `${e.before} → ${e.after}`}`).join(', ')
 
   const id = (subject: string) => findingId(CHECK, client.ref, subject)
-  const viewEvidence: Evidence = { source: view.example ? 'Hausmeinung (Beispiel)' : 'Hausmeinung', quote: view.title, date: view.date }
-  const within = (s: Stance) => (s.dimension === 'CountryGroup' || s.dimension === 'Industry' ? ' des Aktienteils' : '')
+  const viewEvidence: Evidence = { source: view.example ? sourceName('houseView', lang) : t('Hausmeinung', 'House view'), quote: view.title, date: view.date }
+  const within = (s: Stance) => (s.dimension === 'CountryGroup' || s.dimension === 'Industry' ? t(' des Aktienteils', ' of the equity part') : '')
   const out: Finding[] = [{
     id: id('summary'), check: CHECK, kind: 'fact', severity: 'info', topic: 'house-view',
-    title: `Hausmeinung vom ${dateCh(view.date)}: Portfolio in ${inLine} von ${measured} Punkten auf Linie`,
+    title: t(
+      `Hausmeinung vom ${dateCh(view.date)}: Portfolio in ${inLine} von ${measured} Punkten auf Linie`,
+      `House view of ${dateCh(view.date, lang)}: portfolio in line on ${inLine} of ${measured} points`,
+    ),
     detail: view.summary,
     numbers: { measured, inLine, chances: hits.filter((h) => h.kind === 'chance').length, deviations: hits.filter((h) => h.kind === 'abweichung').length },
     evidence: [viewEvidence],
@@ -125,20 +146,27 @@ export const houseView: Check = (raw, ctx) => {
 
   for (const h of hits.sort((a, b) => weightOf(b) - weightOf(a) || Math.abs(b.gap) - Math.abs(a.gap)).slice(0, MAX_FINDINGS)) {
     const s = h.stance
-    const where = h.target !== undefined ? `${pct(h.actual)}${within(s)} statt Ziel ${pct(h.target)} (${pts(h.gap)})` : `${pct(h.actual)}${within(s)}`
+    const where = h.target !== undefined ? `${pct(h.actual)}${within(s)} ${t('statt Ziel', 'instead of target')} ${pct(h.target)} (${pts(h.gap, lang)})` : `${pct(h.actual)}${within(s)}`
+    const stance = `${t('Hausmeinung', 'House view')} ${s.label} ${rating(s.rating)}`
     out.push({
       id: id(`${s.dimension}:${s.category}`), check: CHECK,
       kind: h.kind === 'chance' ? 'action' : 'interpretation',
       severity: h.kind === 'chance' ? 'ok' : 'warn', topic: 'house-view',
       title: h.kind === 'chance'
-        ? `${changedNote(s) || 'Chance: '}Hausmeinung ${s.label} ${ratingDe(s.rating)}, Portfolio ${where}`
-        : `${changedNote(s)}Hausmeinung ${s.label} ${ratingDe(s.rating)}${s.action ? ` (${s.action})` : ''}, Portfolio ${where}`,
+        ? `${changedNote(s) || prefix('opportunity', lang)}${stance}, ${t('Portfolio', 'portfolio')} ${where}`
+        : `${changedNote(s)}${stance}${s.action ? ` (${s.action})` : ''}, ${t('Portfolio', 'portfolio')} ${where}`,
       detail: [
         s.why,
         h.trade
-          ? `Vorschlag: ${legText(h.trade)}. Danach: ${effectText(h.trade)}.${h.trade.newIssues.length ? ` Neu zu beachten: ${h.trade.newIssues.map((f) => f.title).join('; ')}.` : ''}`
-          : h.kind === 'chance' ? `Aufstocken Richtung Ziel bleibt im Mandatsband${h.product ? `; aus der Empfehlungsliste: ${h.product.name}` : ''}.` : '',
-        `Gemessen mit Durchsicht in Fonds, Kategorie ${categoryDe(s.category)}.`,
+          ? t(
+            `Vorschlag: ${legText(h.trade)}. Danach: ${effectText(h.trade)}.${h.trade.newIssues.length ? ` Neu zu beachten: ${h.trade.newIssues.map((f) => f.title).join('; ')}.` : ''}`,
+            `Proposal: ${legText(h.trade)}. After that: ${effectText(h.trade)}.${h.trade.newIssues.length ? ` New to watch: ${h.trade.newIssues.map((f) => f.title).join('; ')}.` : ''}`,
+          )
+          : h.kind === 'chance' ? t(
+            `Aufstocken Richtung Ziel bleibt im Mandatsband${h.product ? `; aus der Empfehlungsliste: ${h.product.name}` : ''}.`,
+            `Topping up towards the target stays within the mandate band${h.product ? `; from the recommendation list: ${h.product.name}` : ''}.`,
+          ) : '',
+        t(`Gemessen mit Durchsicht in Fonds, Kategorie ${categoryName(s.category, lang)}.`, `Measured with fund look-through, category ${categoryName(s.category, lang)}.`),
       ].filter(Boolean).join(' '),
       numbers: {
         actual: h.actual, ...(h.target !== undefined ? { target: h.target } : {}), gap: h.gap, rating: s.rating, changed: s.changed ? 1 : 0,

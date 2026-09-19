@@ -38,4 +38,15 @@ describe('portfolio.allocation', () => {
     expect(telecom.severity).toBe('risk')
     expect(telecom.title).toContain('Kommunikation')
   })
+
+  it('phrases the findings in English with the same numbers (CASE-012, CASE-037)', () => {
+    const en = { ...ctx, lang: 'en' as const }
+    const usd = allocation(client('CASE-012'), en).find((f) => f.id.endsWith(':CurrencyGroup:US-Dollar'))!
+    expect(usd.title).toMatch(/^CASE-012-01: USD share 75\.\d%, the bank's limit is 35\.5% \(\+\d+\.\d pp\)$/)
+    expect(usd.numbers).toEqual(find('CASE-012', 'CASE-012-01:CurrencyGroup:US-Dollar')!.numbers)
+    expect(usd.evidence[0].source).toBe('Suitability rule')
+    const f = allocation(client('CASE-037'), en)
+    expect(f.find((x) => x.id.endsWith('CASE-037-01:no-target'))!.title).toBe('CASE-037-01: no target allocation on file, deviations are not checked')
+    expect(f.find((x) => x.id.endsWith('CASE-037-02:CountryGroup:North America'))!.title).toContain('underweight in the equity region North America')
+  })
 })

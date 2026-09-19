@@ -2,8 +2,9 @@
 // Only Security.maturity counts: security names carry old, unshifted dates.
 import { daysBetween, type Position } from '../data.ts'
 import { chf, dateCh, pct, shortName } from '../format.ts'
+import { pick } from '../lang.ts'
 import type { Check, Finding } from '../types.ts'
-import { clientOf, findingId, SRC } from './common.ts'
+import { clientOf, findingId, srcOf } from './common.ts'
 
 const CHECK = 'portfolio.maturities'
 const TOPIC = 'maturities'
@@ -19,6 +20,8 @@ const dayOf = (iso: string) => iso.slice(0, 10)
 
 export const maturities: Check = (raw, ctx) => {
   const client = clientOf(raw, ctx.ref)
+  const t = pick(ctx.lang)
+  const SRC = srcOf(ctx.lang)
   const out: Finding[] = []
   for (const p of client.portfolios) {
     const soon: { pos: Position; date: string; days: number }[] = []
@@ -34,8 +37,14 @@ export const maturities: Check = (raw, ctx) => {
         out.push({
           id: findingId(CHECK, client.ref, `matured:${p.nr}:${pos.securityId ?? pos.isin ?? pos.name}`),
           check: CHECK, kind: 'fact', severity: 'warn', topic: TOPIC,
-          title: `Obligation ${bondName(pos.name)} ist am ${dateCh(date)} fällig geworden, wird aber noch gehalten: prüfen`,
-          detail: 'Die Daten können hinterherhinken. Vor dem Gespräch prüfen, ob die Rückzahlung schon verbucht ist.',
+          title: t(
+            `Obligation ${bondName(pos.name)} ist am ${dateCh(date)} fällig geworden, wird aber noch gehalten: prüfen`,
+            `Bond ${bondName(pos.name)} matured on ${dateCh(date, 'en')} but is still held: check`,
+          ),
+          detail: t(
+            'Die Daten können hinterherhinken. Vor dem Gespräch prüfen, ob die Rückzahlung schon verbucht ist.',
+            'The data may lag behind. Before the call, check whether the repayment has already been booked.',
+          ),
           numbers: { amount: pos.amount, daysPast: -days },
           evidence: [SRC.position(pos.name, p.nr), SRC.security(pos.name)],
         })
@@ -51,15 +60,21 @@ export const maturities: Check = (raw, ctx) => {
     out.push({
       id: findingId(CHECK, client.ref, `soon:${p.nr}`),
       check: CHECK, kind: 'fact', severity: 'info', topic: TOPIC,
-      title: `${p.nr}: ${soon.length} ${soon.length === 1 ? 'Obligation wird' : 'Obligationen werden'} bis ${dateCh(last)} fällig, zusammen ${chf(amount, p.currency ?? client.currency)}`,
-      detail: soon.map((s) => `${bondName(s.pos.name)}: ${dateCh(s.date)}, ${chf(s.pos.amount, p.currency ?? client.currency)}`).join('; '),
+      title: t(
+        `${p.nr}: ${soon.length} ${soon.length === 1 ? 'Obligation wird' : 'Obligationen werden'} bis ${dateCh(last)} fällig, zusammen ${chf(amount, p.currency ?? client.currency)}`,
+        `${p.nr}: ${soon.length} ${soon.length === 1 ? 'bond matures' : 'bonds mature'} by ${dateCh(last, 'en')}, together ${chf(amount, p.currency ?? client.currency)}`,
+      ),
+      detail: soon.map((s) => `${bondName(s.pos.name)}: ${dateCh(s.date, ctx.lang)}, ${chf(s.pos.amount, p.currency ?? client.currency)}`).join('; '),
       numbers: { count: soon.length, amount, share },
       evidence,
     })
     out.push({
       id: findingId(CHECK, client.ref, `reinvest:${p.nr}`),
       check: CHECK, kind: 'action', severity: 'info', topic: TOPIC,
-      title: `${p.nr}: Wiederanlage von ${chf(amount, p.currency ?? client.currency)} (${pct(share)} des Portfolios) bis ${dateCh(last)} besprechen`,
+      title: t(
+        `${p.nr}: Wiederanlage von ${chf(amount, p.currency ?? client.currency)} (${pct(share)} des Portfolios) bis ${dateCh(last)} besprechen`,
+        `${p.nr}: discuss reinvesting ${chf(amount, p.currency ?? client.currency)} (${pct(share)} of the portfolio) by ${dateCh(last, 'en')}`,
+      ),
       numbers: { amount, share },
       evidence,
     })

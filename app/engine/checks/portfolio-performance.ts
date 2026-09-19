@@ -3,13 +3,15 @@
 // The month values are not adjusted for deposits or withdrawals (CASE-037 got a CHF 1M deposit), and every finding says so.
 import { combinedHistory, type NavPoint } from '../data.ts'
 import { monthCh, signedPct } from '../format.ts'
+import { pick, type Lang } from '../lang.ts'
 import type { Check, Finding } from '../types.ts'
-import { SRC, clientOf, findingId } from './common.ts'
+import { clientOf, findingId, srcOf } from './common.ts'
 
 const CHECK = 'portfolio.performance'
 // A monthly drop of 3% or more is the kind of move a client notices on a statement and asks about. Our judgement, not a bank rule.
 const LIKELY_QUESTION_DROP = -0.03
 const NOT_ADJUSTED = 'Aus Monatswerten, nicht um Ein- und Auszahlungen bereinigt.'
+const NOT_ADJUSTED_EN = 'From monthly values, not adjusted for deposits and withdrawals.'
 
 // yyyy-MM-01 of the month `k` months before `iso`.
 const monthsBack = (iso: string, k: number) => {
@@ -58,18 +60,26 @@ export function performanceStats(history: NavPoint[]): PerformanceStats | undefi
   return stats
 }
 
-function finding(clientRef: string, subject: string, label: string, stats: PerformanceStats, evidenceRef: string): Finding {
+function finding(clientRef: string, subject: string, label: string, stats: PerformanceStats, evidenceRef: string, lang?: Lang): Finding {
+  const t = pick(lang)
+  const month = (iso: string) => monthCh(iso, lang)
   const parts: string[] = []
-  if (stats.lastMonth !== undefined) parts.push(`${signedPct(stats.lastMonth)} im letzten Monat`)
-  if (stats.twelveMonths !== undefined) parts.push(`${signedPct(stats.twelveMonths)} über 12 Monate`)
-  if (!parts.length && stats.threeMonths !== undefined) parts.push(`${signedPct(stats.threeMonths)} über 3 Monate`)
+  if (stats.lastMonth !== undefined) parts.push(`${signedPct(stats.lastMonth)} ${t('im letzten Monat', 'last month')}`)
+  if (stats.twelveMonths !== undefined) parts.push(`${signedPct(stats.twelveMonths)} ${t('über 12 Monate', 'over 12 months')}`)
+  if (!parts.length && stats.threeMonths !== undefined) parts.push(`${signedPct(stats.threeMonths)} ${t('über 3 Monate', 'over 3 months')}`)
 
-  const detail: string[] = [`Stand: ${monthCh(stats.asOf)}.`]
-  if (stats.threeMonths !== undefined) detail.push(`3 Monate: ${signedPct(stats.threeMonths)}.`)
-  if (stats.ytd !== undefined) detail.push(`Seit Jahresbeginn: ${signedPct(stats.ytd)}.`)
-  if (stats.worstMonth) detail.push(`Schwächster Monat der letzten 12: ${monthCh(stats.worstMonth.date)} mit ${signedPct(stats.worstMonth.value)}.`)
-  if (stats.maxDrawdown) detail.push(`Grösster Rückgang (Höchst- bis Tiefstwert): ${signedPct(stats.maxDrawdown.value)}, ${monthCh(stats.maxDrawdown.peak)} bis ${monthCh(stats.maxDrawdown.trough)}.`)
-  detail.push(NOT_ADJUSTED)
+  const detail: string[] = [`${t('Stand', 'As of')}: ${month(stats.asOf)}.`]
+  if (stats.threeMonths !== undefined) detail.push(`${t('3 Monate', '3 months')}: ${signedPct(stats.threeMonths)}.`)
+  if (stats.ytd !== undefined) detail.push(`${t('Seit Jahresbeginn', 'Year to date')}: ${signedPct(stats.ytd)}.`)
+  if (stats.worstMonth) detail.push(t(
+    `Schwächster Monat der letzten 12: ${month(stats.worstMonth.date)} mit ${signedPct(stats.worstMonth.value)}.`,
+    `Weakest month of the last 12: ${month(stats.worstMonth.date)} with ${signedPct(stats.worstMonth.value)}.`,
+  ))
+  if (stats.maxDrawdown) detail.push(t(
+    `Grösster Rückgang (Höchst- bis Tiefstwert): ${signedPct(stats.maxDrawdown.value)}, ${month(stats.maxDrawdown.peak)} bis ${month(stats.maxDrawdown.trough)}.`,
+    `Largest drop (peak to trough): ${signedPct(stats.maxDrawdown.value)}, ${month(stats.maxDrawdown.peak)} to ${month(stats.maxDrawdown.trough)}.`,
+  ))
+  detail.push(t(NOT_ADJUSTED, NOT_ADJUSTED_EN))
 
   const numbers: Record<string, number> = { value: stats.value }
   if (stats.lastMonth !== undefined) numbers.lastMonth = stats.lastMonth
@@ -82,9 +92,9 @@ function finding(clientRef: string, subject: string, label: string, stats: Perfo
   return {
     id: findingId(CHECK, clientRef, subject), check: CHECK, kind: 'fact', topic: 'performance',
     severity: stats.lastMonth !== undefined && stats.lastMonth <= LIKELY_QUESTION_DROP ? 'warn' : 'info',
-    title: `${label}: ${parts.join(', ') || `Wert per ${monthCh(stats.asOf)}`}`,
+    title: `${label}: ${parts.join(', ') || `${t('Wert per', 'Value as of')} ${month(stats.asOf)}`}`,
     detail: detail.join(' '), numbers,
-    evidence: [SRC.history(evidenceRef, stats.asOf)],
+    evidence: [srcOf(lang).history(evidenceRef, stats.asOf)],
   }
 }
 
@@ -93,11 +103,11 @@ export const performance: Check = (raw, ctx) => {
   const out: Finding[] = []
   for (const p of client.portfolios) {
     const stats = performanceStats(p.history)
-    if (stats) out.push(finding(client.ref, p.nr, p.nr, stats, p.nr))
+    if (stats) out.push(finding(client.ref, p.nr, p.nr, stats, p.nr, ctx.lang))
   }
   if (client.portfolios.length > 1) {
     const stats = performanceStats(combinedHistory(client.portfolios))
-    if (stats) out.push(finding(client.ref, 'total', 'Gesamtvermögen', stats, client.portfolios.map((p) => p.nr).join(', ')))
+    if (stats) out.push(finding(client.ref, 'total', pick(ctx.lang)('Gesamtvermögen', 'Total wealth'), stats, client.portfolios.map((p) => p.nr).join(', '), ctx.lang))
   }
   return out
 }

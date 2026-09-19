@@ -28,4 +28,14 @@ describe('portfolio.maturities', () => {
   it('gives nothing for a client without bonds', () => {
     expect(maturities(client('CASE-001'), ctx)).toEqual([])
   })
+
+  it('phrases the findings in English with the same numbers (CASE-037)', () => {
+    const en = { ...ctx, lang: 'en' as const }
+    const f = maturities(client('CASE-037'), en)
+    expect(f.map((x) => x.numbers)).toEqual(maturities(client('CASE-037'), ctx).map((x) => x.numbers))
+    expect(f.find((x) => x.id.includes(':soon:'))!.title).toBe("CASE-037-02: 5 bonds mature by 04.02.2027, together CHF 112'065")
+    expect(f.find((x) => x.id.includes(':reinvest:'))!.title).toBe("CASE-037-02: discuss reinvesting CHF 112'065 (11.2% of the portfolio) by 04.02.2027")
+    const past = maturities(client('CASE-037'), { ...en, now: new Date('2026-10-20T08:00:00Z') }).find((x) => x.id.includes(':matured:'))!
+    expect(past.title).toBe('Bond 0.1525 % Cembra Money Bank AG matured on 14.10.2026 but is still held: check')
+  })
 })

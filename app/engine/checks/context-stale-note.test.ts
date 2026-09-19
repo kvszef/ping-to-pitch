@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { hasPrefix, isSource } from '../lang.ts'
 import { client, ctx } from '../test-data.ts'
 import { staleNote } from './context-stale-note.ts'
 
@@ -18,5 +19,15 @@ describe('context.stale-note', () => {
     expect(staleNote(client('CASE-022'), ctx)[0].title).toMatch(/^Veraltet: Erbe – seit 21 Monaten offen/)
     expect(staleNote(client('CASE-004'), ctx)).toEqual([])
     expect(staleNote({ ClientNotes: [{ Note: 'Plans to retire in the next two years.' }] }, ctx)).toEqual([])
+  })
+
+  it('phrases the same finding in English, keeping the title contract (ctx.lang)', () => {
+    const [f] = staleNote(client('CASE-007'), { ...ctx, lang: 'en' })
+    expect(f.id).toBe('context.stale-note:CASE-007:2024-10-10:immobilienkauf')
+    expect(f.title).toBe('Outdated: Property purchase – time window ended on 10.10.2025 (note of 10.10.2024)')
+    expect(hasPrefix(f.title, 'outdated')).toBe(true)
+    expect(f.detail).toMatch(/property purchase.*\?$/)
+    expect(isSource(f.evidence[0].source, 'note')).toBe(true)
+    expect(staleNote(client('CASE-022'), { ...ctx, lang: 'en' })[0].title).toMatch(/^Outdated: Inheritance – open for 21 months, no deadline/)
   })
 })

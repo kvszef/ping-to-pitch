@@ -13,8 +13,11 @@ import { allocation } from './checks/portfolio-allocation.ts'
 import { concentration } from './checks/portfolio-concentration.ts'
 import { risk } from './checks/portfolio-risk.ts'
 import { newIssues } from './fix.ts'
+import { pick } from './lang.ts'
 import type { CheckContext, DraftProposal, Finding, RawClient } from './types.ts'
 
+// side and unit are values other code compares, so they stay as they are in every language; a screen shows its own
+// word for them. Free text (effect labels, fix.Reason) follows ctx.lang.
 export type Leg = { side: 'Verkauf' | 'Kauf'; name: string; amount: number }
 export type Effect = { label: string; before: number; after: number; unit: '%' | 'Anzahl'; good: boolean }
 export type Rebalance = { legs: Leg[]; effects: Effect[]; newIssues: Finding[]; fix: DraftProposal }
@@ -31,6 +34,7 @@ const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0
 
 export function rebalance(raw: RawClient, ctx: CheckContext, buy: Target, product: { id: number; name: string }, source: Source): Rebalance | undefined {
   const client = readClient(raw, ctx.ref)
+  const t = pick(ctx.lang)
   const main = [...client.portfolios].filter((p) => p.positions.length).sort((a, b) => b.value - a.value)[0]
   const sec = ctx.ref.security(product.id)
   if (!main || main.value <= 0 || !sec) return undefined
@@ -94,7 +98,7 @@ export function rebalance(raw: RawClient, ctx: CheckContext, buy: Target, produc
     effects.push({ label: source.label, before: b, after: a, unit: '%', good: a <= b })
   }
   const warnBefore = warnings(raw, ctx), warnAfter = warnings(copy, ctx)
-  effects.push({ label: 'Warnungen Allokation, Klumpen, Risiko', before: warnBefore, after: warnAfter, unit: 'Anzahl', good: warnAfter <= warnBefore })
+  effects.push({ label: t('Warnungen Allokation, Klumpen, Risiko', 'Warnings on allocation, cluster risk, risk'), before: warnBefore, after: warnAfter, unit: 'Anzahl', good: warnAfter <= warnBefore })
   const fresh = newIssues(raw, copy, ctx)
   if (warnAfter > warnBefore) return undefined // a step that makes things worse is not a proposal
 
@@ -103,7 +107,7 @@ export function rebalance(raw: RawClient, ctx: CheckContext, buy: Target, produc
     effects, newIssues: fresh,
     fix: {
       PortfolioId: main.id,
-      Reason: `${buy.label} aufstocken gemäss Hausmeinung`,
+      Reason: t(`${buy.label} aufstocken gemäss Hausmeinung`, `Top up ${buy.label} in line with the house view`),
       SecurityPositions: [
         ...(soldId !== undefined ? [{ SecurityId: soldId, SecurityName: soldName, ProposalValuePercentage: -w, TotalAmountInProposalCurrency: -amount }] : []),
         { SecurityId: sec.id, Isin: sec.isin, SecurityName: sec.name, ProposalValuePercentage: w, TotalAmountInProposalCurrency: amount },

@@ -2,6 +2,8 @@
 // names, account data or holdings, and must pick one item from the closed wish menu per note. Every answer is
 // validated against the menu (engine/wishes.ts parseWish); anything else becomes 'unknown', which the engine
 // shows as "not checked, please read". Answers are cached by note text for the life of the server.
+// The model never writes a label the advisor reads: the engine labels the parsed menu item itself, in German and
+// in English (engine/wishes.ts wishLabel), so the answer and its cache do not depend on the display language.
 import { parseWish, SECTORS, type Wish } from '../../engine/wishes.ts'
 
 export type Complete = (messages: { role: 'system' | 'user'; content: string }[]) => Promise<unknown>
@@ -16,7 +18,7 @@ export const clearWishCache = () => cache.clear()
 export const CLASSIFY_RULES = `You read short notes a Swiss private banker wrote about a client (any language). For each note decide what the client WANTS FROM THE PORTFOLIO and answer with exactly one item from this menu, as JSON:
 - {"type":"exclude-sector","sector":S,"scope":"any"|"direct"}  the client does not want this sector. scope "any" unless the note itself says direct holdings or single positions ("direkt", "direct", "en direct"); then "direct". Oil, gas, coal, fossil fuels = "Energy". S is one of: ${SECTORS.join(', ')}.
 - {"type":"exclude-emerging-markets"}  no emerging markets / developed markets only.
-- {"type":"exclude-unverifiable","label":L}  an exclusion with no matching sector (weapons, tobacco, gambling, human-rights issues, ...). L = short German label, e.g. "Rüstung", "Tabak".
+- {"type":"exclude-unverifiable","label":L}  an exclusion with no matching sector (weapons, tobacco, gambling, human-rights issues, ...). L = short German label, e.g. "Rüstung", "Tabak", "Glücksspiel", "Alkohol", "Kernenergie".
 - {"type":"keep-cash"} or {"type":"keep-cash","amountChf":N}  wants cash or liquidity kept available; N only if the note names a CHF amount.
 - {"type":"prefer-chf-hedged"}  foreign-currency investments hedged to CHF.
 - {"type":"esg-only"}  only sustainable / ESG-compliant investments (a requirement, not just an interest).

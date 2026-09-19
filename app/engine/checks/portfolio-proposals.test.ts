@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { REJECTED_TITLE } from '../lang.ts'
 import { client, ctx } from '../test-data.ts'
 import { proposals } from './portfolio-proposals.ts'
 
@@ -39,5 +40,22 @@ describe('portfolio.proposals', () => {
     const f = proposals(client('CASE-045'), ctx)
     expect(f.some((x) => x.id.includes(':draft:'))).toBe(true)
     expect(f.some((x) => x.id.includes(':repeat:'))).toBe(false)
+  })
+
+  it('phrases the findings in English, with the reason as the data has it (CASE-037, CASE-012)', () => {
+    const en = { ...ctx, lang: 'en' as const }
+    const f = proposals(client('CASE-037'), en)
+    expect(f.find((x) => x.id.endsWith(':draft:24792'))!.title).toMatch(/^Open draft: «Periodic portfolio review» with /)
+    expect(f.find((x) => x.id.endsWith(':repeat:24792'))!.title).toMatch(/^Draft resembles the rejected proposal(?: of \d{2}\.\d{2}\.\d{4})? \(«.+»\): \d+% of its securities are the same$/)
+    const c12 = proposals(client('CASE-012'), en)
+    expect(c12.find((x) => x.id.endsWith(':acceptance'))!.title).toBe('6 of 18 proposals accepted, 12 rejected')
+    expect(c12.find((x) => x.id.endsWith(':rejected-summary'))!.title).toMatch(/^12 proposals rejected, the latest of \d{2}\.\d{2}\.\d{4}: «.+»$/)
+    for (const x of c12.filter((y) => y.id.includes(':rejected:'))) expect(x.title).toMatch(REJECTED_TITLE)
+    expect(c12.map((x) => x.numbers)).toEqual(proposals(client('CASE-012'), ctx).map((x) => x.numbers))
+  })
+
+  it('keeps the German rejected title in the form the briefing composer reads', () => {
+    const titles = proposals(client('CASE-012'), ctx).filter((x) => x.id.includes(':rejected:')).map((x) => x.title)
+    for (const title of titles) expect(title).toMatch(/^Abgelehnt(?: vom \d{2}\.\d{2}\.\d{4})?: «.+»$/)
   })
 })

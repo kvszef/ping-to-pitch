@@ -42,6 +42,13 @@ describe('context.peers', () => {
     const few = { ...ctx, peers: peerStats([client('CASE-038'), ...clients.filter((c) => c.RiskProfileId === 18 && c.ClientRef !== 'CASE-038').slice(0, 2)], ref) }
     expect(peers(client('CASE-038'), few)).toEqual([])
   })
+
+  it('phrases the same finding in English (ctx.lang)', () => {
+    const [f] = peers(client('CASE-038'), { ...withPeers, lang: 'en' })
+    expect(f.title).toMatch(/^Last month −4\.2%, similar clients \(profile 6, n=14\): median −\d\.\d%: market-wide, not specific to this portfolio$/)
+    expect(f.evidence.map((e) => e.source)).toEqual(['Performance (monthly values)', 'Peer group (aggregated)'])
+    expect(f.numbers).toEqual(peers(client('CASE-038'), withPeers)[0].numbers)
+  })
 })
 
 describe('context.peer-behaviour', () => {
@@ -50,5 +57,11 @@ describe('context.peer-behaviour', () => {
     expect(f.title).toMatch(/^Von 14 Kunden mit Profil 6 haben \d+ im Jahr 2026 einen Vorschlag angenommen$/)
     expect(f.numbers!.accepted).toBeLessThanOrEqual(14)
     expect(peerBehaviour(client('CASE-021'), withPeers)).toEqual([])
+  })
+
+  it('phrases the same finding in English (ctx.lang)', () => {
+    const [f] = peerBehaviour(client('CASE-038'), { ...withPeers, lang: 'en' })
+    expect(f.title).toMatch(/^Of 14 clients with profile 6, \d+ accepted a proposal in 2026$/)
+    expect(f.evidence.map((e) => e.source)).toEqual(['Investment proposal', 'Peer group (aggregated)'])
   })
 })

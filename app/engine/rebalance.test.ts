@@ -21,4 +21,12 @@ describe('rebalance', () => {
     expect(rebalance(client('CASE-004'), ctx, { ...bonds, target: 0 }, bondFund, { kind: 'cash', label: 'Liquidität CHF' })).toBeUndefined()
     expect(rebalance(client('CASE-004'), ctx, bonds, bondFund, { kind: 'position', dimension: 'Industry', category: 'Nichts', label: 'x' })).toBeUndefined()
   })
+
+  it('keeps the typed values and phrases the free text in English (ctx.lang)', () => {
+    const r = rebalance(client('CASE-004'), { ...ctx, lang: 'en' }, { ...bonds, label: 'Bonds' }, bondFund, { kind: 'position', dimension: 'Industry', category: 'Energy', label: 'Energy' })!
+    expect(r.legs.map((l) => l.side)).toEqual(['Verkauf', 'Kauf'])
+    expect(r.effects.map((e) => e.unit)).toEqual(['%', '%', 'Anzahl'])
+    expect(r.effects[2].label).toBe('Warnings on allocation, cluster risk, risk')
+    expect(r.fix.Reason).toBe('Top up Bonds in line with the house view')
+  })
 })

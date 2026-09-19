@@ -4,11 +4,12 @@
 // sustainability, the sector for a sector interest). Without a risk profile there are no options: we do not
 // suggest what we cannot check. An interest the data cannot measure says so and asks what is meant.
 import { currencyGroupOf, type Client, type ReferenceIndex, type Security } from '../data.ts'
-import { categoryDe, pct } from '../format.ts'
+import { categoryName, pct } from '../format.ts'
 import { fundName } from '../fix.ts'
+import { pick, prefix, sourceName, type Lang } from '../lang.ts'
 import type { Check, Evidence, Finding } from '../types.ts'
-import { wishesOf, type ClientWish, type Sector } from '../wishes.ts'
-import { clientOf, findingId, SRC } from './common.ts'
+import { wishesOf, wishText, type ClientWish, type Sector } from '../wishes.ts'
+import { clientOf, findingId, srcOf } from './common.ts'
 import { aiHint, clientExposure, esgFloor, hasEsgProfile, heldSecurities, noteEvidence, score, subjectOf, uniqueIds } from './wish-common.ts'
 
 const CHECK = 'wish.interest'
@@ -40,13 +41,15 @@ function suitable(client: Client, wishes: ClientWish[], ref: ReferenceIndex, tod
   return { maxPrc, esgMin, test }
 }
 
-const optionText = (s: Security) => `${fundName(s.name)} (ESG ${score(s.esgScore)}, Risikoklasse ${s.prc})`
+const optionText = (s: Security, lang?: Lang) => `${fundName(s.name)} (ESG ${score(s.esgScore)}, ${lang === 'en' ? 'risk class' : 'Risikoklasse'} ${s.prc})`
 // One security per name: share classes in other currencies are the same idea.
 const distinct = (list: Security[]) => list.filter((s, i) => list.findIndex((x) => fundName(x.name) === fundName(s.name)) === i)
 
 export const interest: Check = (raw, ctx) => {
   const client = clientOf(raw, ctx.ref)
   const unique = uniqueIds()
+  const { lang } = ctx
+  const t = pick(lang)
   const all = wishesOf(client, ctx).wishes
   const out: Finding[] = []
   const fit = suitable(client, all, ctx.ref, ctx.now.toISOString().slice(0, 10))
@@ -54,7 +57,10 @@ export const interest: Check = (raw, ctx) => {
   // Funds first (one trade buys a spread), then the higher ESG score, the lower risk class.
   const isFund = (s: Security) => (/fund|etf/i.test(s.type ?? '') ? 0 : 1)
   const byEsg = (a: Security, b: Security) => isFund(a) - isFund(b) || (b.esgScore ?? 0) - (a.esgScore ?? 0) || (a.prc ?? 0) - (b.prc ?? 0) || a.id - b.id
-  const rules = `nicht gehalten, Risikoklasse bis ${fit.maxPrc}${fit.esgMin !== undefined ? `, ESG ab ${fit.esgMin}` : ''}, ohne ausgeschlossene Bereiche`
+  const rules = t(
+    `nicht gehalten, Risikoklasse bis ${fit.maxPrc}${fit.esgMin !== undefined ? `, ESG ab ${fit.esgMin}` : ''}, ohne ausgeschlossene Bereiche`,
+    `not held, risk class up to ${fit.maxPrc}${fit.esgMin !== undefined ? `, ESG from ${fit.esgMin}` : ''}, no excluded areas`,
+  )
 
   // The same interest in several notes is one finding, with every note as evidence (newest first).
   const interests = all.filter((w) => w.wish.type === 'interest').sort((a, b) => (b.note.date ?? '').localeCompare(a.note.date ?? ''))
@@ -63,7 +69,8 @@ export const interest: Check = (raw, ctx) => {
   for (const w of interests) {
     if (w.wish.type !== 'interest' || seen.has(keyOf(w))) continue
     seen.add(keyOf(w))
-    const notes = interests.filter((x) => keyOf(x) === keyOf(w)).map(noteEvidence)
+    const notes = interests.filter((x) => keyOf(x) === keyOf(w)).map((x) => noteEvidence(x, lang))
+    const wished = `${prefix('interest', lang)}«${wishText(w, lang)}»` // 'Interesse «…»' / 'Interest «…»'
     const { measure } = w.wish
     const id = unique(findingId(CHECK, client.ref, `${keyOf(w)}:${subjectOf(w)}`))
     const base = { id, check: CHECK, kind: 'interpretation' as const, severity: 'info' as const, topic: measure === 'esg-share' ? 'esg' : measure === 'currency-diversification' ? 'currency' : 'allocation' }
@@ -77,18 +84,21 @@ export const interest: Check = (raw, ctx) => {
       const allMeet = rows.every((r) => r.share <= 0 || (r.security?.esgScore ?? -1) >= floor)
       options = recommended.filter((s) => (s.esgScore ?? 0) >= ESG_OPTION).sort(byEsg)
       numbers = { share, cashShare, ...(weakest ? { weakestShare: weakest.share } : {}) }
-      title = `Interesse «${w.de}»: heute ${pct(share)} des Vermögens mit ESG-Score ab ${floor}`
+      title = t(`${wished}: heute ${pct(share)} des Vermögens mit ESG-Score ab ${floor}`, `${wished}: today ${pct(share)} of total assets with an ESG score of ${floor} or more`)
       detail = allMeet
-        ? `Alle Wertschriften erreichen den Mindestscore, der Rest (${pct(cashShare)}) ist Liquidität: bereits erfüllt.`
-        : `Schwächste Position: ${weakest!.name} (Score ${score(weakest!.security!.esgScore)}, ${pct(weakest!.share)}).`
+        ? t(`Alle Wertschriften erreichen den Mindestscore, der Rest (${pct(cashShare)}) ist Liquidität: bereits erfüllt.`, `All securities reach the minimum score, the rest (${pct(cashShare)}) is liquidity: already met.`)
+        : t(`Schwächste Position: ${weakest!.name} (Score ${score(weakest!.security!.esgScore)}, ${pct(weakest!.share)}).`, `Weakest position: ${weakest!.name} (score ${score(weakest!.security!.esgScore)}, ${pct(weakest!.share)}).`)
     } else if (measure === 'sector' && w.wish.sector) {
       const sector = w.wish.sector
       const e = clientExposure(client, 'Industry', ctx.ref)
       const ofEquity = e.ofBase.get(sector) ?? 0, ofWealth = e.ofWealth.get(sector) ?? 0
       options = recommended.filter((s) => sectorShare(s, sector, ctx.ref) >= SECTOR_FUND).sort(byEsg)
       numbers = { equityShare: ofEquity, share: ofWealth, equityWeight: e.base }
-      title = `Interesse «${w.de}»: heute ${pct(ofEquity)} des Aktienteils in ${categoryDe(sector)} (${pct(ofWealth)} des Vermögens)`
-      detail = 'Aktienteil mit Fonds-Durchsicht.'
+      title = t(
+        `${wished}: heute ${pct(ofEquity)} des Aktienteils in ${categoryName(sector, lang)} (${pct(ofWealth)} des Vermögens)`,
+        `${wished}: today ${pct(ofEquity)} of the equity part in ${categoryName(sector, lang)} (${pct(ofWealth)} of total assets)`,
+      )
+      detail = t('Aktienteil mit Fonds-Durchsicht.', 'Equity part with fund look-through.')
     } else if (measure === 'currency-diversification') {
       const e = clientExposure(client, 'CurrencyGroup', ctx.ref)
       const home = currencyGroupOf(client.currency)
@@ -96,21 +106,29 @@ export const interest: Check = (raw, ctx) => {
       const groups = [...e.ofWealth].filter(([, v]) => v >= CURRENCY_MENTION).sort((a, b) => b[1] - a[1])
       options = recommended.filter((s) => s.assetClass !== 'Liquidity' && (s.currencyGroup ?? currencyGroupOf(s.currency)) !== home).sort(byEsg)
       numbers = { homeShare, groups: groups.length }
-      title = `Interesse «${w.de}»: heute ${pct(homeShare)} in ${categoryDe(home)}, ${groups.length} Währungsgruppen ab 5%`
-      detail = `Verteilung mit Fonds-Durchsicht: ${groups.map(([k, v]) => `${categoryDe(k)} ${pct(v)}`).join(', ')}.`
+      title = t(
+        `${wished}: heute ${pct(homeShare)} in ${categoryName(home, lang)}, ${groups.length} Währungsgruppen ab 5%`,
+        `${wished}: today ${pct(homeShare)} in ${categoryName(home, lang)}, ${groups.length} currency ${groups.length === 1 ? 'group' : 'groups'} of 5% or more`,
+      )
+      detail = `${t('Verteilung mit Fonds-Durchsicht', 'Distribution with fund look-through')}: ${groups.map(([k, v]) => `${categoryName(k, lang)} ${pct(v)}`).join(', ')}.`
     } else {
-      const why = measure === 'dividend' ? 'Die Daten enthalten keine Dividendenrenditen' : 'Dafür gibt es in den Daten kein Mass'
-      out.push({ ...base, title: `Interesse «${w.de}»: in den Daten nicht messbar`, detail: `${why}: nachfragen, was gemeint ist.${aiHint(w)}`, evidence: notes })
+      const why = measure === 'dividend' ? t('Die Daten enthalten keine Dividendenrenditen', 'The data holds no dividend yields') : t('Dafür gibt es in den Daten kein Mass', 'The data has no measure for this')
+      out.push({
+        ...base, title: t(`${wished}: in den Daten nicht messbar`, `${wished}: cannot be measured in the data`),
+        detail: t(`${why}: nachfragen, was gemeint ist.${aiHint(w, lang)}`, `${why}: ask what is meant.${aiHint(w, lang)}`), evidence: notes,
+      })
       continue
     }
 
     const picked = distinct(options).slice(0, OPTIONS)
     const optionsText = fit.maxPrc === undefined
-      ? ' Kein Risikoprofil hinterlegt: keine Vorschläge.'
-      : picked.length ? ` Optionen aus der Empfehlungsliste (${rules}): ${picked.map(optionText).join('; ')}.` : ` Keine passende Option in der Empfehlungsliste (${rules}).`
-    const evidence: Evidence[] = [...notes, ...picked.map((s) => ({ source: 'Empfehlungsliste', ref: String(s.id), quote: fundName(s.name) }))]
-    if (fit.maxPrc !== undefined) evidence.push(SRC.riskProfile(`${client.riskProfileName ?? 'Risikoprofil'}: Risikoklasse bis ${fit.maxPrc}`))
-    out.push({ ...base, title, detail: `${detail}${optionsText}${aiHint(w)}`, numbers: { ...numbers, options: picked.length }, evidence })
+      ? t(' Kein Risikoprofil hinterlegt: keine Vorschläge.', ' No risk profile on file: no suggestions.')
+      : picked.length
+        ? ` ${t('Optionen aus der Empfehlungsliste', 'Options from the recommendation list')} (${rules}): ${picked.map((s) => optionText(s, lang)).join('; ')}.`
+        : t(` Keine passende Option in der Empfehlungsliste (${rules}).`, ` No suitable option in the recommendation list (${rules}).`)
+    const evidence: Evidence[] = [...notes, ...picked.map((s) => ({ source: sourceName('recommendations', lang), ref: String(s.id), quote: fundName(s.name) }))]
+    if (fit.maxPrc !== undefined) evidence.push(srcOf(lang).riskProfile(t(`${client.riskProfileName ?? 'Risikoprofil'}: Risikoklasse bis ${fit.maxPrc}`, `${client.riskProfileName ?? 'Risk profile'}: risk class up to ${fit.maxPrc}`)))
+    out.push({ ...base, title, detail: `${detail}${optionsText}${aiHint(w, lang)}`, numbers: { ...numbers, options: picked.length }, evidence })
   }
   return out
 }

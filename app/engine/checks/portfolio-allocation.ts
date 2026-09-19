@@ -9,9 +9,10 @@
 //   "Fremdwährungsanteil ... grösser als 50%"), so they are read from there, never hard-coded.
 // - "No strategy" portfolios have 0–100% bands and no targets: nothing to compare against, and we say so.
 import { exposure, type Band, type Client, type Dimension, type Exposure, type Portfolio, type ReferenceIndex } from '../data.ts'
-import { categoryDe, pct, pts, shortName } from '../format.ts'
+import { categoryName, pct, pts, shortName } from '../format.ts'
+import { pick, sourceName, type Lang } from '../lang.ts'
 import type { Check, Evidence, Finding } from '../types.ts'
-import { clientOf, findingId, SRC } from './common.ts'
+import { clientOf, findingId, srcOf } from './common.ts'
 
 const CHECK = 'portfolio.allocation'
 const WEIGHT_WARN = 0.05 // bank rule: over/underweight at ±5 points from the SAA target
@@ -37,13 +38,19 @@ function bankViolation(client: Client, p: Portfolio, category: string, kind: 'se
     kind === 'currency' ? v.rule.includes(`risk ${name}`) : v.rule.includes(`equity ${kind} "${name}"`)))
 }
 
-function contributorsText(e: Exposure, category: string) {
+// Accounts are named 'Konto <currency>' when the file is read (data.ts), before any language is known.
+const shownName = (name: string, lang?: Lang) => (lang === 'en' ? shortName(name).replace(/^Konto(?= |$)/, 'Account') : shortName(name))
+
+function contributorsText(e: Exposure, category: string, lang?: Lang) {
   const top = (e.contributors.get(category) ?? []).slice(0, 3)
-  return top.map((c) => `${shortName(c.name)} ${pct(c.share * e.baseWeight)}${c.viaFund ? ' (über Fonds)' : ''}`).join(', ')
+  return top.map((c) => `${shownName(c.name, lang)} ${pct(c.share * e.baseWeight)}${c.viaFund ? pick(lang)(' (über Fonds)', ' (via funds)') : ''}`).join(', ')
 }
 
 export const allocation: Check = (raw, ctx) => {
   const client = clientOf(raw, ctx.ref)
+  const t = pick(ctx.lang)
+  const SRC = srcOf(ctx.lang)
+  const cat = (x: string) => categoryName(x, ctx.lang)
   const out: Finding[] = []
 
   for (const p of client.portfolios) {
@@ -62,11 +69,11 @@ export const allocation: Check = (raw, ctx) => {
     for (const [k, v] of cur.shares) numbers[`CurrencyGroup.${k}`] = v
     const equity = exposures.CountryGroup
     const opaque = equity.baseWeight > 0 && equity.opaqueFundShare >= OPAQUE_NOTE
-      ? ` ${pct(equity.opaqueFundShare)} des Aktienteils liegen in Fonds ohne Aufschlüsselung und zählen nach dem Fondslabel.` : ''
+      ? t(` ${pct(equity.opaqueFundShare)} des Aktienteils liegen in Fonds ohne Aufschlüsselung und zählen nach dem Fondslabel.`, ` ${pct(equity.opaqueFundShare)} of the equity part sits in funds without a breakdown and counts by the fund's label.`) : ''
     out.push({
       id: id('mix'), check: CHECK, kind: 'fact', severity: 'info', topic: 'allocation',
-      title: `${p.nr}: ${mix(ac).slice(0, 3).map(([k, v]) => `${categoryDe(k)} ${pct(v)}`).join(', ')}`,
-      detail: `Währungen: ${mix(cur).map(([k, v]) => `${categoryDe(k)} ${pct(v)}`).join(', ')}.${equity.baseWeight > 0 ? ` Aktienfonds mit Durchsicht: ${pct(equity.lookThroughShare)} des Aktienteils.` : ''}${opaque}`,
+      title: `${p.nr}: ${mix(ac).slice(0, 3).map(([k, v]) => `${cat(k)} ${pct(v)}`).join(', ')}`,
+      detail: `${t('Währungen', 'Currencies')}: ${mix(cur).map(([k, v]) => `${cat(k)} ${pct(v)}`).join(', ')}.${equity.baseWeight > 0 ? t(` Aktienfonds mit Durchsicht: ${pct(equity.lookThroughShare)} des Aktienteils.`, ` Equity funds with look-through: ${pct(equity.lookThroughShare)} of the equity part.`) : ''}${opaque}`,
       numbers: { ...numbers, lookThroughShare: equity.lookThroughShare, opaqueFundShare: equity.opaqueFundShare },
       evidence: [SRC.portfolio(p.nr), saaEvidence],
     })
@@ -74,8 +81,11 @@ export const allocation: Check = (raw, ctx) => {
     if (!bands.length) {
       out.push({
         id: id('no-target'), check: CHECK, kind: 'interpretation', severity: 'info', topic: 'allocation',
-        title: `${p.nr}: keine Zielallokation hinterlegt, Abweichungen werden nicht geprüft`,
-        detail: `Strategie «${p.strategyName ?? 'keine'}», Dienstleistung «${p.service ?? 'unbekannt'}»: alle Bandbreiten 0–100%.`,
+        title: t(`${p.nr}: keine Zielallokation hinterlegt, Abweichungen werden nicht geprüft`, `${p.nr}: no target allocation on file, deviations are not checked`),
+        detail: t(
+          `Strategie «${p.strategyName ?? 'keine'}», Dienstleistung «${p.service ?? 'unbekannt'}»: alle Bandbreiten 0–100%.`,
+          `Strategy «${p.strategyName ?? 'none'}», service «${p.service ?? 'unknown'}»: all bands 0–100%.`,
+        ),
         evidence: [saaEvidence],
       })
       continue
@@ -90,7 +100,10 @@ export const allocation: Check = (raw, ctx) => {
       return { b, actual, below, limit, gap: limit === undefined ? 0 : actual - limit }
     }).filter((x) => x.limit !== undefined).sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap))
     if (breaches.length) {
-      const text = (x: (typeof breaches)[number]) => `${categoryDe(x.b.category)} ${pct(x.actual)}, ${x.below ? 'unter dem Minimum' : 'über dem Maximum'} von ${pct(x.limit!)}`
+      const text = (x: (typeof breaches)[number]) => t(
+        `${cat(x.b.category)} ${pct(x.actual)}, ${x.below ? 'unter dem Minimum' : 'über dem Maximum'} von ${pct(x.limit!)}`,
+        `${cat(x.b.category)} ${pct(x.actual)}, ${x.below ? 'below the minimum' : 'above the maximum'} of ${pct(x.limit!)}`,
+      )
       const [first] = breaches
       const numbers: Record<string, number> = { actual: first.actual, limit: first.limit!, gap: first.gap }
       for (const x of breaches) Object.assign(numbers, { [`${x.b.category}.actual`]: x.actual, [`${x.b.category}.min`]: x.b.min ?? 0, [`${x.b.category}.max`]: x.b.max ?? 1, [`${x.b.category}.target`]: x.b.target ?? 0 })
@@ -98,9 +111,9 @@ export const allocation: Check = (raw, ctx) => {
         id: id('AssetClass'), check: CHECK, kind: 'fact', severity: 'risk', topic: 'allocation',
         title: `${p.nr}: ${text(first)}`,
         detail: [
-          breaches.length > 1 ? `Ebenfalls ausserhalb: ${breaches.slice(1).map(text).join('; ')}.` : '',
-          `Band ${categoryDe(first.b.category)} ${pct(first.b.min ?? 0)}–${pct(first.b.max ?? 1)}, Ziel ${pct(first.b.target ?? 0)}.`,
-          contributorsText(ac, first.b.category) ? `Grösste Beiträge: ${contributorsText(ac, first.b.category)}.` : '',
+          breaches.length > 1 ? `${t('Ebenfalls ausserhalb', 'Also outside')}: ${breaches.slice(1).map(text).join('; ')}.` : '',
+          `Band ${cat(first.b.category)} ${pct(first.b.min ?? 0)}–${pct(first.b.max ?? 1)}, ${t('Ziel', 'target')} ${pct(first.b.target ?? 0)}.`,
+          contributorsText(ac, first.b.category, ctx.lang) ? `${t('Grösste Beiträge', 'Largest contributions')}: ${contributorsText(ac, first.b.category, ctx.lang)}.` : '',
         ].filter(Boolean).join(' '),
         numbers,
         evidence: [saaEvidence, SRC.portfolio(p.nr)],
@@ -122,11 +135,14 @@ export const allocation: Check = (raw, ctx) => {
         if (bank) evidence.push(SRC.violation(bank.rule, bank.date))
         out.push({
           id: id(`${dim}:${b.category}`), check: CHECK, kind: 'fact', severity: strong ? 'risk' : 'warn', topic: 'allocation',
-          title: `${p.nr}: ${strong ? 'deutliches ' : ''}${deviation > 0 ? 'Übergewicht' : 'Untergewicht'} ${kind === 'sector' ? 'Sektor' : 'Region'} ${categoryDe(b.category)}: ${pct(actual)} statt ${pct(b.target!)} (${pts(deviation)})`,
+          title: t(
+            `${p.nr}: ${strong ? 'deutliches ' : ''}${deviation > 0 ? 'Übergewicht' : 'Untergewicht'} ${kind === 'sector' ? 'Sektor' : 'Region'} ${cat(b.category)}: ${pct(actual)} statt ${pct(b.target!)} (${pts(deviation)})`,
+            `${p.nr}: ${strong ? 'significant ' : ''}${deviation > 0 ? 'overweight' : 'underweight'} in the equity ${kind} ${cat(b.category)}: ${pct(actual)} instead of ${pct(b.target!)} (${pts(deviation, 'en')})`,
+          ),
           detail: [
-            `Anteil am Aktienteil (${pct(e.baseWeight)} des Portfolios), Fonds durchgeschaut.`,
-            deviation > 0 ? `Grösste Beiträge: ${contributorsText(e, b.category)}.` : '',
-            bank ? 'Die letzte Regelprüfung der Bank meldet dies ebenfalls.' : '',
+            t(`Anteil am Aktienteil (${pct(e.baseWeight)} des Portfolios), Fonds durchgeschaut.`, `Share of the equity part (${pct(e.baseWeight)} of the portfolio), with fund look-through.`),
+            deviation > 0 ? `${t('Grösste Beiträge', 'Largest contributions')}: ${contributorsText(e, b.category, ctx.lang)}.` : '',
+            bank ? t('Die letzte Regelprüfung der Bank meldet dies ebenfalls.', "The bank's last rule run reports this as well.") : '',
           ].filter(Boolean).join(' '),
           numbers: { actual, target: b.target!, deviation, equityWeight: e.baseWeight, bankFlagged: bank ? 1 : 0 },
           evidence,
@@ -145,10 +161,16 @@ export const allocation: Check = (raw, ctx) => {
       const bank = bankViolation(client, p, category === 'US-Dollar' ? 'USD' : 'EUR', 'currency')
       out.push({
         id: id(`CurrencyGroup:${category}`), check: CHECK, kind: 'fact', severity: 'warn', topic: 'allocation',
-        title: `${p.nr}: ${categoryDe(category)}-Anteil ${pct(actual)}, Grenze der Bank ${pct(limit)} (${pts(actual - limit)})`,
-        detail: `Regel «${code}». Grösste Beiträge: ${contributorsText(cur, category)}.${bank ? ' Die letzte Regelprüfung der Bank meldet dies ebenfalls.' : ''}`,
+        title: t(
+          `${p.nr}: ${cat(category)}-Anteil ${pct(actual)}, Grenze der Bank ${pct(limit)} (${pts(actual - limit)})`,
+          `${p.nr}: ${cat(category)} share ${pct(actual)}, the bank's limit is ${pct(limit)} (${pts(actual - limit, 'en')})`,
+        ),
+        detail: t(
+          `Regel «${code}». Grösste Beiträge: ${contributorsText(cur, category)}.${bank ? ' Die letzte Regelprüfung der Bank meldet dies ebenfalls.' : ''}`,
+          `Rule «${code}». Largest contributions: ${contributorsText(cur, category, 'en')}.${bank ? " The bank's last rule run reports this as well." : ''}`,
+        ),
         numbers: { actual, limit, gap: actual - limit, target: bands.find((b) => b.dimension === 'CurrencyGroup' && b.category === category)?.target ?? 0, bankFlagged: bank ? 1 : 0 },
-        evidence: [{ source: 'Suitability-Regel', quote: ctx.ref.rule(code)?.description ?? code }, SRC.portfolio(p.nr)],
+        evidence: [{ source: sourceName('rule', ctx.lang), quote: ctx.ref.rule(code)?.description ?? code }, SRC.portfolio(p.nr)],
       })
     }
     const foreign = 1 - (cur.shares.get('Swiss francs') ?? 0)
@@ -156,9 +178,9 @@ export const allocation: Check = (raw, ctx) => {
     if (foreignRule && foreign > 0.5) {
       out.push({
         id: id('CurrencyGroup:foreign'), check: CHECK, kind: 'fact', severity: 'warn', topic: 'allocation',
-        title: `${p.nr}: Fremdwährungsanteil ${pct(foreign)}, über der Grenze von 50%`,
+        title: t(`${p.nr}: Fremdwährungsanteil ${pct(foreign)}, über der Grenze von 50%`, `${p.nr}: foreign-currency share ${pct(foreign)}, above the limit of 50%`),
         numbers: { actual: foreign, limit: 0.5, gap: foreign - 0.5 },
-        evidence: [{ source: 'Suitability-Regel', quote: foreignRule.description ?? foreignRule.code }, SRC.portfolio(p.nr)],
+        evidence: [{ source: sourceName('rule', ctx.lang), quote: foreignRule.description ?? foreignRule.code }, SRC.portfolio(p.nr)],
       })
     }
   }

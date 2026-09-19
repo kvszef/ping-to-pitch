@@ -9,7 +9,8 @@
 // may then ask a model to pick a menu item (app/server/ai/wishes.ts) and passes the answer in ctx.wishes.
 // A note neither can read is never dropped: the engine reports it as "not checked, please read".
 import type { Client } from './data.ts'
-import { categoryDe } from './format.ts'
+import { categoryDe, categoryName } from './format.ts'
+import type { Lang } from './lang.ts'
 import type { CheckContext } from './types.ts'
 
 export const SECTORS = [
@@ -30,7 +31,8 @@ export type Wish =
   | { type: 'interest'; measure: InterestMeasure; sector?: Sector }
   | { type: 'not-a-wish' } // about the person, a plan, or background: E3/E4 read it, not E2
 
-export type NoteReading = { wishes: Wish[]; de: string; by: 'rule' | 'ai' }
+// de and en: the wish in a few words, for titles («…»). The note itself is quoted as written, never translated.
+export type NoteReading = { wishes: Wish[]; de: string; en: string; by: 'rule' | 'ai' }
 
 // ── rules ────────────────────────────────────────────────────────────────────
 
@@ -50,9 +52,9 @@ const CASH = /\b(cash|liquid\w*|bargeld|barreserve|reserve|réserve|liquidität|
 const KEEP = /\b(keep|hold|on hand|needs?|halten|braucht|benötigt|garder|besoin)\b/i
 const CHF_AMOUNT = /\bCHF\s*[\d']/
 
-type Rule = { test: (text: string) => boolean; wishes: (text: string) => Wish[]; de: (text: string) => string }
-const rule = (re: { test: (t: string) => boolean }, wishes: Wish[], de: string, negated = false): Rule =>
-  ({ test: (t) => re.test(t) && (!negated || NEG.test(t)), wishes: () => wishes, de: () => de })
+type Rule = { test: (text: string) => boolean; wishes: (text: string) => Wish[]; de: (text: string) => string; en: (text: string) => string }
+const rule = (re: { test: (t: string) => boolean }, wishes: Wish[], de: string, en: string, negated = false): Rule =>
+  ({ test: (t) => re.test(t) && (!negated || NEG.test(t)), wishes: () => wishes, de: () => de, en: () => en })
 const swiss = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, "'")
 function chfAmount(text: string): number | undefined {
   const m = /(?:CHF|Fr\.)\s*([\d'’,.]+)\s*(k\b)?/i.exec(text)
@@ -63,7 +65,7 @@ function chfAmount(text: string): number | undefined {
 
 // Hard wishes: an exclusion or a rule for the whole portfolio. Exclusions need a negation in the note.
 const HARD: Rule[] = [
-  rule(HUMAN_RIGHTS, [{ type: 'exclude-unverifiable', label: 'Menschenrechts-Kontroversen' }], 'Keine Firmen mit Menschenrechts-Kontroversen', true),
+  rule(HUMAN_RIGHTS, [{ type: 'exclude-unverifiable', label: 'Menschenrechts-Kontroversen' }], 'Keine Firmen mit Menschenrechts-Kontroversen', 'No companies with human-rights controversies', true),
   {
     test: (t) => (DEFENSE.test(t) || TOBACCO.test(t)) && NEG.test(t),
     wishes: (t) => [
@@ -74,13 +76,17 @@ const HARD: Rule[] = [
       const parts = [DEFENSE.test(t) ? 'keine Rüstung' : '', TOBACCO.test(t) ? 'kein Tabak' : ''].filter(Boolean).join(' und ')
       return ESG.test(t) ? `ESG-konform, ${parts}` : parts.charAt(0).toUpperCase() + parts.slice(1)
     },
+    en: (t) => {
+      const parts = [DEFENSE.test(t) ? 'no defence' : '', TOBACCO.test(t) ? 'no tobacco' : ''].filter(Boolean).join(' and ')
+      return ESG.test(t) ? `ESG-compliant, ${parts}` : parts.charAt(0).toUpperCase() + parts.slice(1)
+    },
   },
-  { test: (t) => FOSSIL.test(t) && DIRECT.test(t) && NEG.test(t), wishes: () => [{ type: 'exclude-sector', sector: 'Energy', scope: 'direct' }], de: () => 'Keine direkten Positionen in fossilen Energien' },
-  rule(FOSSIL, [{ type: 'exclude-sector', sector: 'Energy', scope: 'any' }], 'Kein Engagement in fossilen Energien', true),
-  rule(DEVELOPED_ONLY, [{ type: 'exclude-emerging-markets' }], 'Nur Industrieländer, keine Schwellenländer'),
-  rule(EM, [{ type: 'exclude-emerging-markets' }], 'Keine Schwellenländer', true),
-  rule(/chf[- ]?hedged|hedged.*\bchf\b|chf[- ]?abgesichert|währungsgesichert|währungsabgesichert|couvert.*chf/i, [{ type: 'prefer-chf-hedged' }], 'Fremdwährungen CHF-abgesichert'),
-  rule(/esg[- ]compliant|esg[- ]konform|only (esg|sustainable)|nur nachhaltig|ausschliesslich nachhaltig|uniquement durable/i, [{ type: 'esg-only' }], 'Nur ESG-konforme Anlagen'),
+  { test: (t) => FOSSIL.test(t) && DIRECT.test(t) && NEG.test(t), wishes: () => [{ type: 'exclude-sector', sector: 'Energy', scope: 'direct' }], de: () => 'Keine direkten Positionen in fossilen Energien', en: () => 'No direct positions in fossil fuels' },
+  rule(FOSSIL, [{ type: 'exclude-sector', sector: 'Energy', scope: 'any' }], 'Kein Engagement in fossilen Energien', 'No exposure to fossil fuels', true),
+  rule(DEVELOPED_ONLY, [{ type: 'exclude-emerging-markets' }], 'Nur Industrieländer, keine Schwellenländer', 'Developed markets only, no emerging markets'),
+  rule(EM, [{ type: 'exclude-emerging-markets' }], 'Keine Schwellenländer', 'No emerging markets', true),
+  rule(/chf[- ]?hedged|hedged.*\bchf\b|chf[- ]?abgesichert|währungsgesichert|währungsabgesichert|couvert.*chf/i, [{ type: 'prefer-chf-hedged' }], 'Fremdwährungen CHF-abgesichert', 'Foreign currencies hedged to CHF'),
+  rule(/esg[- ]compliant|esg[- ]konform|only (esg|sustainable)|nur nachhaltig|ausschliesslich nachhaltig|uniquement durable/i, [{ type: 'esg-only' }], 'Nur ESG-konforme Anlagen', 'Only ESG-compliant investments'),
 ]
 
 // Known notes that are not wishes about holdings (E3/E4 read them). Specific phrases, so they never swallow a wish.
@@ -100,18 +106,19 @@ const KEEP_CASH: Rule = {
   test: (t) => CASH.test(t) && KEEP.test(t),
   wishes: (t) => { const amountChf = chfAmount(t); return [amountChf ? { type: 'keep-cash', amountChf } : { type: 'keep-cash' }] },
   de: (t) => { const a = chfAmount(t); return a ? `Braucht rund CHF ${swiss(a)} flüssig` : 'Will eine Barreserve halten' },
+  en: (t) => { const a = chfAmount(t); return a ? `Needs around CHF ${swiss(a)} liquid` : 'Wants to keep a cash reserve' },
 }
 
 // Soft wishes: interests the advisor can serve. Checked after the non-wish phrases.
 const SOFT: Rule[] = [
-  rule(/sustainab|nachhaltig|durable|\besg\b/i, [{ type: 'interest', measure: 'esg-share' }], 'Möglichst viele nachhaltige Anlagen'),
-  rule(/dividend|dividende|ausschüttung/i, [{ type: 'interest', measure: 'dividend' }], 'Fokus auf Dividendentitel für laufendes Einkommen'),
-  rule(/technolog|tech stocks|tech-aktien/i, [{ type: 'interest', measure: 'sector', sector: 'Information Technology' }], 'Technologietitel ausbauen'),
-  rule(/space|aerospace|raumfahrt|aérospatial|luftfahrt/i, [{ type: 'interest', measure: 'sector', sector: 'Industrials' }], 'Mehr Luft- und Raumfahrt'),
-  rule(/pharma|chemi|biotech|health ?care/i, [{ type: 'interest', measure: 'sector', sector: 'Health Care' }], 'Interesse an Chemie und Pharma'),
-  rule(/(diversif|streu).*(currenc|währung|devise)|(currenc|währung|devise).*(diversif|streu)/i, [{ type: 'interest', measure: 'currency-diversification' }], 'Breitere Streuung über Währungen'),
-  rule(/small ?-?caps?|nebenwerte/i, [{ type: 'interest', measure: 'none' }], 'Mehr Schweizer Nebenwerte'),
-  rule(/structured products?|strukturierte produkte|produits structurés/i, [{ type: 'interest', measure: 'none' }], 'Interesse an strukturierten Produkten'),
+  rule(/sustainab|nachhaltig|durable|\besg\b/i, [{ type: 'interest', measure: 'esg-share' }], 'Möglichst viele nachhaltige Anlagen', 'As many sustainable investments as possible'),
+  rule(/dividend|dividende|ausschüttung/i, [{ type: 'interest', measure: 'dividend' }], 'Fokus auf Dividendentitel für laufendes Einkommen', 'Focus on dividend stocks for regular income'),
+  rule(/technolog|tech stocks|tech-aktien/i, [{ type: 'interest', measure: 'sector', sector: 'Information Technology' }], 'Technologietitel ausbauen', 'Build up technology stocks'),
+  rule(/space|aerospace|raumfahrt|aérospatial|luftfahrt/i, [{ type: 'interest', measure: 'sector', sector: 'Industrials' }], 'Mehr Luft- und Raumfahrt', 'More aerospace'),
+  rule(/pharma|chemi|biotech|health ?care/i, [{ type: 'interest', measure: 'sector', sector: 'Health Care' }], 'Interesse an Chemie und Pharma', 'Interest in chemicals and pharma'),
+  rule(/(diversif|streu).*(currenc|währung|devise)|(currenc|währung|devise).*(diversif|streu)/i, [{ type: 'interest', measure: 'currency-diversification' }], 'Breitere Streuung über Währungen', 'Broader spread across currencies'),
+  rule(/small ?-?caps?|nebenwerte/i, [{ type: 'interest', measure: 'none' }], 'Mehr Schweizer Nebenwerte', 'More Swiss small caps'),
+  rule(/structured products?|strukturierte produkte|produits structurés/i, [{ type: 'interest', measure: 'none' }], 'Interesse an strukturierten Produkten', 'Interest in structured products'),
   KEEP_CASH,
 ]
 
@@ -119,17 +126,17 @@ const SOFT: Rule[] = [
 export function classifyNote(text: string): NoteReading | undefined {
   const t = text.trim()
   if (!t) return undefined
-  const read = (r: Rule): NoteReading => ({ wishes: r.wishes(t), de: r.de(t), by: 'rule' })
+  const read = (r: Rule): NoteReading => ({ wishes: r.wishes(t), de: r.de(t), en: r.en(t), by: 'rule' })
   const hard = HARD.find((r) => r.test(t))
   if (hard) return read(hard)
   // A CHF amount to keep liquid is a cash wish even when the note also names a plan (the Q1 tax payment).
   if (CHF_AMOUNT.test(t) && KEEP_CASH.test(t)) return read(KEEP_CASH)
-  if (NOT_A_WISH.some((re) => re.test(t))) return { wishes: [{ type: 'not-a-wish' }], de: t, by: 'rule' }
+  if (NOT_A_WISH.some((re) => re.test(t))) return { wishes: [{ type: 'not-a-wish' }], de: t, en: t, by: 'rule' }
   const soft = SOFT.find((r) => r.test(t))
   return soft ? read(soft) : undefined
 }
 
-// ── the menu as data: validation and German labels ───────────────────────────
+// ── the menu as data: validation and labels ──────────────────────────────────
 
 const isSector = (v: unknown): v is Sector => typeof v === 'string' && (SECTORS as readonly string[]).includes(v)
 
@@ -163,8 +170,38 @@ export function parseWish(v: unknown): Wish | undefined {
   }
 }
 
-/** Short German label, used for wishes the model classified (the rules carry their own wording). */
-export function wishLabel(w: Wish): string {
+// An 'exclude-unverifiable' label is German data (from the rules, or a model answer checked by parseWish). The
+// usual ones have a fixed English name; any other label is shown as it is.
+const UNVERIFIABLE_EN: Record<string, string> = {
+  'rüstung': 'defence', 'waffen': 'weapons', 'tabak': 'tobacco', 'menschenrechts-kontroversen': 'human-rights controversies',
+  'glücksspiel': 'gambling', 'alkohol': 'alcohol', 'kernenergie': 'nuclear power', 'atomkraft': 'nuclear power', 'atomenergie': 'nuclear power',
+  'gentechnik': 'genetic engineering', 'tierversuche': 'animal testing', 'kinderarbeit': 'child labour', 'pornografie': 'adult entertainment',
+}
+/** "Rüstung und Tabak" → "defence and tobacco" in English; undefined when a part has no fixed English name. German: the label itself. */
+export function unverifiableLabel(label: string, lang?: Lang): string | undefined {
+  if (lang !== 'en') return label
+  const parts = label.split(/\s+und\s+|\s*,\s*/).map((p) => UNVERIFIABLE_EN[p.trim().toLowerCase()])
+  return parts.every((p): p is string => !!p) ? parts.join(' and ') : undefined
+}
+
+/** Short label (German unless lang is 'en'), used for wishes the model classified (the rules carry their own wording). */
+export function wishLabel(w: Wish, lang?: Lang): string {
+  if (lang === 'en') {
+    switch (w.type) {
+      case 'exclude-sector':
+        if (w.sector === 'Energy') return w.scope === 'direct' ? 'No direct positions in fossil fuels' : 'No exposure to fossil fuels'
+        return `No ${w.scope === 'direct' ? 'direct investments' : 'investments'} in the ${categoryName(w.sector, 'en')} sector`
+      case 'exclude-emerging-markets': return 'No emerging markets'
+      case 'exclude-unverifiable': { const en = unverifiableLabel(w.label, 'en'); return en ? `No ${en}` : `Excluded: ${w.label}` }
+      case 'keep-cash': return w.amountChf ? `Needs around CHF ${swiss(w.amountChf)} liquid` : 'Wants to keep a cash reserve'
+      case 'prefer-chf-hedged': return 'Foreign currencies hedged to CHF'
+      case 'esg-only': return 'Only ESG-compliant investments'
+      case 'interest':
+        return w.measure === 'esg-share' ? 'More sustainable investments' : w.measure === 'sector' ? `More ${categoryName(w.sector ?? '', 'en')}`
+          : w.measure === 'dividend' ? 'More dividend stocks' : w.measure === 'currency-diversification' ? 'Broader spread across currencies' : 'Interest as per the note'
+      case 'not-a-wish': return ''
+    }
+  }
   switch (w.type) {
     case 'exclude-sector':
       if (w.sector === 'Energy') return w.scope === 'direct' ? 'Keine direkten Positionen in fossilen Energien' : 'Kein Engagement in fossilen Energien'
@@ -184,7 +221,9 @@ export function wishLabel(w: Wish): string {
 // ── the client's wishes, for the checks ──────────────────────────────────────
 
 export type WishNote = { text: string; date?: string }
-export type ClientWish = { wish: Wish; de: string; by: NoteReading['by']; note: WishNote }
+export type ClientWish = { wish: Wish; de: string; en: string; by: NoteReading['by']; note: WishNote }
+/** The wish's label in the language of the finding. */
+export const wishText = (w: Pick<ClientWish, 'de' | 'en'>, lang?: Lang): string => (lang === 'en' ? w.en : w.de)
 
 /** Every note of the client: its wishes (rules first, then the server's AI answer) and the notes nobody could read. */
 export function wishesOf(client: Client, ctx: Pick<CheckContext, 'wishes'>): { wishes: ClientWish[]; unread: WishNote[] } {
@@ -192,9 +231,9 @@ export function wishesOf(client: Client, ctx: Pick<CheckContext, 'wishes'>): { w
   for (const note of client.notes) {
     const rule = classifyNote(note.text)
     const ai = rule ? undefined : ctx.wishes?.[note.text.trim()]
-    const reading: NoteReading | undefined = rule ?? (ai && ai !== 'unknown' ? { wishes: [ai], de: wishLabel(ai), by: 'ai' } : undefined)
+    const reading: NoteReading | undefined = rule ?? (ai && ai !== 'unknown' ? { wishes: [ai], de: wishLabel(ai), en: wishLabel(ai, 'en'), by: 'ai' } : undefined)
     if (!reading) { unread.push(note); continue }
-    for (const wish of reading.wishes) if (wish.type !== 'not-a-wish') wishes.push({ wish, de: reading.de, by: reading.by, note })
+    for (const wish of reading.wishes) if (wish.type !== 'not-a-wish') wishes.push({ wish, de: reading.de, en: reading.en, by: reading.by, note })
   }
   return { wishes, unread }
 }

@@ -23,4 +23,12 @@ describe('context.history', () => {
     expect(d[0].recovered).toBeUndefined()
     expect(d[0].depth).toBeCloseTo(-0.2, 9)
   })
+
+  it('phrases the same finding in English (ctx.lang)', () => {
+    const [f] = history(client('CASE-037'), { ...ctx, lang: 'en' })
+    expect(f.title).toBe('Largest drop so far: −29.3% (December 2021 to December 2022), back at the previous high after 13 months')
+    expect(f.detail).toContain('not yet recovered')
+    expect(f.evidence[0].source).toBe('Performance (monthly values)')
+    expect(f.numbers).toEqual(history(client('CASE-037'), ctx)[0].numbers)
+  })
 })

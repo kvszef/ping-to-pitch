@@ -23,4 +23,13 @@ describe('profile.persona', () => {
   it('yields nothing for an empty client', () => {
     expect(persona({}, ctx)).toEqual([])
   })
+
+  it('builds its own English sentence when ctx.lang is en', () => {
+    const [f] = persona(client('CASE-037'), { ...ctx, lang: 'en' })
+    expect(f).toMatchObject({ id: 'profile.persona:CASE-037:line', kind: 'interpretation', numbers: { age: 62 } })
+    expect(f.title).toBe('A client in the years before retirement (aged 62) with a pension portfolio who tends to be sensitive to losses and keen to have a say.')
+    expect(f.detail).toBe('Derived from notes, proposals, holdings and master data: a tendency, not a verdict.')
+    expect(f.evidence[0]).toEqual({ source: 'Client file', quote: 'Birthday' })
+    expect(persona(client('CASE-012'), { ...ctx, lang: 'en' })[0].title).toMatch(/^A corporate client that tends to be self-directed/)
+  })
 })

@@ -33,4 +33,17 @@ describe('memory.call-promise', () => {
     expect(callPromise(client('CASE-004'), { ...ctx, memory: [noteFor('CASE-004', { confirmed: false, promises: [{ text: 'x', done: false }] })] })).toEqual([])
     expect(callPromise({}, ctx)).toEqual([])
   })
+
+  it('phrases the frame in English and leaves the stored promise as it is (ctx.lang)', () => {
+    const memory: CallNote[] = [noteFor('CASE-004', {
+      promises: [{ text: 'Unterlagen nachreichen', due: '2026-08-15', done: false }],
+      proposed: [{ text: 'Umschichtung in ESG-Fonds', reaction: 'open', why: 'Kunde wollte noch überlegen' }],
+    })]
+    const [promise, open] = callPromise(client('CASE-004'), { ...ctx, memory, lang: 'en' })
+    expect(promise.title).toBe('Promised: Unterlagen nachreichen')
+    expect(promise.detail).toBe('Due by 15.08.2026, promised on 01.08.2026.')
+    expect(promise.evidence[0]).toMatchObject({ source: 'Call note', date: '2026-08-01' })
+    expect(open.title).toBe('Open from the last call: Umschichtung in ESG-Fonds')
+    expect(open.detail).toBe('At the time: Kunde wollte noch überlegen')
+  })
 })

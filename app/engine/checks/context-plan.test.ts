@@ -21,4 +21,13 @@ describe('context.plan', () => {
     expect(plan(client('CASE-007'), ctx)).toEqual([])
     expect(plan({}, ctx)).toEqual([])
   })
+
+  it('phrases the same finding in English, with the same id and title shape (ctx.lang)', () => {
+    const [f] = plan(client('CASE-004'), { ...ctx, lang: 'en' })
+    expect(f.id).toBe('context.plan:CASE-004:2026-06-09:pensionierung')
+    expect(f.title).toBe('Retirement: 20 months left (until 09.06.2028)')
+    expect(f.detail).toMatch(/^Note of 09\.06\.2026: .*\?$/)
+    expect(f.evidence[0]).toMatchObject({ source: 'Client note', date: '2026-06-09' })
+    expect(plan(client('CASE-006'), { ...ctx, lang: 'en' })[0].title).toMatch(/^Donation: /)
+  })
 })

@@ -20,4 +20,10 @@ describe('wish.unreviewed', () => {
     expect(unreviewed(client('CASE-004'), ctx)).toEqual([])
     expect(unreviewed(withNote('Bitte keine Ölfirmen im Depot'), { ...ctx, wishes: { 'Bitte keine Ölfirmen im Depot': { type: 'exclude-sector', sector: 'Energy', scope: 'any' } } })).toEqual([])
   })
+
+  it('phrases the finding in English (ctx.lang) and leaves the note as written', () => {
+    const [f] = unreviewed(withNote('Bitte keine Ölfirmen im Depot'), { ...ctx, lang: 'en' })
+    expect(f).toMatchObject({ id: 'wish.unreviewed:CASE-004:2026-09-01', title: 'Note not checked automatically, please read', detail: '«Bitte keine Ölfirmen im Depot»' })
+    expect(f.evidence[0]).toEqual({ source: 'Client note', quote: 'Bitte keine Ölfirmen im Depot', date: '2026-09-01' })
+  })
 })

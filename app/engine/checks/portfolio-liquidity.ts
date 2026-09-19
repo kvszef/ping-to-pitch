@@ -5,9 +5,10 @@
 // per portfolio (LiquidityInDefaultCurrency, in the reporting currency), falling back to the account positions.
 import type { Client } from '../data.ts'
 import { chf, pct } from '../format.ts'
-import { noteEvidence, planWindows } from '../notes.ts'
+import { pick, sourceName } from '../lang.ts'
+import { noteEvidence, planLabel, planWindows } from '../notes.ts'
 import type { Check, Evidence, Finding } from '../types.ts'
-import { SRC, clientOf, findingId } from './common.ts'
+import { clientOf, findingId, srcOf } from './common.ts'
 
 const CHECK = 'portfolio.liquidity'
 
@@ -24,6 +25,8 @@ export function liquidityOf(client: Client): { value: number; share: number; aum
 
 export const liquidity: Check = (raw, ctx) => {
   const client = clientOf(raw, ctx.ref)
+  const t = pick(ctx.lang)
+  const SRC = srcOf(ctx.lang)
   const cash = liquidityOf(client)
   if (cash.aum <= 0) return []
   const cur = client.currency
@@ -34,18 +37,23 @@ export const liquidity: Check = (raw, ctx) => {
 
   const numbers: Record<string, number> = { share: cash.share, value: cash.value }
   const evidence: Evidence[] = client.portfolios.map((p) => SRC.portfolio(p.nr))
-  if (!evidence.length) evidence.push({ source: 'Kundendatei', quote: 'LiquidityInDefaultCurrency' })
-  let title = `Liquidität ${pct(cash.share)} (${chf(cash.value, cur)})`
-  let detail = 'Summe der Kontopositionen über alle Portfolios.'
+  if (!evidence.length) evidence.push({ source: sourceName('clientFile', ctx.lang), quote: 'LiquidityInDefaultCurrency' })
+  let title = `${t('Liquidität', 'Liquidity')} ${pct(cash.share)} (${chf(cash.value, cur)})`
+  let detail = t('Summe der Kontopositionen über alle Portfolios.', 'Sum of the account positions across all portfolios.')
   if (need) {
     numbers.need = need.amount!
-    evidence.push(noteEvidence(need))
+    evidence.push(noteEvidence(need, ctx.lang))
+    // English labels are capitalised ('Tax payment'); inside the sentence they run in lower case.
+    const label = t(need.label, planLabel(need, 'en').replace(/^./, (x) => x.toLowerCase()))
     if (short > 0) {
       numbers.shortfall = short
-      title = `Liquidität ${chf(cash.value, cur)} (${pct(cash.share)}), unter dem Bedarf von ${chf(need.amount!, cur)} für ${need.label}`
-      detail = `Es fehlen ${chf(short, cur)}. ${detail}`
+      title = t(
+        `Liquidität ${chf(cash.value, cur)} (${pct(cash.share)}), unter dem Bedarf von ${chf(need.amount!, cur)} für ${label}`,
+        `Liquidity ${chf(cash.value, cur)} (${pct(cash.share)}), below the ${chf(need.amount!, cur)} needed for ${label}`,
+      )
+      detail = `${t(`Es fehlen ${chf(short, cur)}.`, `${chf(short, cur)} is missing.`)} ${detail}`
     } else {
-      detail = `Deckt den notierten Bedarf von ${chf(need.amount!, cur)} für ${need.label}. ${detail}`
+      detail = `${t(`Deckt den notierten Bedarf von ${chf(need.amount!, cur)} für ${label}.`, `Covers the noted need of ${chf(need.amount!, cur)} for ${label}.`)} ${detail}`
     }
   }
   const f: Finding = {

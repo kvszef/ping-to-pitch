@@ -3,10 +3,11 @@
 // (interpretation) with its source; the ranking score is ours and goes in numbers.
 import { combinedHistory, daysBetween } from '../data.ts'
 import { dateCh, monthCh, shortName, signedPct } from '../format.ts'
+import { pick, sourceName } from '../lang.ts'
 import type { Check, Evidence, Finding } from '../types.ts'
-import { findingId, SRC } from './common.ts'
+import { findingId, srcOf } from './common.ts'
 import { performanceStats } from './portfolio-performance.ts'
-import { ACCEPTED, BAD_MONTH, noteEvidence, proposalDate, proposalEvidence, REJECTED, signalsOf } from './profile-signals.ts'
+import { ACCEPTED, BAD_MONTH, gistOf, noteEvidence, proposalDate, proposalEvidence, REJECTED, signalsOf } from './profile-signals.ts'
 import { traitsOf } from './profile-traits.ts'
 
 const CHECK = 'profile.call-reason'
@@ -30,9 +31,14 @@ const REASON_DE: Record<string, string> = {
   'Withdrawal request': 'Auszahlungswunsch',
 }
 const reasonDe = (r: string | undefined) => (r ? REASON_DE[r] ?? r : 'ohne Anlass')
+// English: the data's own value (ProposalReason is English already).
+const reasonEn = (r: string | undefined) => r?.trim() || 'no reason given'
 
 export const callReason: Check = (raw, ctx) => {
   const s = signalsOf(raw, ctx)
+  const { lang } = ctx
+  const t = pick(lang)
+  const SRC = srcOf(lang)
   const c = s.client
   const now = ctx.now
   const reasons: Reason[] = []
@@ -43,8 +49,11 @@ export const callReason: Check = (raw, ctx) => {
     const d = proposalDate(p)
     reasons.push({
       subject: `draft:${p.id ?? `idx${i}`}`, score: 3, date: d,
-      title: `Rückfrage zum offenen Vorschlag «${reasonDe(p.reason)}»${d ? ` vom ${dateCh(d)}` : ''}`,
-      evidence: [proposalEvidence(p)],
+      title: t(
+        `Rückfrage zum offenen Vorschlag «${reasonDe(p.reason)}»${d ? ` vom ${dateCh(d)}` : ''}`,
+        `Question about the open proposal «${reasonEn(p.reason)}»${d ? ` of ${dateCh(d)}` : ''}`,
+      ),
+      evidence: [proposalEvidence(p, lang)],
     })
   })
 
@@ -60,8 +69,8 @@ export const callReason: Check = (raw, ctx) => {
     reasons.push({
       subject: `maturity:${p.nr}`, score: soon[0].days <= 30 ? 3 : 2, date: soon[0].date,
       title: soon.length === 1
-        ? `Obligation ${shortName(soon[0].pos.name)} wird am ${dateCh(soon[0].date)} fällig: Wiederanlage`
-        : `${soon.length} Obligationen werden bis ${dateCh(soon[soon.length - 1].date)} fällig: Wiederanlage`,
+        ? t(`Obligation ${shortName(soon[0].pos.name)} wird am ${dateCh(soon[0].date)} fällig: Wiederanlage`, `Bond ${shortName(soon[0].pos.name)} matures on ${dateCh(soon[0].date)}: reinvestment`)
+        : t(`${soon.length} Obligationen werden bis ${dateCh(soon[soon.length - 1].date)} fällig: Wiederanlage`, `${soon.length} bonds mature by ${dateCh(soon[soon.length - 1].date)}: reinvestment`),
       evidence: [SRC.portfolio(p.nr), ...soon.map((x) => SRC.security(x.pos.name))],
       numbers: { count: soon.length, daysToFirst: soon[0].days, share: soon.reduce((a, x) => a + x.pos.weight, 0) },
     })
@@ -72,10 +81,10 @@ export const callReason: Check = (raw, ctx) => {
     const days = ago(n.date)
     if (days === undefined || days < 0 || days > NOTE_DAYS) return
     if (n.signals.includes('ask')) {
-      reasons.push({ subject: `note:${n.date}:${i}`, score: days <= 30 ? 3 : 2, date: n.date, title: `Anliegen aus der Notiz vom ${dateCh(n.date)}: ${n.gist}`, evidence: [noteEvidence(n)], numbers: { daysAgo: days } })
+      reasons.push({ subject: `note:${n.date}:${i}`, score: days <= 30 ? 3 : 2, date: n.date, title: t(`Anliegen aus der Notiz vom ${dateCh(n.date)}: ${n.gist}`, `Request from the note of ${dateCh(n.date)}: ${gistOf(n, 'en')}`), evidence: [noteEvidence(n, lang)], numbers: { daysAgo: days } })
     } else if (!n.known && days <= 30) {
       // Unknown wording: not quoted (it may hold names), only pointed to.
-      reasons.push({ subject: `note:${n.date}:${i}`, score: 1, date: n.date, title: `Neue Kundennotiz vom ${dateCh(n.date)}: vor dem Gespräch lesen`, evidence: [{ source: 'Kundennotiz', date: n.date }], numbers: { daysAgo: days } })
+      reasons.push({ subject: `note:${n.date}:${i}`, score: 1, date: n.date, title: t(`Neue Kundennotiz vom ${dateCh(n.date)}: vor dem Gespräch lesen`, `New client note of ${dateCh(n.date)}: read it before the call`), evidence: [{ source: sourceName('note', lang), date: n.date }], numbers: { daysAgo: days } })
     }
   })
 
@@ -88,9 +97,15 @@ export const callReason: Check = (raw, ctx) => {
     reasons.push({
       subject: `proposal:${p.id ?? d}`, score: 2, date: d,
       title: called
-        ? `Hat am ${dateCh(d)} schon angerufen (Vorschlag ${p.status === ACCEPTED ? 'angenommen' : 'abgelehnt'}): Nachfrage wahrscheinlich`
-        : `Nachfrage zum Vorschlag «${reasonDe(p.reason)}» vom ${dateCh(d)} (${p.status === ACCEPTED ? 'angenommen, Umsetzung' : 'abgelehnt'})`,
-      evidence: [proposalEvidence(p)], numbers: { daysAgo: days },
+        ? t(
+          `Hat am ${dateCh(d)} schon angerufen (Vorschlag ${p.status === ACCEPTED ? 'angenommen' : 'abgelehnt'}): Nachfrage wahrscheinlich`,
+          `Already called on ${dateCh(d)} (proposal ${p.status === ACCEPTED ? 'accepted' : 'rejected'}): a follow-up question is likely`,
+        )
+        : t(
+          `Nachfrage zum Vorschlag «${reasonDe(p.reason)}» vom ${dateCh(d)} (${p.status === ACCEPTED ? 'angenommen, Umsetzung' : 'abgelehnt'})`,
+          `Follow-up on the proposal «${reasonEn(p.reason)}» of ${dateCh(d)} (${p.status === ACCEPTED ? 'accepted, being carried out' : 'rejected'})`,
+        ),
+      evidence: [proposalEvidence(p, lang)], numbers: { daysAgo: days },
     })
   }
 
@@ -100,14 +115,19 @@ export const callReason: Check = (raw, ctx) => {
     const month = stats.lastMonth !== undefined && stats.lastMonth <= BAD_MONTH
     const quarter = stats.threeMonths !== undefined && stats.threeMonths <= THREE_MONTH_DROP
     if (month || quarter) {
-      const reacts = traitsOf(s).some((t) => t.key === 'loss-reacts')
+      const reacts = traitsOf(s, lang).some((x) => x.key === 'loss-reacts')
       const numbers: Record<string, number> = {}
       if (stats.lastMonth !== undefined) numbers.lastMonth = stats.lastMonth
       if (stats.threeMonths !== undefined) numbers.threeMonths = stats.threeMonths
       reasons.push({
         subject: 'performance', score: reacts ? 3 : 2, date: stats.asOf,
-        title: month ? `Wertrückgang im letzten Monat (${signedPct(stats.lastMonth!)}, Stand ${monthCh(stats.asOf)})` : `Wertrückgang über 3 Monate (${signedPct(stats.threeMonths!)}, Stand ${monthCh(stats.asOf)})`,
-        detail: `Aus Monatswerten, nicht um Ein- und Auszahlungen bereinigt.${reacts ? ' Reagiert erfahrungsgemäss eher auf Verluste.' : ''}`,
+        title: month
+          ? t(`Wertrückgang im letzten Monat (${signedPct(stats.lastMonth!)}, Stand ${monthCh(stats.asOf)})`, `Portfolio value fell last month (${signedPct(stats.lastMonth!)}, as of ${monthCh(stats.asOf, 'en')})`)
+          : t(`Wertrückgang über 3 Monate (${signedPct(stats.threeMonths!)}, Stand ${monthCh(stats.asOf)})`, `Portfolio value fell over 3 months (${signedPct(stats.threeMonths!)}, as of ${monthCh(stats.asOf, 'en')})`),
+        detail: t(
+          `Aus Monatswerten, nicht um Ein- und Auszahlungen bereinigt.${reacts ? ' Reagiert erfahrungsgemäss eher auf Verluste.' : ''}`,
+          `From monthly values, not adjusted for deposits and withdrawals.${reacts ? ' Past behaviour suggests this client tends to react to losses.' : ''}`,
+        ),
         evidence: [SRC.history(c.portfolios.map((p) => p.nr).join(', '), stats.asOf)], numbers,
       })
     }

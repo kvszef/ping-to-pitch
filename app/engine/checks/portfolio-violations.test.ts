@@ -51,4 +51,21 @@ describe('portfolio.violations', () => {
   it('never throws on garbage', () => {
     expect(violations({ ClientRef: 'X', SuitabilityViolations: [{ ViolationPath: 'x' }, null] }, ctx)).toHaveLength(1)
   })
+
+  it('phrases the findings in English with the bank\'s own rule text (CASE-037, CASE-012, CASE-038)', () => {
+    const en = { ...ctx, lang: 'en' as const }
+    const f = violations(client('CASE-037'), en)
+    const na = f.find((x) => x.title.includes('North America'))!
+    expect(na.title).toBe('CASE-037-02: Underweight in the equity region «North America»: 23.9%')
+    expect(na.detail).toBe("Actual 23.9%, the bank's thresholds: 26.5% / 21.5%")
+    expect(na.numbers).toMatchObject({ threshold1: 0.265, threshold2: 0.215 })
+    const override = f.find((x) => x.severity === 'info')!
+    expect(override.title).toBe('Rule «No structured products» is switched off for this client')
+    expect(override.detail).toBe('A rule violation is shown when the portfolio holds structured products.')
+    expect(override.evidence[0].source).toBe('Individual rule exception')
+    // A rule name the German side does not know either stays a quote from the data.
+    const c12 = violations(client('CASE-012'), en)
+    expect(c12.find((x) => x.title.includes('«Anlagevorschlag ohne Auftraggeber»'))!.detail).toBe('The details of the rule run are missing from the data.')
+    expect(violations(client('CASE-038'), en).some((x) => x.title.startsWith('Portfolio unknown: '))).toBe(true)
+  })
 })

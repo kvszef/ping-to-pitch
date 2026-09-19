@@ -2,6 +2,9 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { appBriefing, uploadClients, type Llm } from './briefing-route.ts'
+import { readClient } from '../../engine/data.ts'
+import { ref } from '../../engine/test-data.ts'
+import { wishesOf } from '../../engine/wishes.ts'
 import { classifyNotes, clearWishCache, type Complete } from './wishes.ts'
 
 const OIL = 'Bitte keine Ölfirmen im Depot'
@@ -51,7 +54,7 @@ describe('briefing route with the classifier', () => {
   const raw = { ...structuredClone(clients.find((c) => c.ClientRef === 'CASE-004')!), ClientRef: 'DEMO-OIL', ClientNotes: [{ Note: OIL, CreatedByDateUTC: '2026-09-01T10:00:00Z' }] }
   uploadClients(Buffer.from(JSON.stringify([raw])))
   const llm = (complete: Complete | null): Llm => ({ ready: (p) => p === 'openai' && !!complete, complete: async (_p, m) => complete!(m) })
-  const findings = async (l: Llm) => ((await appBriefing('/api/briefing/DEMO-OIL?tier=instant', l)).data as { findings: { check: string; severity: string; fix?: { Reason: string } }[] }).findings
+  const findings = async (l: Llm) => ((await appBriefing('/api/briefing/DEMO-OIL?tier=instant&lang=de', l)).data as { findings: { check: string; severity: string; fix?: { Reason: string } }[] }).findings
 
   it('passes the model answer to the engine: the note becomes a contradiction with a fix', async () => {
     const m = fake(oilAnswer)
@@ -70,5 +73,18 @@ describe('briefing route with the classifier', () => {
   it('a model error passes nothing and the briefing still answers', async () => {
     const all = await findings(llm(async () => { throw new Error('429') }))
     expect(all.some((x) => x.check === 'wish.unreviewed')).toBe(true)
+  })
+})
+
+describe('labels of a classified note', () => {
+  const raw = { ...structuredClone(clients.find((c) => c.ClientRef === 'CASE-004')!), ClientNotes: [{ Note: OIL, CreatedByDateUTC: '2026-09-01T10:00:00Z' }] }
+
+  it('come from the menu item in German and English, never from the model', async () => {
+    const answers = await classifyNotes([OIL], fake(oilAnswer).complete)
+    expect(wishesOf(readClient(raw, ref), { wishes: answers }).wishes[0]).toMatchObject({ by: 'ai', de: 'Kein Engagement in fossilen Energien', en: 'No exposure to fossil fuels' })
+    // a model that adds its own wording is off the menu: the note stays unread
+    clearWishCache()
+    const chatty = await classifyNotes([OIL], fake((notes) => ({ items: notes.map((n) => ({ i: n.i, wish: { type: 'exclude-sector', sector: 'Energy', scope: 'any', en: 'No oil companies' } })) })).complete)
+    expect(chatty).toEqual({ [OIL]: 'unknown' })
   })
 })

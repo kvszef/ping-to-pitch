@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { exclusions } from './checks/contradiction-exclusion.ts'
 import { readClient } from './data.ts'
-import { applySale, measureExclusion, smallestFix } from './fix.ts'
+import { applySale, measureExclusion, saleText, smallestFix } from './fix.ts'
 import { client, ctx, ref } from './test-data.ts'
 
 const ENERGY = { type: 'exclude-sector', sector: 'Energy', scope: 'any' } as const
@@ -38,5 +38,20 @@ describe('smallest fix', () => {
 
   it('finds nothing to sell for a direct-only wish when there is no direct holding', () => {
     expect(smallestFix(client('CASE-037'), ctx, { type: 'exclude-sector', sector: 'Energy', scope: 'direct' })).toBeUndefined()
+  })
+
+  it('phrases the fix and the re-check in English when ctx.lang is "en"', () => {
+    const en = { ...ctx, lang: 'en' as const }
+    const r = smallestFix(client('CASE-004'), en, ENERGY)!
+    expect(r.fix.Reason).toBe('Sell SPDR MSCI World Energy UCITS ETF')
+    expect(saleText(r.holding, 'en')).toMatch(/^Sale of SPDR MSCI World Energy UCITS ETF for CHF [\d']+$/)
+    expect(saleText(r.holding)).toMatch(/^Verkauf SPDR MSCI World Energy UCITS ETF über CHF [\d']+$/)
+    const raw = structuredClone(client('CASE-004'))
+    raw.ClientNotes = [{ Note: 'Wants exposure limited to developed markets only, no emerging markets.', CreatedByDateUTC: '2026-09-01T10:00:00Z' }]
+    const f = exclusions(raw, en).find((x) => x.check === 'contradiction.region')!
+    expect(f.fix!.Reason).toMatch(/^Sell .*EM IMI UCITS ETF$/)
+    expect(f.numbers!.newIssues).toBeGreaterThan(0)
+    expect(f.detail).toMatch(/After the sale: CASE-004-01: /)
+    expect(f.detail).not.toMatch(/Untergewicht|Nach dem Verkauf/)
   })
 })

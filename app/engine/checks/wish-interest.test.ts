@@ -47,4 +47,17 @@ describe('wish.interest', () => {
     expect(f[0].evidence.filter((e) => e.source === 'Kundennotiz')).toHaveLength(2)
     expect(interest(client('CASE-001'), ctx)).toEqual([])
   })
+
+  it('phrases the same findings in English (ctx.lang)', () => {
+    const en = { ...ctx, lang: 'en' as const }
+    const [f] = interest(client('CASE-010'), en)
+    expect(f.numbers).toEqual(interest(client('CASE-010'), ctx)[0].numbers)
+    expect(f.title).toMatch(/^Interest «.+»: today 75\.9% of total assets with an ESG score of 5\.714 or more$/)
+    expect(f.detail).toMatch(/Weakest position: Sandoz Group AG \(score 5\.7, 4\.2%\)\. Options from the recommendation list \(not held, risk class up to \d/)
+    expect(f.evidence.some((e) => e.source === 'Recommendation list')).toBe(true)
+    expect(f.evidence.some((e) => e.source === 'Risk profile' && /risk class up to \d/.test(e.quote ?? ''))).toBe(true)
+    const dividend = interest(client('CASE-003'), en).find((x) => x.id.includes(':dividend:'))!
+    expect(dividend.title).toBe('Interest «Focus on dividend stocks for regular income»: cannot be measured in the data')
+    expect(dividend.detail).toBe('The data holds no dividend yields: ask what is meant.')
+  })
 })

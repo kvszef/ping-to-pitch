@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { readClient } from './data.ts'
 import { client, clients, ref } from './test-data.ts'
-import { classifyNote, parseWish, wishesOf, type Wish } from './wishes.ts'
+import { classifyNote, parseWish, unverifiableLabel, wishesOf, wishLabel, wishText, type Wish } from './wishes.ts'
 
 const notes = [...new Set(clients.flatMap((c) => readClient(c, ref).notes.map((n) => n.text)))]
 const wishOf = (text: string) => classifyNote(text)?.wishes
@@ -90,5 +90,41 @@ describe('wishesOf', () => {
     const read = wishesOf(c, { wishes: { 'Bitte keine Ölfirmen im Depot': { type: 'exclude-sector', sector: 'Energy', scope: 'any' } } })
     expect(read.unread).toEqual([])
     expect(read.wishes[0]).toMatchObject({ by: 'ai', de: 'Kein Engagement in fossilen Energien', wish: { type: 'exclude-sector', sector: 'Energy' } })
+  })
+})
+
+describe('English labels', () => {
+  it('every reading of today\'s notes carries an English label next to the German one', () => {
+    for (const n of notes) {
+      const r = classifyNote(n)!
+      expect(r.en, n).toBeTruthy()
+      expect(r.en, n).not.toMatch(/\b(Keine?|Nur|Mehr|und|Interesse|Braucht)\b/)
+    }
+    expect(classifyNote('Prefers ESG-compliant investments, no defense or tobacco holdings.')).toMatchObject({ de: 'ESG-konform, keine Rüstung und kein Tabak', en: 'ESG-compliant, no defence and no tobacco' })
+    expect(classifyNote('Needs approximately CHF 15,000 in liquid funds for the Q1 tax payment.')).toMatchObject({ de: "Braucht rund CHF 15'000 flüssig", en: "Needs around CHF 15'000 liquid" })
+  })
+
+  it('labels a menu item in both languages; German stays the default', () => {
+    const energy: Wish = { type: 'exclude-sector', sector: 'Energy', scope: 'any' }
+    expect(wishLabel(energy)).toBe('Kein Engagement in fossilen Energien')
+    expect(wishLabel(energy, 'en')).toBe('No exposure to fossil fuels')
+    expect(wishLabel({ type: 'exclude-sector', sector: 'Financials', scope: 'direct' }, 'en')).toBe('No direct investments in the Financials sector')
+    expect(wishLabel({ type: 'keep-cash', amountChf: 50000 }, 'en')).toBe("Needs around CHF 50'000 liquid")
+    expect(wishLabel({ type: 'interest', measure: 'sector', sector: 'Utilities' }, 'en')).toBe('More Utilities')
+    // an exclusion label is German data: the usual ones have an English name, any other is shown as it is
+    expect(wishLabel({ type: 'exclude-unverifiable', label: 'Rüstung und Tabak' }, 'en')).toBe('No defence and tobacco')
+    expect(wishLabel({ type: 'exclude-unverifiable', label: 'Pelzhandel' }, 'en')).toBe('Excluded: Pelzhandel')
+    expect(unverifiableLabel('Pelzhandel', 'en')).toBeUndefined()
+    expect(unverifiableLabel('Pelzhandel')).toBe('Pelzhandel')
+  })
+
+  it('gives a wish the model classified its English label from the menu item', () => {
+    const raw = structuredClone(client('CASE-004'))
+    raw.ClientNotes = [{ Note: 'Bitte keine Ölfirmen im Depot', CreatedByDateUTC: '2026-09-01T10:00:00Z' }]
+    const [w] = wishesOf(readClient(raw, ref), { wishes: { 'Bitte keine Ölfirmen im Depot': { type: 'exclude-sector', sector: 'Energy', scope: 'any' } } }).wishes
+    expect(w).toMatchObject({ by: 'ai', de: 'Kein Engagement in fossilen Energien', en: 'No exposure to fossil fuels' })
+    expect(wishText(w)).toBe(w.de)
+    expect(wishText(w, 'en')).toBe(w.en)
+    expect(w.note.text).toBe('Bitte keine Ölfirmen im Depot') // the note itself is never translated
   })
 })

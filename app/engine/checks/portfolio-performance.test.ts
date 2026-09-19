@@ -33,4 +33,15 @@ describe('portfolio.performance', () => {
     expect(s.lastMonth).toBeCloseTo(-0.1, 6)
     expect(s.maxDrawdown!.value).toBeCloseTo(-0.1, 6)
   })
+
+  it('phrases the findings in English with the same numbers (CASE-037)', () => {
+    const findings = performance(client('CASE-037'), { ...ctx, lang: 'en' })
+    const f = findings.find((x) => x.id === 'portfolio.performance:CASE-037:CASE-037-02')!
+    expect(f.title).toBe('CASE-037-02: −5.4% last month, +33.2% over 12 months')
+    expect(f.detail).toContain('As of: July 2026')
+    expect(f.detail).toContain('not adjusted for deposits and withdrawals')
+    expect(f.evidence[0].source).toBe('Performance (monthly values)')
+    expect(findings.find((x) => x.id.endsWith(':total'))!.title).toMatch(/^Total wealth: /)
+    expect(findings.map((x) => x.numbers)).toEqual(performance(client('CASE-037'), ctx).map((x) => x.numbers))
+  })
 })

@@ -51,4 +51,21 @@ describe('profile.trait', () => {
       expect(text).not.toContain('ß')
     }
   })
+
+  it('phrases the same traits in English when ctx.lang is en: hedged wording, English sources, German left as it was', () => {
+    const de = traits(client('CASE-037'), ctx)
+    const en = traits(client('CASE-037'), { ...ctx, lang: 'en' })
+    expect(en.map((x) => [x.id, x.kind, x.numbers])).toEqual(de.map((x) => [x.id, x.kind, x.numbers]))
+    for (const x of en) expect(x.title).toMatch(/^(Tends to|Seems|Appears to)/)
+    const reacts = en.find((x) => x.id === 'profile.trait:CASE-037:loss-reacts')!
+    expect(reacts.title).toBe('Tends to react to losses: weak months visibly weigh on the client')
+    expect(reacts.evidence.some((e) => e.source === 'Investment proposal' && e.ref)).toBe(true)
+    const control = en.find((x) => x.id.endsWith(':control'))!
+    expect(control.detail).toBe('Note: Wants a call back before any change to the standing order.')
+    expect(control.evidence[0]).toMatchObject({ source: 'Client note', quote: 'Wants a call back before any change to the standing order' })
+    // The bank's own profile name is data: quoted, not translated.
+    expect(traits(client('CASE-023'), { ...ctx, lang: 'en' }).find((x) => x.id.endsWith(':risk-braver'))!.title).toMatch(/^Seems more willing to take risk than the risk profile «.+»$/)
+    // Asking in English must not change what a later German run gets (traits are cached per language).
+    expect(traits(client('CASE-037'), ctx)).toEqual(de)
+  })
 })

@@ -39,4 +39,13 @@ describe('portfolio.ex-custody', () => {
     const c = structuredClone(client('CASE-004')); (c.Portfolios as unknown[]).push(bare)
     expect(readClient(c, ref).portfolios.find((x) => x.isExCustody)!.positions.find((x) => x.securityId === -1)!.security).toBeUndefined()
   })
+
+  it('phrases the finding in English with the same numbers', () => {
+    const [de] = exCustody(withExternal(), ctx)
+    const [f] = exCustody(withExternal(), { ...ctx, lang: 'en' })
+    expect(f.title).toBe(`Fremddepot 1 at Beispielbank AG: CHF 100'000, ${((100_000 / (534_191 + 100_000)) * 100).toFixed(1)}% of total wealth (statement of 31.12.2025)`)
+    expect(f.detail).toContain('2 securities and 1 account; 30.0% of the external custody account is not in our master data')
+    expect(f.numbers).toEqual(de.numbers)
+    expect(f.evidence[0]).toMatchObject({ source: 'External custody account (statement)', ref: 'Fremddepot 1' })
+  })
 })

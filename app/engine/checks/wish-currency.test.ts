@@ -15,4 +15,14 @@ describe('wish.currency', () => {
     expect(currency(client('CASE-036'), ctx)[0].severity).toBe('ok')
     expect(currency(client('CASE-004'), ctx)).toEqual([])
   })
+
+  it('phrases the same findings in English (ctx.lang)', () => {
+    const en = { ...ctx, lang: 'en' as const }
+    const [f] = currency(client('CASE-039'), en)
+    expect(f.numbers).toEqual(currency(client('CASE-039'), ctx)[0].numbers)
+    expect(f.title).toMatch(/^Wish «Foreign currencies hedged to CHF»: 35\.\d% of total assets in foreign-currency securities without a CHF hedge$/)
+    expect(f.detail).toMatch(/^Largest: Xtrackers MSCI World ESG UCITS ETF \(USD/)
+    expect(f.evidence.map((e) => e.source)).toEqual(['Client note', 'Position', 'Position', 'Position'])
+    expect(currency(client('CASE-036'), en)[0].title).toMatch(/^Wish «.+» met: no unhedged foreign-currency securities$/)
+  })
 })

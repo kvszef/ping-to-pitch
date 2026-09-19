@@ -13,8 +13,8 @@ export const unreviewed: Check = (raw, ctx) => {
   return wishesOf(client, ctx).unread.map((note) => ({
     id: unique(findingId(CHECK, client.ref, note.date ?? 'ohne-datum')),
     check: CHECK, kind: 'action', severity: 'info', topic: 'notes',
-    title: 'Notiz nicht automatisch geprüft, bitte lesen',
+    title: ctx.lang === 'en' ? 'Note not checked automatically, please read' : 'Notiz nicht automatisch geprüft, bitte lesen',
     detail: `«${note.text}»`,
-    evidence: [noteEvidence({ note })],
+    evidence: [noteEvidence({ note }, ctx.lang)],
   }))
 }

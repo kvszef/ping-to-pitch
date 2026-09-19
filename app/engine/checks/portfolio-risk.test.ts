@@ -33,4 +33,15 @@ describe('portfolio.risk', () => {
     expect(findings[0].severity).toBe('ok')
     expect(findings[0].title).toBe('CASE-037-02: Volatilität 8.7%, innerhalb Profil (max. 12.0%)')
   })
+
+  it('phrases the findings in English with the same numbers', () => {
+    const en = { ...ctx, lang: 'en' as const }
+    const ok = risk(client('CASE-037'), en).filter((f) => f.id.includes('CASE-037-02'))
+    expect(ok[0].title).toBe('CASE-037-02: volatility 8.7%, within the profile (max. 12.0%)')
+    expect(risk(client('CASE-020'), en).find((f) => f.id.endsWith(':band'))?.title).toContain('risk below the strategy band')
+    const over = risk(client('CASE-012'), en).find((f) => f.id.endsWith(':profile'))!
+    expect(over.title).toMatch(/^CASE-012-01: volatility 18\.4% above the risk profile \(max\. 15\.0%\)$/)
+    expect(over.numbers).toEqual(profileFinding('CASE-012')!.numbers)
+    expect(risk(client('CASE-042'), en).find((f) => f.id.endsWith(':prc'))!.title).toContain("above the profile's product risk class")
+  })
 })

@@ -31,4 +31,18 @@ describe('profile.call-reason', () => {
   it('yields nothing for an empty client', () => {
     expect(callReason({ Proposals: null, Portfolios: null, ClientNotes: null }, ctx)).toEqual([])
   })
+
+  it('phrases the reasons in English when ctx.lang is en, with the same ranking', () => {
+    const en = callReason(client('CASE-042'), { ...ctx, lang: 'en' })
+    expect(en.map((x) => x.title)).toEqual([
+      '3 bonds mature by 21.10.2026: reinvestment',
+      'Question about the open proposal «Withdrawal request» of 14.06.2026',
+      'Portfolio value fell last month (−7.9%, as of July 2026)',
+    ])
+    expect(en.map((x) => [x.id, x.numbers])).toEqual(callReason(client('CASE-042'), ctx).map((x) => [x.id, x.numbers]))
+    expect(callReason(client('CASE-046'), { ...ctx, lang: 'en' })[0].title).toBe('Already called on 19.09.2026 (proposal rejected): a follow-up question is likely')
+    const [note] = callReason(client('CASE-045'), { ...ctx, lang: 'en' })
+    expect(note.title).toBe('Request from the note of 09.09.2026: Estate and succession planning is under review')
+    expect(note.evidence[0].source).toBe('Client note')
+  })
 })

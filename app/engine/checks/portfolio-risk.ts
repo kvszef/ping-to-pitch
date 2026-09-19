@@ -3,8 +3,9 @@
 // All limits come from reference.json (RiskProfiles.MaxVola / MaxPRC, Strategies.VolatilityMinimum / Maximum); none are ours.
 import { type Portfolio, type Strategy } from '../data.ts'
 import { pct, pts, shortName } from '../format.ts'
+import { pick, sourceName } from '../lang.ts'
 import type { Check, Finding } from '../types.ts'
-import { SRC, clientOf, findingId } from './common.ts'
+import { clientOf, findingId, srcOf } from './common.ts'
 
 const CHECK = 'portfolio.risk'
 // The bank's advisory rules do not apply to execution-only mandates: the client decides alone, the bank checks nothing.
@@ -18,6 +19,8 @@ const realBand = (s: Strategy | undefined): s is Strategy & { volaMin: number; v
 
 export const risk: Check = (raw, ctx) => {
   const client = clientOf(raw, ctx.ref)
+  const t = pick(ctx.lang)
+  const SRC = srcOf(ctx.lang)
   const profile = ctx.ref.riskProfile(client.riskProfileId)
   const profileName = profile?.name ?? client.riskProfileName
   const out: Finding[] = []
@@ -38,10 +41,16 @@ export const risk: Check = (raw, ctx) => {
         ...base, id: id('profile'),
         kind: executionOnly ? 'interpretation' : 'fact',
         severity: executionOnly ? 'info' : 'risk',
-        title: `${p.nr}: Volatilität ${pct(vola)} über dem Risikoprofil (max. ${pct(maxVola)})${executionOnly ? ', Execution only' : ''}`,
+        title: `${p.nr}: ${t(`Volatilität ${pct(vola)} über dem Risikoprofil`, `volatility ${pct(vola)} above the risk profile`)} (max. ${pct(maxVola)})${executionOnly ? ', Execution only' : ''}`,
         detail: executionOnly
-          ? `Execution-only-Mandat: Die Beratungsregeln gelten hier nicht, die Bank prüft das Risiko nicht. Überschreitung ${pct(excess)}.`
-          : `Überschreitung um ${pts(excess)} gegenüber dem Risikoprofil${profileName ? ` ${profileName}` : ''}.`,
+          ? t(
+            `Execution-only-Mandat: Die Beratungsregeln gelten hier nicht, die Bank prüft das Risiko nicht. Überschreitung ${pct(excess)}.`,
+            `Execution-only mandate: the advisory rules do not apply here and the bank does not check the risk. Exceeded by ${pct(excess)}.`,
+          )
+          : t(
+            `Überschreitung um ${pts(excess)} gegenüber dem Risikoprofil${profileName ? ` ${profileName}` : ''}.`,
+            `${pts(excess, 'en')} above the risk profile${profileName ? ` ${profileName}` : ''}.`,
+          ),
         numbers: { volatility: vola, maxVola, excess },
         evidence: [SRC.portfolio(p.nr), SRC.riskProfile(profileName)],
       })
@@ -55,11 +64,14 @@ export const risk: Check = (raw, ctx) => {
         ...base, id: id('band'), kind: 'fact',
         severity: below ? 'warn' : 'risk',
         title: below
-          ? `${p.nr}: Risiko unter Strategieband, Volatilität ${pct(vola)} (min. ${pct(strategy.volaMin)})`
-          : `${p.nr}: Risiko über Strategieband, Volatilität ${pct(vola)} (max. ${pct(strategy.volaMax)})`,
-        detail: `Strategie ${strategyName ?? 'unbekannt'}: Band ${pct(strategy.volaMin)} bis ${pct(strategy.volaMax)}.`,
+          ? `${p.nr}: ${t('Risiko unter Strategieband, Volatilität', 'risk below the strategy band, volatility')} ${pct(vola)} (min. ${pct(strategy.volaMin)})`
+          : `${p.nr}: ${t('Risiko über Strategieband, Volatilität', 'risk above the strategy band, volatility')} ${pct(vola)} (max. ${pct(strategy.volaMax)})`,
+        detail: t(
+          `Strategie ${strategyName ?? 'unbekannt'}: Band ${pct(strategy.volaMin)} bis ${pct(strategy.volaMax)}.`,
+          `Strategy ${strategyName ?? 'unknown'}: band ${pct(strategy.volaMin)} to ${pct(strategy.volaMax)}.`,
+        ),
         numbers: { volatility: vola, volaMin: strategy.volaMin, volaMax: strategy.volaMax },
-        evidence: [SRC.portfolio(p.nr), { source: 'Anlagestrategie', quote: strategyName }],
+        evidence: [SRC.portfolio(p.nr), { source: sourceName('strategy', ctx.lang), quote: strategyName }],
       })
     }
 
@@ -68,12 +80,18 @@ export const risk: Check = (raw, ctx) => {
       const over = overPrc(p, maxPrc)
       if (over.length) {
         const names = over.slice(0, TOP_NAMES).map((x) => shortName(x.name)).join(', ')
-        const more = over.length > TOP_NAMES ? ` und ${over.length - TOP_NAMES} weitere` : ''
+        const more = over.length > TOP_NAMES ? t(` und ${over.length - TOP_NAMES} weitere`, ` and ${over.length - TOP_NAMES} more`) : ''
         const weight = over.reduce((a, x) => a + x.weight, 0)
         out.push({
           ...base, id: id('prc'), kind: 'fact', severity: 'warn',
-          title: `${p.nr}: ${over.length === 1 ? '1 Position' : `${over.length} Positionen`} über Produktrisikoklasse ${maxPrc} des Profils: ${names}${more}`,
-          detail: `Zusammen ${pct(weight)} des Portfolios. Produktrisikoklasse (1–7) aus den Wertschriften-Stammdaten.`,
+          title: t(
+            `${p.nr}: ${over.length === 1 ? '1 Position' : `${over.length} Positionen`} über Produktrisikoklasse ${maxPrc} des Profils: ${names}${more}`,
+            `${p.nr}: ${over.length === 1 ? '1 position' : `${over.length} positions`} above the profile's product risk class ${maxPrc}: ${names}${more}`,
+          ),
+          detail: t(
+            `Zusammen ${pct(weight)} des Portfolios. Produktrisikoklasse (1–7) aus den Wertschriften-Stammdaten.`,
+            `Together ${pct(weight)} of the portfolio. Product risk class (1–7) from the security master data.`,
+          ),
           numbers: { count: over.length, maxPrc, weight },
           evidence: [SRC.riskProfile(profileName), ...over.slice(0, TOP_NAMES).map((x) => SRC.position(x.name, p.nr))],
         })
@@ -85,8 +103,8 @@ export const risk: Check = (raw, ctx) => {
         ...base, id: id('ok'), kind: 'fact',
         severity: maxVola !== undefined ? 'ok' : 'info',
         title: maxVola !== undefined
-          ? `${p.nr}: Volatilität ${pct(vola)}, innerhalb Profil (max. ${pct(maxVola)})`
-          : `${p.nr}: Volatilität ${pct(vola)}, kein Maximum im Risikoprofil hinterlegt`,
+          ? t(`${p.nr}: Volatilität ${pct(vola)}, innerhalb Profil (max. ${pct(maxVola)})`, `${p.nr}: volatility ${pct(vola)}, within the profile (max. ${pct(maxVola)})`)
+          : t(`${p.nr}: Volatilität ${pct(vola)}, kein Maximum im Risikoprofil hinterlegt`, `${p.nr}: volatility ${pct(vola)}, no maximum on file in the risk profile`),
         numbers: maxVola !== undefined ? { volatility: vola, maxVola } : { volatility: vola },
         evidence: [SRC.portfolio(p.nr), SRC.riskProfile(profileName)],
       })

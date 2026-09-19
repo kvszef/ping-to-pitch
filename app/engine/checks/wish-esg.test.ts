@@ -21,4 +21,15 @@ describe('wish.esg', () => {
     expect(f.evidence[0]).toMatchObject({ source: 'Kundennotiz' })
     expect(esg(client('CASE-009'), ctx)).toEqual([])
   })
+
+  it('phrases the same findings in English (ctx.lang)', () => {
+    const en = { ...ctx, lang: 'en' as const }
+    const [f] = esg(client('CASE-010'), en)
+    expect(f.title).toMatch(/^ESG profile «Yes»: \d+ positions? below the ESG minimum score 5\.714, together [\d.]+% of total assets$/)
+    expect(f.detail).toMatch(/^Weakest: Sandoz Group AG \(score 5\.7, 4\.2%\)/)
+    expect(f.evidence[0]).toMatchObject({ source: 'ESG profile' })
+    const [note] = esg(client('CASE-003'), en)
+    expect(note.title).toMatch(/^Wish «ESG-compliant, no defence and no tobacco»: /)
+    expect(note.evidence[0]).toMatchObject({ source: 'Client note' })
+  })
 })
