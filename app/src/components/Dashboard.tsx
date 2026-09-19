@@ -1,124 +1,122 @@
-import { AlertTriangle, Plus, Search, XCircle } from 'lucide-react'
-import { useState } from 'react'
+import { ArrowDown, ArrowUp, ChevronRight, Search } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import type { Client } from '../types'
-import { SeverityIcon } from '../cards/ui'
 import { useLanguage } from '../data/useLanguage'
 import { useTranslated } from '../data/useTranslate'
 import { ClientUpload } from './ClientUpload'
 
-const tabs = [['Kunden', 0], ['Neukunden', 6], ['Beratungen', 215], ['01 - Liquidität > 10%', 112], ['02 - Fälligkeiten', 0], ['03 - Letzte Beratung > 12 Monate', 191], ['04 - Regelverletzungen (dringend)', 28], ['05 - Geburtstage', 13]] as const
-const rawColumns = ['KundenNr.', 'Name', 'Kundenprofil', 'Anlass', 'Geburtstag', 'Letzte Profilierung', 'Letzte Beratung']
+// The client list: every client as one row that opens the client, with search, real filters and
+// sorting. Every number on this page is counted from the loaded clients (nothing is made up), and
+// open findings show as a quiet mark per client instead of red counters.
 
-const PAGE_SIZE = 10
+type SortKey = 'name' | 'aum' | 'last'
+type Filter = 'all' | 'open' | 'overdue'
 
-export function Dashboard({ clients, onUploaded }: { clients: Client[]; onUploaded: () => void }) {
+const amount = (aum: string) => { const n = Number(aum.replace(/[^0-9.]/g, '')); return Number.isFinite(n) ? n : 0 }
+const currencyOf = (aum: string) => aum.trim().split(/\s+/)[0] ?? ''
+// "07.09.2026" -> sortable number; unknown dates sort last.
+const day = (d: string) => { const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(d.trim()); return m ? Number(m[3] + m[2] + m[1]) : 0 }
+const thousands = (n: number) => Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, "'")
+const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('')
+
+export function Dashboard({ clients, onUploaded, onOpen }: { clients: Client[]; onUploaded: () => void; onOpen?: (ref: string) => void }) {
   const [query, setQuery] = useState('')
-  const [page, setPage] = useState(0)
+  const [filter, setFilter] = useState<Filter>('all')
+  const [sort, setSort] = useState<{ key: SortKey; up: boolean }>({ key: 'name', up: true })
   const language = useLanguage()
-  const [
-    tWillkommen,
-    tPendenteBeratungen,
-    tRestriktionen,
-    tWarnungenCount,
-    tMeineKunden,
-    tSuche,
-    tKeineKundenGefundenFuer,
-    tVorherige,
-    tNaechste,
-    tKunde,
-    tKundenSuffix,
-    ...rest
-  ] = useTranslated([
-    'Willkommen zurück, Hans Muster',
-    'Pendente Beratungen: 215',
-    'Restriktionen',
-    'Warnungen: 21',
-    'Meine Kunden',
-    'Suche',
-    'Keine Kunden gefunden für',
-    'Vorherige',
-    'Nächste',
-    'Kunde',
-    'Kunden',
-    ...rawColumns,
-    ...tabs.map(([label]) => label),
+  const [tTitle, tSearch, tNone, tAll, tOpen, tOverdue, tClient, tAssets, tStrategy, tLast, tFindings, tTotal, tNever, tOpenClient, tNoFindings] = useTranslated([
+    'Meine Kunden', 'Name oder Kundennummer', 'Keine Kunden gefunden für', 'Alle', 'Mit offenen Punkten', 'Letzte Beratung über 12 Monate her',
+    'Kunde', 'Vermögen', 'Strategie · Dienstleistung', 'Letzte Beratung', 'Offene Punkte', 'Gesamtvermögen', 'noch nie', 'Kunde öffnen', 'keine',
   ], language)
-  const columns = rest.slice(0, rawColumns.length)
-  const tabLabels = rest.slice(rawColumns.length)
+
+  // "Over 12 months" is measured against the newest consultation date in the data, never the wall clock (dates are shifted).
+  const newest = useMemo(() => Math.max(0, ...clients.map((c) => day(c.lastConsultation))), [clients])
+  const overdue = (c: Client) => { const d = day(c.lastConsultation); return !d || (newest > 0 && newest - d > 10000) }
+  const counts = useMemo(() => ({ all: clients.length, open: clients.filter((c) => c.errors + c.warnings > 0).length, overdue: clients.filter(overdue).length }), [clients, newest]) // eslint-disable-line react-hooks/exhaustive-deps
+  // One total only when every client is held in the same currency.
+  const currencies = useMemo(() => [...new Set(clients.map((c) => currencyOf(c.aum)).filter((x) => /^[A-Z]{3}$/.test(x)))], [clients])
+  const total = currencies.length === 1 ? clients.reduce((n, c) => n + amount(c.aum), 0) : 0
+
   const q = query.trim().toLowerCase()
-  const found = q ? clients.filter((c) => c.name.toLowerCase().includes(q) || c.ref.toLowerCase().includes(q)) : clients
-  const pages = Math.max(1, Math.ceil(found.length / PAGE_SIZE))
-  const current = Math.min(page, pages - 1)
-  const rows = found.slice(current * PAGE_SIZE, (current + 1) * PAGE_SIZE)
+  const rows = useMemo(() => {
+    const kept = clients.filter((c) => (filter === 'open' ? c.errors + c.warnings > 0 : filter === 'overdue' ? overdue(c) : true) && (!q || c.name.toLowerCase().includes(q) || c.ref.toLowerCase().includes(q)))
+    const by = sort.key === 'name' ? (a: Client, b: Client) => a.name.localeCompare(b.name, 'de') : sort.key === 'aum' ? (a: Client, b: Client) => amount(a.aum) - amount(b.aum) : (a: Client, b: Client) => day(a.lastConsultation) - day(b.lastConsultation)
+    return [...kept].sort((a, b) => (sort.up ? by(a, b) : by(b, a)))
+  }, [clients, filter, q, sort, newest]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const GRID = 'grid grid-cols-[minmax(0,2.4fr)_minmax(0,1.1fr)_minmax(0,1.7fr)_minmax(0,1fr)_minmax(0,0.9fr)_1.25rem] items-center gap-x-4'
+  const head = (key: SortKey, label: string, right = false) => (
+    <button type="button" onClick={() => setSort((s) => (s.key === key ? { key, up: !s.up } : { key, up: key === 'name' }))}
+      className={`flex items-center gap-1 text-[10px] uppercase tracking-wide hover:text-ink ${right ? 'justify-end' : ''} ${sort.key === key ? 'text-ink' : ''}`}>
+      {label}{sort.key === key && (sort.up ? <ArrowUp size={10} /> : <ArrowDown size={10} />)}
+    </button>
+  )
+  const chip = (id: Filter, label: string) => (
+    <button type="button" key={id} onClick={() => setFilter(id)} aria-pressed={filter === id}
+      className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs transition-colors ${filter === id ? 'bg-brand text-white' : 'bg-white/70 text-ink/70 hover:bg-brand-soft/60 hover:text-ink'}`}>
+      {label}<span className={`tabular-nums text-[10px] ${filter === id ? 'text-white/80' : 'text-muted'}`}>{counts[id]}</span>
+    </button>
+  )
 
   return (
-    <>
-      <div className="flex shrink-0 items-center justify-between bg-band px-3 py-3">
-        <div>
-          <div className="text-[17px]">{tWillkommen}</div>
-          <div className="mt-1 text-[11px]">{tPendenteBeratungen} <span className="mx-1 text-muted">|</span> {tRestriktionen} <span className="mx-1 text-muted">|</span> {tWarnungenCount}</div>
+    <main className="min-h-0 flex-1 overflow-y-auto bg-[radial-gradient(ellipse_at_top_left,rgba(89,151,237,0.28),transparent_55%),radial-gradient(ellipse_at_bottom_right,rgba(105,212,214,0.22),transparent_55%)] p-3">
+      <section className="mx-auto flex max-w-[1180px] flex-col rounded-2xl bg-white/55 shadow-[0_8px_32px_rgba(31,56,88,0.10)] ring-1 ring-white/70 backdrop-blur-xl">
+        <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3 px-5 pb-3 pt-4">
+          <div>
+            <h2 className="text-[20px] leading-tight">{tTitle} <span className="ml-1 text-[13px] tabular-nums text-muted">{clients.length}</span></h2>
+            {total > 0 && <p className="mt-0.5 text-[11px] text-muted">{tTotal} <span className="tabular-nums text-ink/80">{currencies[0]} {thousands(total)}</span></p>}
+          </div>
+          <div className="flex items-center gap-2">
+            <ClientUpload variant="box" onLoaded={() => { setQuery(''); setFilter('all'); onUploaded() }} />
+            <label className="flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs ring-1 ring-black/5 focus-within:ring-brand/50">
+              <Search size={13} className="shrink-0 text-muted" />
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={tSearch} aria-label={tSearch} className="w-44 bg-transparent outline-none placeholder:text-muted" />
+            </label>
+          </div>
+        </header>
+
+        <div className="flex flex-wrap gap-1.5 px-5 pb-3">{chip('all', tAll)}{chip('open', tOpen)}{chip('overdue', tOverdue)}</div>
+
+        <div className={`${GRID} border-y border-line/60 px-5 py-2 text-muted`}>
+          {head('name', tClient)}
+          <div className="flex justify-end">{head('aum', tAssets, true)}</div>
+          <span className="text-[10px] uppercase tracking-wide">{tStrategy}</span>
+          {head('last', tLast)}
+          <span className="text-[10px] uppercase tracking-wide">{tFindings}</span>
+          <span />
         </div>
-        <div className="text-[16px]">CHF 52'618'933.52</div>
-      </div>
 
-      <main className="min-h-0 flex-1 overflow-y-auto p-2">
-        <section className="bg-white p-4 shadow-card">
-          <h2 className="mb-5 text-[16px]">{tMeineKunden}</h2>
-          <div className="mb-5 flex items-center justify-between gap-4">
-            <div className="flex flex-wrap gap-x-7 gap-y-2">
-              {tabs.map(([label, count], i) => (
-                <span key={label} className={`flex items-center gap-1.5 pb-1.5 text-xs ${i === 0 ? 'border-b-2 border-brand px-5 text-brand' : ''}`}>
-                  {tabLabels[i]}
-                  <span className={`rounded-full px-1.5 text-[10px] text-white ${i === 0 ? 'bg-brand' : 'bg-ink'}`}>{i === 0 ? clients.length : count}</span>
+        <ul className="px-2 py-1.5">
+          {rows.map((c) => (
+            <li key={c.ref}>
+              <button type="button" onClick={() => onOpen?.(c.ref)} title={tOpenClient}
+                className={`${GRID} group w-full rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-white/80 focus-visible:bg-white/80 focus-visible:outline-none`}>
+                <span className="flex min-w-0 items-center gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-soft/70 text-[11px] text-brand-dark">{initials(c.name)}</span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-[14px] text-ink group-hover:text-brand-dark">{c.name}</span>
+                    <span className="block truncate text-[11px] text-muted">{c.ref} · {c.profile}</span>
+                  </span>
                 </span>
-              ))}
-              <span className="flex h-5 w-5 items-center justify-center rounded-sm bg-pill"><Plus size={12} /></span>
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <ClientUpload variant="box" onLoaded={() => { setQuery(''); setPage(0); onUploaded() }} />
-              <label className="flex shrink-0 items-center border border-line text-xs">
-                <span className="border-r border-line p-1.5"><Search size={12} /></span>
-                <input value={query} onChange={(e) => { setQuery(e.target.value); setPage(0) }} placeholder={tSuche} aria-label="Kunden suchen" className="w-28 px-2 outline-none" />
-              </label>
-            </div>
-          </div>
-
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b-2 border-ink/70 text-left">
-                <th className="w-8 py-2 pl-3"><XCircle size={12} className="fill-ink text-white" /></th>
-                <th className="w-8"><AlertTriangle size={12} className="fill-ink text-white" /></th>
-                {columns.map((c, i) => <th key={c} className={`py-2 font-medium ${i > 3 ? 'text-right pr-3' : ''}`}>{c} <span className="text-muted">⇅</span></th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((c, i) => (
-                <tr key={c.ref} className={i % 2 ? 'bg-stripe' : ''}>
-                  <td className="py-2.5 pl-3">{c.errors > 0 && <SeverityIcon severity="risk" size={12} />}</td>
-                  <td>{c.warnings > 0 && <SeverityIcon severity="warn" size={12} />}</td>
-                  <td>{c.ref}</td>
-                  <td className="text-brand">{c.name}</td>
-                  <td>{c.profile}</td>
-                  <td>{c.context}</td>
-                  <td className="pr-3 text-right">{c.birthday}</td>
-                  <td className="pr-3 text-right">{c.lastProfiling}</td>
-                  <td className="pr-3 text-right">{c.lastConsultation}</td>
-                </tr>
-              ))}
-              {rows.length === 0 && <tr><td colSpan={9} className="py-6 text-center text-muted">{tKeineKundenGefundenFuer} «{query.trim()}».</td></tr>}
-            </tbody>
-          </table>
-
-          <div className="mt-5 flex items-center justify-center gap-3 text-xs text-muted">
-            <button type="button" disabled={current === 0} onClick={() => setPage(current - 1)} className="enabled:hover:text-brand disabled:cursor-default disabled:opacity-50">« {tVorherige}</button>
-            {Array.from({ length: pages }, (_, i) => (
-              <button type="button" key={i} onClick={() => setPage(i)} aria-current={i === current ? 'page' : undefined} className={`rounded-sm px-2 py-0.5 ${i === current ? 'bg-brand text-white' : 'hover:bg-pill'}`}>{i + 1}</button>
-            ))}
-            <button type="button" disabled={current >= pages - 1} onClick={() => setPage(current + 1)} className="enabled:hover:text-brand disabled:cursor-default disabled:opacity-50">{tNaechste} »</button>
-            <span className="ml-2 tabular-nums">{found.length} {found.length === 1 ? tKunde : tKundenSuffix}</span>
-          </div>
-        </section>
-      </main>
-    </>
+                <span className="truncate text-right text-[13px] tabular-nums">{c.aum}</span>
+                <span className="min-w-0">
+                  <span className="block truncate text-[12px]">{c.strategy}</span>
+                  <span className="block truncate text-[11px] text-muted">{c.service}</span>
+                </span>
+                <span className={`truncate text-[12px] tabular-nums ${!day(c.lastConsultation) ? 'text-muted' : overdue(c) ? 'text-warn' : ''}`}>{day(c.lastConsultation) ? c.lastConsultation : tNever}</span>
+                <span className="flex items-center gap-1.5 text-[11px] tabular-nums text-muted">
+                  {c.errors + c.warnings === 0 ? <span className="text-muted/70">{tNoFindings}</span> : <>
+                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${c.errors ? 'bg-risk/80' : 'bg-warn/80'}`} />
+                    {c.errors + c.warnings}
+                  </>}
+                </span>
+                <ChevronRight size={14} className="text-muted/50 transition-transform group-hover:translate-x-0.5 group-hover:text-brand" />
+              </button>
+            </li>
+          ))}
+          {rows.length === 0 && <li className="py-10 text-center text-xs text-muted">{q ? `${tNone} «${query.trim()}».` : '–'}</li>}
+        </ul>
+      </section>
+    </main>
   )
 }

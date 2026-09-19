@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowLeft, Ban, Briefcase, CircleUser, ClipboardList, Info, Menu, Phone, PieChart, Radio, StickyNote, Users } from 'lucide-react'
+import { ArrowLeft, Briefcase, CircleUser, ClipboardList, Info, Menu, Phone, PieChart, Radio, StickyNote, Users } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { CardView, slotOf } from './cards/registry'
 import { ChatDock } from './components/ChatDock'
@@ -92,8 +92,6 @@ export default function App() {
     tBeratermappe,
     tAnrufeSignale,
     tKundenliste,
-    tRegelverletzungen,
-    tWarnungen,
     tKundenWerdenGeladen,
     tTelefonberatung,
     tNotizen,
@@ -114,8 +112,6 @@ export default function App() {
     'Beratermappe',
     'Anrufe & Signale',
     'Kundenliste',
-    'Regelverletzungen',
-    'Warnungen',
     'Kunden werden geladen',
     'Telefonberatung',
     'Notizen',
@@ -155,12 +151,10 @@ export default function App() {
           { label: tBeratermappe, icon: Briefcase },
           signalsItem,
           { label: tKundenliste, icon: Users, active: page === 'kunden', onClick: () => home('kunden') },
-          { label: tRegelverletzungen, icon: Ban, badge: clients.reduce((n, c) => n + c.errors, 0), badgeTone: 'red' },
-          { label: tWarnungen, icon: AlertTriangle, badge: clients.reduce((n, c) => n + c.warnings, 0), badgeTone: 'red' },
           { label: '', icon: Menu },
         ]} />
         {page === 'kunden'
-          ? <Dashboard clients={clients} onUploaded={refresh} />
+          ? <Dashboard clients={clients} onUploaded={refresh} onOpen={(r) => { setSession((s) => ({ n: s.n + 1, ref: r })); home('signale') }} />
           : listed ? <Workspace key={session.n} clients={clients} signals={[]} initialRef={session.ref} initialCall={session.call} initialDemo={session.demo} onSimulateCall={ring} onOpenBriefing={open}
             callbacks={callbacks} onCallbackDone={(id) => setCallbacks((list) => list.filter((c) => c.id !== id))} onCallState={setOnCall} />
           : <div className="p-3"><CardSkeleton label={tKundenWerdenGeladen} /></div>}
