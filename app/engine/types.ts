@@ -1,5 +1,6 @@
 // Engine contracts (PLAN.md, "Contracts v0"). Change them here, in one place, and say so in the commit.
 import type { ReferenceIndex } from './data.ts'
+import type { PeerStats } from './peers.ts'
 
 export type Kind = 'fact' | 'interpretation' | 'action' // same vocabulary as src/types.ts
 export type Severity = 'risk' | 'warn' | 'ok' | 'info'
@@ -36,5 +37,6 @@ export type CallNote = {
 // A client exactly as it comes from clients.json or an uploaded file. Never trusted: read it through data.ts.
 export type RawClient = Record<string, unknown>
 
-export type CheckContext = { ref: ReferenceIndex; now: Date; memory?: CallNote[] }
+// peers: aggregate returns of clients with the same risk profile (engine/peers.ts). Absent: no peer comparison.
+export type CheckContext = { ref: ReferenceIndex; now: Date; memory?: CallNote[]; peers?: PeerStats }
 export type Check = (client: RawClient, ctx: CheckContext) => Finding[]
