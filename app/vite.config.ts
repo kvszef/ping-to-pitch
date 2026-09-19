@@ -9,5 +9,5 @@ export default defineConfig(({ mode }) => ({
   // The client's phone reaches the dev server through a cloudflared tunnel (HTTPS is needed for the mic).
   server: { allowedHosts: ['.trycloudflare.com'] },
   // call.html is the client's phone page for the internet call.
-  build: { rollupOptions: { input: { main: resolve(__dirname, 'index.html'), call: resolve(__dirname, 'call.html') } } },
+  build: { rollupOptions: { input: { main: resolve(import.meta.dirname, 'index.html'), call: resolve(import.meta.dirname, 'call.html') } } },
 }))
