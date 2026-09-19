@@ -78,6 +78,17 @@ export async function accept(): Promise<boolean> {
     player.srcObject = remote
     document.body.appendChild(player)
     const el = player
+    // A monitor without speakers is often the Windows default output (display audio over HDMI/DP):
+    // then the client's voice goes to the laptop speakers or headphones instead.
+    try {
+      const outs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audiooutput')
+      const std = outs.find((d) => d.deviceId === 'default')
+      const real = outs.find((d) => d.deviceId !== 'default' && d.deviceId !== 'communications' && /lautsprecher|speaker|kopfh|headphone|headset/i.test(d.label))
+      if (std && real && /display audio|hdmi|displayport/i.test(std.label) && 'setSinkId' in el) {
+        await (el as HTMLAudioElement & { setSinkId: (id: string) => Promise<void> }).setSinkId(real.deviceId)
+        dlog(`output moved from "${std.label}" to "${real.label}"`)
+      }
+    } catch (e) { dlog(`output check failed ${e}`) }
     el.play().then(() => {
       dlog('player playing')
       setTimeout(() => { if (player === el) dlog(`player after 3s: time=${el.currentTime.toFixed(1)} paused=${el.paused} volume=${el.volume} muted=${el.muted}`) }, 3000)
