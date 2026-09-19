@@ -4,6 +4,7 @@ import { CardView, slotOf } from './cards/registry'
 import { ChatDock } from './components/ChatDock'
 import { InfoBand, Pill, SubBar, TopBar, type ToolItem } from './components/Chrome'
 import { ClientUpload } from './components/ClientUpload'
+import { ExCustodyUpload } from './components/ExCustodyUpload'
 import { Dashboard } from './components/Dashboard'
 import { LiveOverlay } from './components/LiveOverlay'
 import { CardSkeleton, MetricsSkeleton } from './components/Skeleton'
@@ -56,7 +57,9 @@ export default function App() {
     } else setCall((c) => (c?.number === 'Internetanruf' ? null : c))
   }, [ringingRef]) // eslint-disable-line react-hooks/exhaustive-deps
   const client = clients.find((c) => c.ref === ref)
-  const briefing = useBriefing(client?.ref ?? null)
+  // Bumped when an ex-custody statement is attached or removed, so the briefing reloads with it.
+  const [importVersion, setImportVersion] = useState(0)
+  const briefing = useBriefing(client?.ref ?? null, importVersion)
   // While it rings, the engine's briefing of the caller loads, so the banner shows why they are probably calling.
   const callerListed = clients.find((c) => c.ref === call?.ref)
   const callerBrief = useBriefing(call?.ref ?? null)
@@ -149,6 +152,7 @@ export default function App() {
           {pills.map((c) => <Pill key={c.ref} icon={CircleUser} active={c.ref === client.ref} onClick={() => open(c.ref, live)}>{c.name}</Pill>)}
           <span className="mx-1 border-l border-ink/40" />
           <ClientUpload variant="pill" onLoaded={refresh} />
+          <ExCustodyUpload clientRef={client.ref} onChanged={() => setImportVersion((v) => v + 1)} />
         </div>
       </InfoBand>
 

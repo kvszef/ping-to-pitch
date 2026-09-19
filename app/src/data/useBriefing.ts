@@ -8,7 +8,8 @@ const NO_FINDINGS: Finding[] = []
 type State = { ref: string | null; cards: Partial<Record<Tier, Card[]>>; findings: Finding[]; order?: Card['type'][]; hidden?: Card['type'][] }
 
 // Requests all three tiers in parallel and hands out each tier's cards as soon as it arrives.
-export function useBriefing(ref: string | null) {
+// `version` reloads the same client, e.g. after an ex-custody statement was attached; the old cards stay until the new ones arrive.
+export function useBriefing(ref: string | null, version = 0) {
   const [state, setState] = useState<State>({ ref: null, cards: {}, findings: [] })
 
   useEffect(() => {
@@ -27,7 +28,7 @@ export function useBriefing(ref: string | null) {
         })
     }
     return () => { stale = true }
-  }, [ref])
+  }, [ref, version])
 
   // A result for another client is ignored, so switching clients shows skeletons straight away.
   // Stable references while nothing new arrived, so consumers can memoise on them.

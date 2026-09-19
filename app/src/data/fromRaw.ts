@@ -83,6 +83,9 @@ export function fromRaw(input: unknown, now: Date): Client {
   const portfolioSum = portfolios.reduce((n, p) => n + num(p.AssetsUnderManagementInDefaultCurrency), 0)
   const aum = num(raw.AssetsUnderManagementInDefaultCurrency) || portfolioSum
   const liquidity = num(raw.LiquidityInDefaultCurrency) || portfolios.reduce((n, p) => n + num(p.LiquidityInDefaultCurrency), 0)
+  // Ex-custody portfolios (imported statements from other banks) count in the totals and are labelled as such.
+  const external = portfolios.filter((p) => p.isExCustody === true)
+  const externalValue = external.reduce((n, p) => n + num(p.AssetsUnderManagementInDefaultCurrency), 0)
 
   // Largest security position as a share of the client's total: position share × portfolio weight.
   let positions = 0
@@ -115,7 +118,7 @@ export function fromRaw(input: unknown, now: Date): Client {
     { label: 'ESG-Profil', value: yesNo[esg] ?? esg },
     { label: 'Alter', value: age === null ? '' : `${age} Jahre` },
     { label: 'Referenzwährung', value: currency },
-    { label: 'Portfolios', value: portfolios.length ? String(portfolios.length) : '' },
+    { label: 'Portfolios', value: portfolios.length ? `${portfolios.length}${external.length ? `, davon ${external.length} Fremddepot (ex-custody)` : ''}` : '' },
     { label: 'Letzte Profilierung', value: isoDay(raw.ProfilingDateUtc) ? formatDate(raw.ProfilingDateUtc) : '' },
     { label: 'Offene Regelverletzungen', value: all.length ? `${errors} Fehler, ${warnings} Warnungen` : '' },
   ].filter((f) => f.value)
@@ -125,7 +128,7 @@ export function fromRaw(input: unknown, now: Date): Client {
   const briefing: Card[] = [
     talkTrackFromRaw(raw, clientFacts, flagItems, now),
     { type: 'metrics', items: [
-      { label: 'Vermögen', value: formatAmount(aum, 0), delta: currency },
+      { label: 'Vermögen', value: formatAmount(aum, 0), delta: external.length ? `${currency}, inkl. Fremddepot ${formatAmount(externalValue, 0)}` : currency },
       { label: 'Liquiditätsanteil', value: aum > 0 ? formatShare(liquidity / aum) : EMPTY, delta: aum > 0 ? `${currency} ${formatAmount(liquidity, 0)}` : undefined },
       { label: 'Positionen', value: String(positions), delta: portfolios.length > 1 ? `in ${portfolios.length} Portfolios` : undefined },
       { label: 'Grösste Position', value: positions > 0 ? formatShare(largest) : EMPTY, delta: positions > 0 ? 'des Vermögens' : undefined },
