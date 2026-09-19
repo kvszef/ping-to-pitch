@@ -16,6 +16,7 @@ const CHECK_SOURCE: Record<string, string> = {
   'context.note': 'Kundennotiz', 'memory.promise': 'Kundennotiz', 'profile.contact': 'Kundennotiz', 'profile.temperament': 'Kundennotiz',
   'contradiction.fossil-fuel': 'Kundennotiz und Fonds-Durchsicht', 'contradiction.region': 'Kundennotiz und Fonds-Durchsicht', 'contradiction.unverifiable': 'Kundennotiz',
 }
+const EXCLUSIONS = new Set<string>(['fossil', 'fossil-direct', 'emerging-markets'])
 const sourceOf = (f: Finding) => CHECK_SOURCE[f.check] ?? f.evidence[0]?.source ?? f.check
 const clean = (t: string) => { const s = t.replace(/^[A-Z]+-\d+(?:-\d+)?: /, ''); return s.charAt(0).toUpperCase() + s.slice(1) }
 const dateOf = (f: Finding) => { const d = f.evidence.find((e) => e.date)?.date; return d ? day(d) : undefined }
@@ -38,7 +39,9 @@ export function talkTrackCard(b: Briefing60, findings: Finding[]): CardOf<'talkt
 }
 
 function contradictionCard(f: Finding, raw: unknown, reference: unknown): CardOf<'contradiction'> | null {
-  const kind = f.id.split(':')[0].split('.')[1] as Exclusion
+  // Stopgap ids: `contradiction.<kind>:<ref>:<date>`; engine ids: `contradiction.fossil-fuel:<ref>:<kind>:<date>`.
+  const [head, , subject] = f.id.split(':')
+  const kind = (EXCLUSIONS.has(head.split('.')[1]) ? head.split('.')[1] : subject) as Exclusion
   const e = exclusionHoldings(raw, reference, kind)
   if (!e) return null
   const label = kind === 'emerging-markets' ? 'Schwellenländer' : 'Energie'

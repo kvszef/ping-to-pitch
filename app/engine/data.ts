@@ -24,6 +24,7 @@ export type Security = {
   id: number; isin?: string; name: string; type?: string; currency?: string
   assetClass?: string; currencyGroup?: string; countryGroup?: string; industry?: string // SAA_* taxonomy
   maturity?: string; esgScore?: number; prc?: number; recommended: boolean; lookThrough: boolean
+  assetClassDetail?: string // the finer AssetClassName, e.g. 'Equities EmMa' (not for SAA comparisons)
 }
 
 export type Dimension = 'AssetClass' | 'CurrencyGroup' | 'CountryGroup' | 'Industry'
@@ -43,6 +44,7 @@ export type ReferenceIndex = {
   strategy(id: number | undefined): Strategy | undefined
   esgProfile(id: number | undefined): EsgProfile | undefined
   rule(code: string | undefined): Rule | undefined
+  recommended(): Security[] // the bank's recommendation list (RecommendationLists + InRecommendationList), by id
 }
 
 // Look-through rows use their own names. Map them onto the SAA categories.
@@ -79,7 +81,9 @@ export function indexReference(reference: unknown): ReferenceIndex {
     assetClass: str(s.SAA_AssetClassName), currencyGroup: str(s.SAA_CurrencyGroupName), countryGroup: str(s.SAA_CountryGroupName), industry: str(s.SAA_IndustryName),
     maturity: str(s.MaturityDateUtc), esgScore: num(s.SustainabilityScore), prc: num(s.PRC),
     recommended: bool(s.InRecommendationList) || recommended.has(id), lookThrough: bool(s.IsUnbundlingEnabled),
+    assetClassDetail: str(s.AssetClassName),
   }))
+  const recommendedList = [...securities.values()].filter((s) => s.recommended).sort((a, b) => a.id - b.id)
 
   // Rows are a full cross product (asset class × currency × country × industry): sum by one field per dimension.
   const lt = new Map<number, Record<string, Map<string, number>>>()
@@ -119,6 +123,7 @@ export function indexReference(reference: unknown): ReferenceIndex {
     lookThrough: (fundId, dimension) => lt.get(fundId)?.[dimension],
     saa: get(saas), riskProfile: get(risk), strategy: get(strategies), esgProfile: get(esg),
     rule: (code) => (code ? rules.get(code) : undefined),
+    recommended: () => recommendedList,
   }
 }
 

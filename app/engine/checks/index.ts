@@ -17,6 +17,12 @@ import { callReason } from './profile-call-reason.ts'
 import { persona } from './profile-persona.ts'
 import { tone } from './profile-tone.ts'
 import { traits } from './profile-traits.ts'
+import { exclusions } from './contradiction-exclusion.ts'
+import { cash } from './wish-cash.ts'
+import { currency } from './wish-currency.ts'
+import { esg } from './wish-esg.ts'
+import { interest } from './wish-interest.ts'
+import { unreviewed } from './wish-unreviewed.ts'
 
 export const checks: Record<string, Check> = {
   'portfolio.performance': performance,
@@ -36,4 +42,10 @@ export const checks: Record<string, Check> = {
   'profile.persona': persona,
   'profile.tone': tone,
   'profile.call-reason': callReason,
+  'contradiction.exclusion': exclusions, // emits contradiction.fossil-fuel / .region / .sector / .unverifiable
+  'wish.esg': esg,
+  'wish.cash': cash,
+  'wish.currency': currency,
+  'wish.interest': interest,
+  'wish.unreviewed': unreviewed,
 }
