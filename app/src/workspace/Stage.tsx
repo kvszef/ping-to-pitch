@@ -180,6 +180,18 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
   const togglePin = (key: string) => setPins((p) => (p.includes(key) ? p.filter((x) => x !== key) : [key, ...p]))
 
   const dock = usePresence(inCall, 450)
+  // Open graph column: 2/5 of the row (the text side gets 3/5), measured so the width can animate.
+  const row = useRef<HTMLDivElement>(null)
+  const [rowWidth, setRowWidth] = useState(1200)
+  useLayoutEffect(() => {
+    const el = row.current
+    if (!el) return
+    const watch = new ResizeObserver(() => setRowWidth(el.clientWidth))
+    watch.observe(el)
+    setRowWidth(el.clientWidth)
+    return () => watch.disconnect()
+  }, [])
+  const openWidth = Math.round((rowWidth - 12) * 0.4)
   const graphs = usePresence(graphsOpen, 450)
   const total = tiles.reduce((n, t) => n + t.seconds, 0)
   const done = tiles.slice(0, focusIdx + 1).reduce((n, t) => n + t.seconds, 0)
@@ -187,8 +199,8 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* The graph column folds away when not needed; the text side then takes the width. */}
-      <div className="grid min-h-0 flex-1 gap-3 transition-[grid-template-columns] duration-500 ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none" style={{ gridTemplateColumns: graphsOpen ? '3fr 2fr' : '1fr 44px' }}>
-        <div className="flex min-h-0 min-w-0 flex-col gap-3">
+      <div ref={row} className="flex min-h-0 flex-1 gap-3">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
           <div className={`flex shrink-0 items-center gap-3 px-4 py-2 ${GLASS}`}>
             {lead}
             <div className="flex min-w-0 flex-1 items-center gap-2 text-[11px] tabular-nums text-muted" title="Lesezeit des Briefings">
@@ -230,9 +242,11 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
           </Smooth>
         </div>
 
-        <div className="relative min-h-0 min-w-0">
+        {/* Width in pixels, so it can animate (fr to px cannot); the panel keeps its open width while the
+            column narrows, so the graphs do not reflow mid-animation. */}
+        <div className="relative min-h-0 shrink-0 overflow-hidden transition-[width] duration-500 ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none" style={{ width: graphsOpen ? openWidth : 44 }}>
           {graphs.mounted && (
-            <div className={`absolute inset-0 origin-right transition-[opacity,transform] duration-[450ms] ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none ${graphs.visible ? 'scale-100 opacity-100' : 'pointer-events-none scale-[0.97] opacity-0'}`}>
+            <div style={{ width: openWidth }} className={`absolute inset-y-0 right-0 origin-right transition-[opacity,transform] duration-[450ms] ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none ${graphs.visible ? 'scale-100 opacity-100' : 'pointer-events-none scale-[0.97] opacity-0'}`}>
               <div className={`absolute inset-0 overflow-y-auto p-3 pb-16 [scrollbar-width:none] ${GLASS}`}>
                 <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-wide text-muted">
                   <span className="flex items-center gap-1.5"><BarChart3 size={12} /> Grafiken</span>
@@ -245,7 +259,7 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
             </div>
           )}
             <button onClick={() => onGraphs(true)} aria-label="Grafiken und Chat öffnen" title="Grafiken und Chat öffnen"
-              className={`absolute inset-0 flex flex-col transition-opacity duration-300 ${graphsOpen ? 'pointer-events-none opacity-0' : 'opacity-100 delay-200'} items-center gap-2.5 py-4 text-muted transition-colors hover:text-ink ${GLASS}`}>
+              className={`absolute inset-y-0 right-0 flex w-11 flex-col transition-opacity duration-300 ${graphsOpen ? 'pointer-events-none opacity-0' : 'opacity-100 delay-200'} items-center gap-2.5 py-4 text-muted transition-colors hover:text-ink ${GLASS}`}>
               <PanelRightOpen size={15} />
               <BarChart3 size={15} strokeWidth={1.5} />
               {shown.filter((w) => !w.leaving).length > 0 && <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-[10px] tabular-nums text-white">{shown.filter((w) => !w.leaving).length}</span>}
