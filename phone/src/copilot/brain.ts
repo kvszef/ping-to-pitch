@@ -28,6 +28,7 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import type { Answer, Briefing, BriefingCard, Severity, Suggestion } from './events.ts'
 import { nextId } from './events.ts'
+import { laufeOpenAI, openaiBereit } from './openai.ts'
 import { falten, gefaltetesMuster as fm } from './roles.ts'
 import type { AskInput, Brain, HintInput, ToolName, ToolRow, ToolboxClient } from './types.ts'
 import { LIMITS, TOOL_NAMES } from './types.ts'
@@ -61,7 +62,20 @@ const CONF = {
 }
 
 /** Ohne Schlüssel oder mit MOCK_BRAIN=1 läuft alles ohne Modell. */
-const mockModus = (): boolean => process.env.MOCK_BRAIN === '1' || !process.env.ANTHROPIC_API_KEY
+/**
+ * Welcher Weg zum Modell. `BRAIN_PROVIDER` entscheidet ausdrücklich; ohne Angabe gilt der
+ * Schlüssel, der da ist. So läuft dieselbe Installation mit Claude wie mit OpenAI.
+ */
+const nutzeOpenAI = (): boolean => {
+  const gewaehlt = (process.env.BRAIN_PROVIDER ?? '').trim().toLowerCase()
+  if (gewaehlt === 'openai') return true
+  if (gewaehlt === 'anthropic' || gewaehlt === 'claude') return false
+  return !process.env.ANTHROPIC_API_KEY && openaiBereit()
+}
+
+/** Ohne jeden Schlüssel bleibt der Mock-Betrieb: die Oberfläche ist immer vorführbar. */
+const mockModus = (): boolean =>
+  process.env.MOCK_BRAIN === '1' || (!process.env.ANTHROPIC_API_KEY && !openaiBereit())
 
 /** Nur Opus 5 und Fable 5 kennen die serverseitige Ausweichkette. */
 const kannAusweichen = (model: string): boolean => /^claude-(opus-5|fable-5)/.test(model)
@@ -213,6 +227,14 @@ export function createBrain(toolboxClient: ToolboxClient, opts: { log?: (zeile: 
    * laufenden Aufrufs eine neue Kundenaussage, wirft das Signal und der Lauf wird verworfen.
    */
   const laufe = async (a: Auftrag): Promise<Lauf> => {
+    // Weiche: BRAIN_PROVIDER=openai nimmt die OpenAI-kompatible Schnittstelle, sonst Claude.
+    // Ohne gesetzten Anbieter entscheidet, welcher Schlüssel da ist.
+    if (nutzeOpenAI()) {
+      return laufeOpenAI({
+        zweck: a.zweck, system: a.system, stabil: a.stabil, fluechtig: a.fluechtig,
+        schema: a.schema, maxTokens: a.maxTokens, hops: a.hops, clientRef: a.clientRef, signal: a.signal,
+      }, toolboxClient, log)
+    }
     try {
       return await laufeEinmal(a, false)
     } catch (e) {
@@ -474,9 +496,47 @@ const quellenPruefen = (roh: unknown, benutzt: string[], clientRef: string | nul
   return [AUS_BRIEFING(clientRef)]
 }
 
+/**
+ * Modelle liefern das Briefing in zwei Formen: als Kartenliste unter `cards`, oder flach mit
+ * einem Schlüssel je Abschnitt. Beides ist eine vernünftige Lesart des Schemas, also nimmt der
+ * Umwandler beide an, statt die zweite als Fehler zu verwerfen und eine leere Karte zu zeigen.
+ */
+function alsKartenliste(roh: unknown): unknown[] {
+  const o = roh as Record<string, unknown> | null
+  if (!o || typeof o !== 'object') return []
+  if (Array.isArray(o.cards)) return o.cards
+  if (Array.isArray(roh)) return roh as unknown[]
+
+  const liste: unknown[] = []
+  const alsListe = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? (v as Record<string, unknown>[]) : [])
+  const textVon = (v: unknown): string | null =>
+    typeof v === 'string' ? v : alsText((v as Record<string, unknown> | null)?.text)
+
+  const kopf = textVon(o.headline)
+  if (kopf) liste.push({ type: 'headline', text: kopf, sub: textVon(o.sub) ?? undefined })
+
+  if (alsListe(o.metrics).length) liste.push({ type: 'metrics', items: o.metrics })
+
+  // Das Modell nennt die Kategorie mal `label`, mal `category`, und hängt oft das Portfolio an.
+  const zeilen = alsListe(o.allocation).map((r) => ({
+    ...r,
+    label: alsText(r.label) ?? [alsText(r.category), alsText(r.portfolio)].filter(Boolean).join(' · '),
+  })).filter((r) => r.label)
+  if (zeilen.length) liste.push({ type: 'allocation', title: 'Soll und Ist', rows: zeilen })
+
+  if (alsListe(o.flags).length) liste.push({ type: 'flags', items: o.flags })
+  if (alsListe(o.questions).length) {
+    liste.push({ type: 'questions', items: alsListe(o.questions).map((i) => ({ ...i, q: i.q ?? i.question, a: i.a ?? i.answer })) })
+  }
+  if (alsListe(o.actions).length) {
+    liste.push({ type: 'actions', items: alsListe(o.actions).map((i) => ({ ...i, text: i.text ?? i.action, why: i.why ?? i.reason })) })
+  }
+  return liste
+}
+
 export function alsBriefing(roh: unknown, quellen: string[]): Briefing {
-  const karten = (roh as { cards?: unknown[] })?.cards
-  if (!Array.isArray(karten)) return []
+  const karten = alsKartenliste(roh)
+  if (!Array.isArray(karten) || !karten.length) return []
   const raus: BriefingCard[] = []
   for (const k of karten) {
     const c = k as Record<string, unknown>
@@ -521,10 +581,36 @@ export function alsBriefing(roh: unknown, quellen: string[]): Briefing {
   return raus
 }
 
+const ARTEN = ['say', 'fact', 'next', 'warning'] as const
+
+/**
+ * Auch die Hinweise kommen in zwei Formen: als Liste unter `suggestions`, oder flach mit einem
+ * Schlüssel je Art. Die flache Form ist eine naheliegende Lesart und wird deshalb angenommen,
+ * statt sie als Fehler zu verwerfen -- sonst schweigt der Copilot bei brauchbarem Inhalt.
+ */
+function alsHinweisliste(roh: unknown): unknown[] {
+  const o = roh as Record<string, unknown> | null
+  if (Array.isArray(roh)) return roh as unknown[]
+  if (!o || typeof o !== 'object') return []
+  if (Array.isArray(o.suggestions)) return o.suggestions
+  if (Array.isArray(o.hints)) return o.hints
+
+  const raus: unknown[] = []
+  for (const art of ARTEN) {
+    const wert = o[art]
+    if (typeof wert === 'string' && wert.trim()) raus.push({ kind: art, text: wert })
+    else if (wert && typeof wert === 'object') {
+      const w = wert as Record<string, unknown>
+      if (alsText(w.text)) raus.push({ ...w, kind: art })
+    }
+  }
+  return raus
+}
+
 export function alsSuggestions(roh: unknown, input: HintInput, quellen: string[]): Suggestion[] {
-  const liste = (roh as { suggestions?: unknown[] })?.suggestions
-  if (!Array.isArray(liste)) return []
-  const arten = ['say', 'fact', 'next', 'warning'] as const
+  const liste = alsHinweisliste(roh)
+  if (!Array.isArray(liste) || !liste.length) return []
+  const arten = ARTEN
   return liste
     .map((s) => s as Record<string, unknown>)
     .filter((s) => alsText(s.text))
@@ -634,10 +720,10 @@ const wertSatz = (ytd: number): string =>
 export function mockBriefing(g: Geladen, clientRef: string): Briefing {
   const karten: Briefing = []
   const name = alsText(feld(g.uebersicht, 'name', 'client_name')) ?? clientRef
-  const ccy = alsText(feld(g.uebersicht, 'reporting_ccy', 'currency')) ?? 'CHF'
-  const aum = alsZahl(feld(g.uebersicht, 'aum', 'assets_under_management'))
-  const profil = alsText(feld(g.uebersicht, 'risk_profile', 'risk_profile_name'))
-  const strategie = alsText(feld(g.portfolio, 'strategy_name', 'service_name'))
+  const ccy = alsText(feld(g.uebersicht, 'reporting_ccy', 'currency', 'waehrung')) ?? 'CHF'
+  const aum = alsZahl(feld(g.uebersicht, 'aum', 'assets_under_management', 'vermoegen'))
+  const profil = alsText(feld(g.uebersicht, 'risk_profile', 'risk_profile_name', 'risikoprofil'))
+  const strategie = alsText(feld(g.portfolio, 'strategy_name', 'service_name', 'strategie', 'dienstleistung'))
   const ytd = wertentwicklung(g)
 
   if (!g.quellen.length) {
@@ -653,15 +739,15 @@ export function mockBriefing(g: Geladen, clientRef: string): Briefing {
 
   const kennzahlen: { label: string; value: string; delta?: string; tone?: Severity }[] = []
   if (ytd !== null) kennzahlen.push({ label: WERT_LABEL, value: prozent(ytd), delta: WERT_ZUSATZ, tone: ytd < 0 ? 'risk' : 'info' })
-  const vola = alsZahl(feld(g.portfolio, 'volatility'))
+  const vola = alsZahl(feld(g.portfolio, 'volatility', 'volatilitaet'))
   if (vola !== null) kennzahlen.push({ label: 'Volatilität', value: prozent(vola), tone: 'info' })
-  const liquid = alsZahl(feld(g.uebersicht, 'liquidity'))
+  const liquid = alsZahl(feld(g.uebersicht, 'liquidity', 'liquiditaet'))
   if (liquid !== null) kennzahlen.push({ label: 'Liquidität', value: franken(liquid, ccy), tone: 'info' })
   if (g.positionen[0]) {
-    const gewicht = alsZahl(feld(g.positionen[0], 'weight'))
+    const gewicht = alsZahl(feld(g.positionen[0], 'weight', 'anteil'))
     kennzahlen.push({
-      label: `Grösste Position: ${alsText(feld(g.positionen[0], 'security_name', 'name')) ?? 'unbekannt'}`,
-      value: gewicht !== null ? prozent(gewicht) : franken(alsZahl(feld(g.positionen[0], 'amount')), ccy),
+      label: `Grösste Position: ${alsText(feld(g.positionen[0], 'security_name', 'name', 'titel')) ?? 'unbekannt'}`,
+      value: gewicht !== null ? prozent(gewicht) : franken(alsZahl(feld(g.positionen[0], 'amount', 'betrag')), ccy),
       tone: gewicht !== null && gewicht > 0.1 ? 'warn' : 'info',
     })
   }
@@ -669,11 +755,11 @@ export function mockBriefing(g: Geladen, clientRef: string): Briefing {
 
   const bandzeilen = g.saa
     .map((r) => ({
-      label: alsText(feld(r, 'category', 'saa_asset_class', 'label')) ?? '',
-      min: alsZahl(feld(r, 'min_pct', 'min')) ?? 0,
-      target: alsZahl(feld(r, 'target_pct', 'target')) ?? 0,
-      max: alsZahl(feld(r, 'max_pct', 'max')) ?? 0,
-      actual: alsZahl(feld(r, 'actual_pct', 'actual', 'ist')) ?? 0,
+      label: alsText(feld(r, 'category', 'saa_asset_class', 'label', 'kategorie')) ?? '',
+      min: alsZahl(feld(r, 'min_pct', 'min', 'min_anteil')) ?? 0,
+      target: alsZahl(feld(r, 'target_pct', 'target', 'ziel_anteil')) ?? 0,
+      max: alsZahl(feld(r, 'max_pct', 'max', 'max_anteil')) ?? 0,
+      actual: alsZahl(feld(r, 'actual_pct', 'actual', 'ist', 'ist_anteil')) ?? 0,
     }))
     .filter((r) => r.label)
     .slice(0, 6)
@@ -681,8 +767,8 @@ export function mockBriefing(g: Geladen, clientRef: string): Briefing {
 
   const flaggen = [
     ...g.verstoesse.slice(0, 4).map((v) => ({
-      severity: (alsText(feld(v, 'severity'))?.toLowerCase().startsWith('h') ? 'risk' : 'warn') as Severity,
-      text: alsText(feld(v, 'rule_description', 'rule_code')) ?? 'Verstoss gegen eine Anlagerichtlinie',
+      severity: (alsText(feld(v, 'severity', 'schweregrad'))?.toLowerCase().startsWith('h') ? 'risk' : 'warn') as Severity,
+      text: alsText(feld(v, 'rule_description', 'rule_code', 'beschreibung', 'regel')) ?? 'Verstoss gegen eine Anlagerichtlinie',
       source: q(g, 'get_violations'),
     })),
     ...bandzeilen.filter((r) => r.actual > r.max || r.actual < r.min).slice(0, 2).map((r) => ({
@@ -692,12 +778,12 @@ export function mockBriefing(g: Geladen, clientRef: string): Briefing {
     })),
     ...g.vorschlaege.slice(0, 2).map((p) => ({
       severity: 'info' as Severity,
-      text: `Offener Vorschlag vom ${alsText(feld(p, 'proposed_at')) ?? 'unbekannten Datum'}: ${alsText(feld(p, 'reason', 'notes', 'advisory_type')) ?? 'ohne Begründung erfasst'}.`,
+      text: `Offener Vorschlag vom ${alsText(feld(p, 'proposed_at', 'vorgeschlagen_am')) ?? 'unbekannten Datum'}: ${alsText(feld(p, 'reason', 'notes', 'advisory_type', 'anlass', 'notiz', 'beratungsart')) ?? 'ohne Begründung erfasst'}.`,
       source: q(g, 'get_open_proposals'),
     })),
     ...g.ausnahmen.slice(0, 2).map((v) => ({
       severity: 'info' as Severity,
-      text: `Bewusst vereinbarte Ausnahme, kein offener Verstoss: ${alsText(feld(v, 'rule_description', 'rule_code')) ?? 'Regel ohne Beschreibung'}.`,
+      text: `Bewusst vereinbarte Ausnahme, kein offener Verstoss: ${alsText(feld(v, 'rule_description', 'rule_code', 'beschreibung', 'regel')) ?? 'Regel ohne Beschreibung'}.`,
       source: q(g, 'get_violations'),
     })),
   ]
@@ -706,17 +792,17 @@ export function mockBriefing(g: Geladen, clientRef: string): Briefing {
   const fragen = [
     ytd !== null ? { q: 'Wie steht mein Depot dieses Jahr da?', a: `${wertSatz(ytd)} (${q(g, 'get_portfolio_summary')}).` } : null,
     g.verstoesse.length ? { q: 'Ist bei mir alles in Ordnung?', a: `Erfasst sind ${anzahl(g.verstoesse.length, 'offener Regelverstoss', 'offene Regelverstösse')} (${q(g, 'get_violations')}).` } : null,
-    g.notizen[0] ? { q: 'Haben Sie meine letzte Anfrage notiert?', a: `Letzte Notiz vom ${alsText(feld(g.notizen[0], 'created_at')) ?? 'unbekannten Datum'}: ${alsText(feld(g.notizen[0], 'text')) ?? 'ohne Text'} (${q(g, 'get_recent_notes')}).` } : null,
+    g.notizen[0] ? { q: 'Haben Sie meine letzte Anfrage notiert?', a: `Letzte Notiz vom ${alsText(feld(g.notizen[0], 'created_at', 'erstellt_am')) ?? 'unbekannten Datum'}: ${alsText(feld(g.notizen[0], 'text', 'notiz')) ?? 'ohne Text'} (${q(g, 'get_recent_notes')}).` } : null,
   ].filter((x): x is { q: string; a: string } => x !== null)
   if (fragen.length) karten.push({ type: 'questions', title: 'Womit der Kunde kommen dürfte', items: fragen })
 
   const schritte = [
-    g.verstoesse[0] ? { text: `Regelverstoss «${alsText(feld(g.verstoesse[0], 'rule_description', 'rule_code')) ?? 'offen'}» ansprechen und das weitere Vorgehen festhalten.`, why: `${anzahl(g.verstoesse.length, 'offener Verstoss', 'offene Verstösse')} (${q(g, 'get_violations')}).` } : null,
+    g.verstoesse[0] ? { text: `Regelverstoss «${alsText(feld(g.verstoesse[0], 'rule_description', 'rule_code', 'beschreibung', 'regel')) ?? 'offen'}» ansprechen und das weitere Vorgehen festhalten.`, why: `${anzahl(g.verstoesse.length, 'offener Verstoss', 'offene Verstösse')} (${q(g, 'get_violations')}).` } : null,
     bandzeilen.find((r) => r.actual > r.max || r.actual < r.min)
       ? { text: 'Rückführung in die Bandbreite vorschlagen und die Wirkung auf das Risikoprofil zeigen.', why: `Abweichung aus ${q(g, 'get_saa_gap')}.` }
       : null,
     g.vorschlaege[0] ? { text: 'Den offenen Anlagevorschlag zur Entscheidung bringen.', why: `${anzahl(g.vorschlaege.length, 'offener Vorschlag', 'offene Vorschläge')} (${q(g, 'get_open_proposals')}).` } : null,
-    g.notizen[0] ? { text: 'Die letzte Notiz als Frage stellen, statt sie als Tatsache zu behandeln.', why: `Notiz vom ${alsText(feld(g.notizen[0], 'created_at')) ?? 'unbekannten Datum'} (${q(g, 'get_recent_notes')}).` } : null,
+    g.notizen[0] ? { text: 'Die letzte Notiz als Frage stellen, statt sie als Tatsache zu behandeln.', why: `Notiz vom ${alsText(feld(g.notizen[0], 'created_at', 'erstellt_am')) ?? 'unbekannten Datum'} (${q(g, 'get_recent_notes')}).` } : null,
     { text: 'Gesprächsnotiz direkt nach dem Anruf bestätigen.', why: 'Dokumentationspflicht nach FIDLEG.' },
   ].filter((x): x is { text: string; why: string } => x !== null).slice(0, 5)
   karten.push({ type: 'actions', title: 'Nächste Schritte', items: schritte })
@@ -760,13 +846,13 @@ export function mockHints(g: Geladen, input: HintInput): Suggestion[] {
 
   const raus: Suggestion[] = []
   const ytd = wertentwicklung(g)
-  const ccy = alsText(feld(g.uebersicht, 'reporting_ccy', 'currency')) ?? 'CHF'
+  const ccy = alsText(feld(g.uebersicht, 'reporting_ccy', 'currency', 'waehrung')) ?? 'CHF'
 
   if (M.wert.test(tf) && ytd !== null) {
     raus.push(bau('say', wertSatz(ytd), `Wertverlauf aus ${q(g, 'get_portfolio_summary')}; ${WERT_ZUSATZ}.`, [q(g, 'get_portfolio_summary')], ytd < 0 ? 'warn' : 'info'))
     if (g.positionen[0]) {
-      const n = alsText(feld(g.positionen[0], 'security_name', 'name'))
-      const w = alsZahl(feld(g.positionen[0], 'weight'))
+      const n = alsText(feld(g.positionen[0], 'security_name', 'name', 'titel'))
+      const w = alsZahl(feld(g.positionen[0], 'weight', 'anteil'))
       if (n) raus.push(bau('fact', `Grösste Position: ${n}${w !== null ? `, ${prozent(w)} des Portfolios` : ''}.`, `Aus der Positionsliste (${q(g, 'get_positions_top')}).`, [q(g, 'get_positions_top')], 'info'))
     }
   }
@@ -776,9 +862,9 @@ export function mockHints(g: Geladen, input: HintInput): Suggestion[] {
   if (M.waehrung.test(tf)) {
     const band = g.saa
       .map((r) => ({
-        label: alsText(feld(r, 'category', 'saa_asset_class', 'label')) ?? '',
-        max: alsZahl(feld(r, 'max_pct', 'max')),
-        actual: alsZahl(feld(r, 'actual_pct', 'actual', 'ist')),
+        label: alsText(feld(r, 'category', 'saa_asset_class', 'label', 'kategorie')) ?? '',
+        max: alsZahl(feld(r, 'max_pct', 'max', 'max_anteil')),
+        actual: alsZahl(feld(r, 'actual_pct', 'actual', 'ist', 'ist_anteil')),
       }))
       .find((r) => M.waehrungBand.test(falten(r.label)) && r.actual !== null && r.max !== null && r.actual > r.max)
     if (band) {
@@ -789,8 +875,8 @@ export function mockHints(g: Geladen, input: HintInput): Suggestion[] {
   }
 
   if (M.nachhaltig.test(tf)) {
-    const notiz = g.notizen.find((n) => M.nachhaltig.test(falten(alsText(feld(n, 'text')) ?? '')))
-    raus.push(bau('say', notiz ? 'Ihre Anfrage zu nachhaltigen Anlagen ist bei uns erfasst, ich komme gleich darauf zurück.' : 'Zu nachhaltigen Anlagen liegt mir im Moment keine Angabe in Ihrem Dossier vor.', notiz ? `Notiz vom ${alsText(feld(notiz, 'created_at')) ?? 'unbekannten Datum'} (${q(g, 'get_recent_notes')}).` : `Keine passende Notiz in ${q(g, 'get_recent_notes')}.`, [q(g, 'get_recent_notes')], 'info'))
+    const notiz = g.notizen.find((n) => M.nachhaltig.test(falten(alsText(feld(n, 'text', 'notiz')) ?? '')))
+    raus.push(bau('say', notiz ? 'Ihre Anfrage zu nachhaltigen Anlagen ist bei uns erfasst, ich komme gleich darauf zurück.' : 'Zu nachhaltigen Anlagen liegt mir im Moment keine Angabe in Ihrem Dossier vor.', notiz ? `Notiz vom ${alsText(feld(notiz, 'created_at', 'erstellt_am')) ?? 'unbekannten Datum'} (${q(g, 'get_recent_notes')}).` : `Keine passende Notiz in ${q(g, 'get_recent_notes')}.`, [q(g, 'get_recent_notes')], 'info'))
   }
 
   if (M.vorschlag.test(tf) && g.vorschlaege.length) {
@@ -813,14 +899,14 @@ export function mockAsk(g: Geladen, input: AskInput): Answer {
   })
 
   const ytd = wertentwicklung(g)
-  const ccy = alsText(feld(g.uebersicht, 'reporting_ccy', 'currency')) ?? 'CHF'
+  const ccy = alsText(feld(g.uebersicht, 'reporting_ccy', 'currency', 'waehrung')) ?? 'CHF'
 
   if (g.quellen.length) {
     if (M.frageWert.test(frage) && ytd !== null) {
       return antwort(`${wertSatz(ytd)} Die Zahl stammt aus dem Wertverlauf, sie ist keine Rendite und lässt sich nicht als Anlageerfolg lesen.`, [q(g, 'get_portfolio_summary')])
     }
     if (M.fragePosition.test(frage) && g.positionen.length) {
-      const liste = g.positionen.slice(0, 3).map((p) => `${alsText(feld(p, 'security_name', 'name')) ?? 'unbenannt'} (${prozent(alsZahl(feld(p, 'weight')))})`).join(', ')
+      const liste = g.positionen.slice(0, 3).map((p) => `${alsText(feld(p, 'security_name', 'name', 'titel')) ?? 'unbenannt'} (${prozent(alsZahl(feld(p, 'weight', 'anteil')))})`).join(', ')
       return antwort(`Die grössten Positionen sind ${liste}.`, [q(g, 'get_positions_top')])
     }
     if (M.frageRegel.test(frage)) {
@@ -828,14 +914,14 @@ export function mockAsk(g: Geladen, input: AskInput): Answer {
         ? ` Dazu kommen ${anzahl(g.ausnahmen.length, 'bewusst vereinbarte Ausnahme', 'bewusst vereinbarte Ausnahmen')}; das sind keine Verstösse.`
         : ''
       return g.verstoesse.length
-        ? antwort(`Erfasst sind ${anzahl(g.verstoesse.length, 'offener Verstoss', 'offene Verstösse')}, zuletzt «${alsText(feld(g.verstoesse[0], 'rule_description', 'rule_code')) ?? 'ohne Beschreibung'}».${zusatz}`, [q(g, 'get_violations')])
+        ? antwort(`Erfasst sind ${anzahl(g.verstoesse.length, 'offener Verstoss', 'offene Verstösse')}, zuletzt «${alsText(feld(g.verstoesse[0], 'rule_description', 'rule_code', 'beschreibung', 'regel')) ?? 'ohne Beschreibung'}».${zusatz}`, [q(g, 'get_violations')])
         : antwort(`Es sind keine offenen Verstösse gegen Anlagerichtlinien erfasst.${zusatz}`, [q(g, 'get_violations')])
     }
     if (M.frageVorschlag.test(frage)) {
       return antwort(`Erfasst sind ${anzahl(g.vorschlaege.length, 'offener Vorschlag', 'offene Vorschläge')}.`, [q(g, 'get_open_proposals')])
     }
     if (M.frageNotiz.test(frage) && g.notizen.length) {
-      return antwort(`Letzte Notiz vom ${alsText(feld(g.notizen[0], 'created_at')) ?? 'unbekannten Datum'}: ${alsText(feld(g.notizen[0], 'text')) ?? 'ohne Text'}.`, [q(g, 'get_recent_notes')])
+      return antwort(`Letzte Notiz vom ${alsText(feld(g.notizen[0], 'created_at', 'erstellt_am')) ?? 'unbekannten Datum'}: ${alsText(feld(g.notizen[0], 'text', 'notiz')) ?? 'ohne Text'}.`, [q(g, 'get_recent_notes')])
     }
     if (M.frageVermoegen.test(frage)) {
       return antwort(`Unter Verwaltung liegen ${franken(alsZahl(feld(g.uebersicht, 'aum')), ccy)}.`, [q(g, 'get_client_overview')])
