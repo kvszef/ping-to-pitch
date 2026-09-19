@@ -31,14 +31,22 @@ export async function callRoute(req: IncomingMessage, res: ServerResponse): Prom
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' })
     res.write(': connected\n\n')
     listeners[role].add(res)
+    console.info(`[call] ${role} connected (${listeners[role].size} listening)`)
     if (role === 'desk' && pendingRing) res.write(`data: ${JSON.stringify(pendingRing)}\n\n`)
     // Keeps tunnels and proxies from closing an idle stream.
     const ping = setInterval(() => res.write(': ping\n\n'), 15000)
     req.on('close', () => { clearInterval(ping); listeners[role].delete(res) })
     return true
   }
+  // Debug lines from the phone, printed in the dev server log so the desk side can see what the phone does.
+  if (url.pathname === '/api/call/log' && req.method === 'POST') {
+    console.info(`[phone] ${(await readBody(req)).slice(0, 300)}`)
+    res.end('{}')
+    return true
+  }
   if (url.pathname === '/api/call/send' && req.method === 'POST') {
-    const { to, msg } = JSON.parse(await readBody(req)) as { to: Role; msg: { type?: string } }
+    const { to, msg } = JSON.parse(await readBody(req)) as { to: Role; msg: { type?: string; text?: string } }
+    console.info(`[call] -> ${to}: ${msg?.type}${msg?.text ? ` "${msg.text.slice(0, 80)}"` : ''} (${listeners[to].size} listening)`)
     if (to !== 'desk' && to !== 'phone') { res.statusCode = 400; res.end('{"error":"to must be desk or phone"}'); return true }
     if (msg?.type === 'ring') pendingRing = msg
     if (msg?.type === 'answer' || msg?.type === 'hangup' || msg?.type === 'decline') pendingRing = null

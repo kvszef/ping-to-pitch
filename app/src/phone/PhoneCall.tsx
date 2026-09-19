@@ -52,6 +52,13 @@ export default function PhoneCall() {
   const [now, setNow] = useState(() => Date.now())
   const [transcribe, setTranscribe] = useState<boolean | null>(null)
   const [captionsOn, setCaptionsOn] = useState(false)
+  // Debug trail: shown on the phone and printed in the dev server log (/api/call/log).
+  const [logs, setLogs] = useState<string[]>([])
+  const log = useCallback((text: string) => {
+    const at = new Date().toTimeString().slice(0, 8)
+    setLogs((l) => [...l.slice(-7), `${at} ${text}`])
+    void fetch('/api/call/log', { method: 'POST', body: text }).catch(() => {})
+  }, [])
 
   const phaseRef = useRef<Phase>('idle')
   const pcRef = useRef<RTCPeerConnection | null>(null)
@@ -68,7 +75,7 @@ export default function PhoneCall() {
       setClients(list)
       setRef((cur) => (cur && list.some((c) => c.ref === cur)) ? cur : (list.find((c) => c.ref === DEFAULT_REF)?.ref ?? list[0]?.ref ?? cur))
     }).catch(() => setError('Kundenliste konnte nicht geladen werden.'))
-    fetch('/api/status').then((r) => r.json()).then((s: { transcribe?: boolean }) => setTranscribe(s.transcribe !== false)).catch(() => setTranscribe(null))
+    fetch('/api/status').then((r) => r.json()).then((s: { transcribe?: boolean }) => { setTranscribe(s.transcribe !== false); log(`status transcribe=${s.transcribe}`) }).catch((e) => { setTranscribe(null); log(`status failed ${e}`) })
   }, [])
 
   const cleanup = useCallback(() => {
@@ -92,6 +99,7 @@ export default function PhoneCall() {
 
   // Messages from the desk.
   useEffect(() => listenCall('phone', (msg) => {
+    log(`from desk: ${msg.type}`)
     if (msg.type === 'answer') {
       const pc = pcRef.current
       if (!pc || phaseRef.current !== 'ringing') return
@@ -102,7 +110,7 @@ export default function PhoneCall() {
     } else if (msg.type === 'decline' || msg.type === 'hangup') {
       finish(false)
     }
-  }), [finish])
+  }), [finish, log])
 
   // Tell the desk when the page goes away mid-call.
   useEffect(() => {
@@ -138,7 +146,9 @@ export default function PhoneCall() {
   // The phone transcribes its own voice: 7 s chunks go through the tunnel to /api/transcribe and the
   // text reaches the desk as a caption. This works even when the network blocks the direct audio link.
   useEffect(() => {
-    if (phase !== 'connected' || transcribe !== true || !streamRef.current || typeof MediaRecorder === 'undefined') return
+    if (phase !== 'connected') return
+    log(`recorder check: transcribe=${transcribe} stream=${!!streamRef.current} MediaRecorder=${typeof MediaRecorder !== 'undefined'}`)
+    if (transcribe !== true || !streamRef.current || typeof MediaRecorder === 'undefined') return
     const stream = streamRef.current
     let stopped = false
     let timer = 0
@@ -152,20 +162,22 @@ export default function PhoneCall() {
       current.onstop = async () => {
         record()
         const blob = new Blob(parts, { type: current.mimeType })
+        log(`chunk ${blob.size} bytes ${blob.type}`)
         if (blob.size < 4000) return
         try {
           const r = await fetch('/api/transcribe', { method: 'POST', headers: { 'Content-Type': blob.type || 'audio/webm' }, body: blob })
           const data = (await r.json()) as { segments?: { text: string }[] }
           const text = (data.segments ?? []).map((s) => s.text.trim()).filter(Boolean).join(' ')
+          log(`transcribed ${r.status}: "${text.slice(0, 60)}"`)
           if (text) void sendCall('desk', { type: 'caption', speaker: 'Kunde', text }).catch(() => {})
-        } catch { /* a lost chunk is fine, the next one follows */ }
+        } catch (e) { log(`transcribe failed ${e}`) }
       }
-      try { current.start() } catch { return }
+      try { current.start() } catch (e) { log(`recorder start failed ${e}`); return }
       timer = window.setTimeout(() => current.state === 'recording' && current.stop(), 7000)
     }
     record()
     return () => { stopped = true; clearTimeout(timer); if (recorder?.state === 'recording') recorder.stop() }
-  }, [phase, transcribe])
+  }, [phase, transcribe, log])
 
   // Fallback captions from the phone's own speech recognition when the server cannot transcribe.
   useEffect(() => {
@@ -215,6 +227,7 @@ export default function PhoneCall() {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
       if (phaseRef.current !== 'ringing') { stream.getTracks().forEach((t) => t.stop()); return }
       streamRef.current = stream
+      log(`mic ok: ${stream.getAudioTracks().map((t) => `${t.label} enabled=${t.enabled} muted=${t.muted}`).join(', ')}`)
       const pc = new RTCPeerConnection(ICE)
       pcRef.current = pc
       stream.getTracks().forEach((t) => pc.addTrack(t, stream))
@@ -224,14 +237,18 @@ export default function PhoneCall() {
         el.srcObject = e.streams[0] ?? new MediaStream([e.track])
         void el.play().catch(() => {})
       }
+      pc.oniceconnectionstatechange = () => log(`ice ${pc.iceConnectionState}`)
       pc.onconnectionstatechange = () => {
+        log(`connection ${pc.connectionState}`)
         if (pc.connectionState === 'failed') { setError('Die Verbindung ist abgebrochen.'); finish(true) }
       }
       await pc.setLocalDescription(await pc.createOffer())
       await gathered(pc)
       if (phaseRef.current !== 'ringing' || !pc.localDescription) return
-      await sendCall('desk', { type: 'ring', ref, sdp: pc.localDescription.sdp })
+      const res = await sendCall('desk', { type: 'ring', ref, sdp: pc.localDescription.sdp })
+      log(`ring sent ${res.status}`)
     } catch (e) {
+      log(`call failed ${e}`)
       const name = e instanceof DOMException ? e.name : ''
       setError(name === 'NotAllowedError' || name === 'SecurityError'
         ? 'Kein Zugriff auf das Mikrofon. Bitte in den Browser-Einstellungen erlauben und erneut versuchen.'
@@ -278,6 +295,10 @@ export default function PhoneCall() {
           <p role="alert" className="w-full rounded-xl bg-red-500/15 px-4 py-3 text-center text-sm text-red-200">
             {error ?? 'Bitte über die https-Adresse öffnen.'}
           </p>
+        )}
+
+        {logs.length > 0 && (
+          <pre className="w-full whitespace-pre-wrap break-all rounded-lg bg-white/5 p-2 text-left font-mono text-[10px] leading-snug text-white/50">{logs.join(String.fromCharCode(10))}</pre>
         )}
 
         {phase === 'idle' && (
