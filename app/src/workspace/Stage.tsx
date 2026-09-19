@@ -1,4 +1,4 @@
-import { BarChart3, Ear, FileText, LayoutList, PanelRightClose, PanelRightOpen, Pin, Sparkles, Timer } from 'lucide-react'
+import { BarChart3, Ear, FileText, LayoutList, PanelRightClose, PanelRightOpen, Pin, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { SeverityIcon } from '../cards/ui'
 import type { Client } from '../types'
@@ -323,11 +323,10 @@ export function Stage({ client, screen, plan, brought, thinking, inCall, recordi
           <div className={`flex shrink-0 items-center gap-3 px-4 py-2 ${GLASS}`}>
             {lead}
             <div className="flex min-w-0 flex-1 items-center gap-2 text-[11px] tabular-nums text-muted" title={`Gelesen: ${Math.round(done)} von ${Math.round(total)} s Lesezeit (Ziel: höchstens ${BUDGET} s)`}>
-              <Timer size={12} className="shrink-0" />
+              {/* No seconds counter here: the bar is short on space. The thin bar still shows how far the brief is read; the numbers are in the tooltip. */}
               <div className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-track">
                 <div className={`h-full rounded-full transition-[width] duration-300 ${total > BUDGET ? 'bg-warn' : 'bg-brand-dark'}`} style={{ width: `${total > 0 ? Math.min(100, (done / total) * 100) : 0}%` }} />
               </div>
-              <span className="shrink-0">{Math.round(done)} / {Math.round(total)} s gelesen</span>
               {thinking && <Sparkles size={12} aria-label="Agent arbeitet" className="shrink-0 animate-pulse text-brand" />}
             </div>
             <button onClick={() => setAsText((v) => !v)} aria-pressed={asText} aria-label={asText ? graphsChrome[3] : graphsChrome[2]} title={asText ? graphsChrome[3] : graphsChrome[2]}
