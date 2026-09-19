@@ -11,6 +11,9 @@ export type DigestSection = { group: string; bullets: DigestBullet[] }
 export type Digest = { ref: string; name: string; facts: [label: string, value: string][]; sections: DigestSection[]; charts: Chart[]; seconds: number }
 
 const MAX_CHARTS = 2
+// A bar chart where one bar is nearly everything ("CHF 99%") tells little: it only fills a free slot.
+const DULL_SHARE = 90
+const dull = (c: Chart) => c.spec.type === 'balken' && Math.max(...c.spec.bars.map((b) => b.value)) >= DULL_SHARE
 
 function bulletsOf(tile: Tile, clientRef: string, text?: string): DigestBullet[] {
   if (tile.item) {
@@ -46,7 +49,8 @@ export function digestFor(client: Client, tiles: Tile[], charts: Chart[], texts:
   // The graphs the shown tiles point to come first, then whatever else the data offers.
   const wanted = [...tiles.map((t) => t.chart), ...charts.map((c) => c.id)]
   const picked = [...new Set(wanted)].map((id) => charts.find((c) => c.id === id)).filter((c): c is Chart => !!c && (c.spec.type === 'balken' ? c.spec.bars.length > 0 : c.spec.points.length > 1))
-  return { ref: client.ref, name: client.name, facts, sections, charts: picked.slice(0, MAX_CHARTS), seconds: Math.round(tiles.reduce((n, t) => n + t.seconds, 0)) }
+  const shown = [...picked.filter((c) => !dull(c)), ...picked.filter(dull)].slice(0, MAX_CHARTS)
+  return { ref: client.ref, name: client.name, facts, sections, charts: shown, seconds: Math.round(tiles.reduce((n, t) => n + t.seconds, 0)) }
 }
 
 /** The digest as plain text, for the clipboard or an e-mail to oneself. `t` puts a German original into the display language. */

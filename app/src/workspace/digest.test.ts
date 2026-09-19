@@ -22,6 +22,13 @@ describe('digestFor', () => {
     expect(d.sections[0].bullets[0]).toMatchObject({ figure: tile.item!.figure, text: 'kurz gesagt' })
   })
 
+  it('lets a one-bar chart yield to a more telling one', () => {
+    const bars = (id: string, values: number[]) => ({ id, title: id, note: '', spec: { type: 'balken' as const, title: id, unit: '%', note: '', bars: values.map((value, i) => ({ label: `b${i}`, value })) } })
+    const d = digestFor(clientA, [], [bars('waehrungen', [99.1, 0.9]), bars('anlageklassen', [55, 30, 15]), bars('regionen', [60, 40])])
+    expect(d.charts.map((c) => c.id)).toEqual(['anlageklassen', 'regionen'])
+    expect(digestFor(clientA, [], [bars('waehrungen', [99.1, 0.9])]).charts.map((c) => c.id)).toEqual(['waehrungen'])
+  })
+
   it('survives a client with nothing to say', () => {
     const d = digestFor({ ...clientA, aum: '–', briefing: [] }, [], [])
     expect(d.sections).toEqual([])

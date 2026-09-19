@@ -10,7 +10,7 @@ import { ModuleView } from './modules'
 // a copy of it sits in a print-only sheet next to #root, see .print-sheet in index.css.
 
 const DOT = { risk: 'bg-risk', warn: 'bg-warn', ok: 'bg-ok', info: 'bg-brand' }
-const CHROME = ['Überblick', 'Sekunden Lesezeit', 'Kopieren', 'Kopiert', 'Als PDF speichern', 'Grafiken', 'Keine Angaben für diesen Kunden.', 'Stand']
+const CHROME = ['Überblick', 'Sekunden Lesezeit', 'Kopieren', 'Kopiert', 'Als PDF speichern', 'Grafiken', 'Keine Angaben für diesen Kunden.', 'Stand', 'Alle Zahlen sind aus den Kundendaten berechnet, die Quelle steht je Punkt in Klammern. Interne Gesprächsvorbereitung, keine Anlageempfehlung.']
 
 type Words = { chrome: string[]; labels: string[]; groups: string[]; texts: string[]; sources: string[] }
 
@@ -53,6 +53,7 @@ function Body({ d, w, asOf, language, print = false }: { d: DigestData; w: Words
           <div className="grid grid-cols-2 gap-3">{d.charts.map((c) => <ModuleView key={c.id} spec={c.spec} detail="standard" language={language} />)}</div>
         </section>
       )}
+      {print && <p className="mt-4 border-t border-line pt-2 text-[9px] text-muted">{w.chrome[8]}</p>}
     </div>
   )
 }
