@@ -1,6 +1,7 @@
 import { topics } from '../data/workspace'
 import { signals } from '../data/mock'
-import type { Client } from '../types'
+import type { Client, NewsItem } from '../types'
+import type { NewsAgentItem, NewsAgentResult } from '../../server/ai/news-agent-types'
 import { deriveTopics } from './derive'
 import { grounded } from './grounding'
 import { CATALOGUE, chartsFor, checkPlan, describeCharts, describeTiles, localPlan, tilesFor, type Chart, type Plan, type Tile } from './screen'
@@ -44,8 +45,20 @@ async function post<T>(path: string, payload: unknown): Promise<T> {
   return data
 }
 
+// Aktuelle Nachrichten zu den grössten Positionen des Kunden (server-seitig 5 Minuten gecacht,
+// darum hier ohne eigenen Cache pro Chat-Anfrage abrufbar). Bricht der Abruf ab, bleibt der Chat
+// trotzdem funktionsfähig, einfach ohne diese Quelle.
+async function fetchNews(ref: string): Promise<NewsAgentItem[]> {
+  try {
+    const r = await fetch(`/api/news-agent?ref=${encodeURIComponent(ref)}`)
+    if (!r.ok) return []
+    const data = await r.json() as NewsAgentResult
+    return Array.isArray(data.items) ? data.items : []
+  } catch { return [] }
+}
+
 // Was das Modell über den Kunden erfährt: nur Fakten aus den Daten, ohne Namen und Kontonummern.
-function contextFor(client: Client) {
+function contextFor(client: Client, news: NewsAgentItem[] = []) {
   return {
     kunde: { kennung: client.ref, kundenprofil: client.profile, strategie: client.strategy, anlagedienstleistung: client.service, vermoegen: client.aum, anlass: client.context, letzteBeratung: client.lastConsultation, geburtsdatum: client.birthday, letzteProfilierung: client.lastProfiling },
     briefing: client.briefing,
@@ -53,6 +66,7 @@ function contextFor(client: Client) {
     kennzahlen: client.facts ? { ...client.facts, performance: client.facts.performance && { ...client.facts.performance, series: undefined } } : undefined,
     themen: topicsFor(client).map((t) => ({ thema: t.label, fakten: t.insight.detailliert, begruendung: t.why, quellen: t.sources })),
     marktsignale: signals.filter((s) => s.affected.some((a) => a.ref === client.ref)).map((s) => ({ titel: s.title, detail: s.detail, reichweite: s.reach, quelle: s.source, betroffenheit: s.affected.find((a) => a.ref === client.ref)?.exposure })),
+    nachrichten: news.map((n) => ({ titel: n.title, quelle: n.source, zeit: n.time, position: n.security, gewicht: n.weight, ton: n.tone, warum: n.why })),
   }
 }
 
@@ -105,7 +119,8 @@ export async function answer(client: Client, text: string, settings: Settings, s
   const provider = activeProvider(settings, status)
   if (!provider) { await new Promise((r) => setTimeout(r, 400)); return localAnswer(client, text, settings, 'chat') }
   try {
-    const context = contextFor(client)
+    const news = await fetchNews(client.ref)
+    const context = contextFor(client, news)
     const r = await post<ChatResult>('/api/chat', { provider, detail: settings.detail, context, modules: catalogue(client), question: text, history: history.slice(-6).map((e) => ({ rolle: e.role, text: e.text })) })
     // Grounding guard: a sentence with a number that is not in the data never reaches the screen.
     const evidence = JSON.stringify(context) + text
@@ -190,9 +205,9 @@ export type Screen = { tiles: Tile[]; charts: Chart[] }
 export type AgentEvent = { type: 'start'; call?: string } | { type: 'transcript'; segments: Segment[] } | { type: 'said'; text: string }
 export type Step = { plan: Plan; lines: TranscriptLine[] }
 
-export function screenFor(client: Client): Screen {
+export function screenFor(client: Client, news: NewsItem[] = []): Screen {
   const charts = chartsFor(client, topicsFor(client).filter((t) => t.module).map((t) => ({ id: t.id, spec: t.module!.spec })))
-  return { charts, tiles: tilesFor(client, charts) }
+  return { charts, tiles: tilesFor(client, charts, news) }
 }
 
 export async function agentStep(client: Client, screen: Screen, transcript: TranscriptLine[], said: string[], event: AgentEvent, settings: Settings, status: Status): Promise<Step> {
