@@ -258,11 +258,11 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
             {actions}
           </div>
           <Profile client={client} compact={inCall} />
-          <div ref={box} onScroll={onScroll} className={`relative min-h-0 flex-1 snap-y snap-proximity overflow-y-auto px-3 [scrollbar-width:none] ${GLASS}`}>
+          <div ref={box} onScroll={onScroll} className={`relative min-h-0 flex-1 overflow-y-auto px-3 [scrollbar-width:none] ${GLASS}`}>
             <div className="h-2" aria-hidden />
             {tiles.map((t) => (
               <article key={t.id} data-tile={t.id} data-flip={t.id} onClick={() => focus(t.id)}
-                className={`group relative mb-3 snap-center rounded-xl bg-white/85 p-4 shadow-card ring-1 transition-[box-shadow] duration-500 ${flash === t.id ? 'ring-2 ring-brand' : 'ring-black/5'}`}>
+                className={`group relative mb-3 rounded-xl bg-white/85 p-4 shadow-card ring-1 transition-[box-shadow] duration-500 ${flash === t.id ? 'ring-2 ring-brand' : 'ring-black/5'}`}>
                 <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-muted">
                   {t.severity && <SeverityIcon severity={t.severity} size={11} />}
                   <span>{t.group}</span>
