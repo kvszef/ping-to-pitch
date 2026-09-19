@@ -1,6 +1,7 @@
 import { Ban, ExternalLink, MessageCircleQuestion, PhoneIncoming, PhoneOutgoing, Quote, Sparkles, Target } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { CallPlan, PlanLine } from '../../server/ai/callplan-types'
+import type { EngineFinding, TalkLine } from '../types'
 import { useTranslated, type Language } from '../data/useTranslate'
 
 // Two ways to look at a client, one per call direction.
@@ -145,6 +146,44 @@ export function CallPrep({ plan, writing, language }: { plan: CallPlan | null; w
           )}
         </div>
       )}
+    </section>
+  )
+}
+
+// Incoming view, always the second thing on the page (right under who the client is): why the client
+// is probably calling. The engine's ranked guesses (profile.call-reason: an open draft, a bond that
+// repays soon, a recent note, a weak month), each with its source. A guess is labelled as one, and
+// when the data holds none the card says so instead of inventing a reason.
+const WHY = {
+  de: { title: 'Warum der Kunde wohl anruft', none: 'Kein naheliegender Anlass in den Daten: offen nachfragen.' },
+  en: { title: 'Why the client is probably calling', none: 'No obvious reason in the data: ask openly.' },
+} as const
+
+// `fallback`: the talk track's own reasons (src/data/talkTrack.ts), used while the engine has not answered
+// or cannot be reached, so the card is there from the first moment of the call.
+export function WhyCalling({ findings, fallback = [], language }: { findings?: EngineFinding[]; fallback?: TalkLine[]; language: Language }) {
+  const day = (iso?: string) => (iso && /^\d{4}-\d{2}-\d{2}/.test(iso) ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}` : iso)
+  const fromEngine = (findings ?? []).filter((f) => f.check === 'profile.call-reason').sort((a, b) => (a.numbers?.rank ?? 9) - (b.numbers?.rank ?? 9))
+    .map((f) => ({ id: f.id, title: f.title, detail: f.detail, source: f.evidence[0]?.source ?? 'Engine', date: day(f.evidence.find((e) => e.date)?.date), severity: f.severity }))
+  const reasons = (findings ? fromEngine : fallback.map((r, i) => ({ id: `talk-${i}`, title: r.text, detail: undefined, source: r.source, date: r.date, severity: r.severity }))).slice(0, 3)
+  const texts = useTranslated(reasons.flatMap((r) => [r.title, r.detail ?? '', r.source]), language)
+  return (
+    <section className="mb-3 snap-start rounded-xl bg-white/90 px-4 py-3.5 shadow-card ring-1 ring-brand/25">
+      <div className="mb-2 flex items-center gap-2 text-[11px] text-brand-dark"><PhoneIncoming size={12} /> <span className="uppercase tracking-wide">{WHY[language].title}</span></div>
+      {!reasons.length && <p className="text-[13px] text-muted">{WHY[language].none}</p>}
+      <ul className="space-y-1.5">
+        {reasons.map((r, i) => (
+          <li key={r.id} className="flex items-start gap-2.5">
+            <span className={`mt-[7px] h-2 w-2 shrink-0 rounded-full ${r.severity === 'risk' ? 'bg-risk' : r.severity === 'warn' ? 'bg-warn' : 'bg-brand'}`} />
+            <div className="min-w-0 flex-1">
+              <p className={`leading-snug ${i === 0 ? 'text-[16px]' : 'text-[14px] text-ink/80'}`}>{texts[i * 3] || r.title}</p>
+              {r.detail && <p className="mt-0.5 text-[12px] leading-snug text-ink/70">{texts[i * 3 + 1] || r.detail}</p>}
+              {/* Why someone calls is always a guess, whatever it is built from. */}
+              <p className="mt-0.5 text-[10px] text-muted">{KIND[language].interpretation} · {texts[i * 3 + 2] || r.source}{r.date ? `, ${r.date}` : ''}</p>
+            </div>
+          </li>
+        ))}
+      </ul>
     </section>
   )
 }

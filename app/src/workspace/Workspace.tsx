@@ -13,7 +13,7 @@ import { useOutbound, type OutboundReason } from '../data/useOutbound'
 import type { Card, CardOf, Client, Signal } from '../types'
 import { AfterCall, type EndedCall } from './AfterCall'
 import { activeProvider, agentStep, answer, demoScript, fetchStatus, question, screenFor, topicsFor, type AgentEvent, type Segment, type Status } from './brain'
-import { CallPrep, ModeSwitch, type CallMode } from './CallPrep'
+import { CallPrep, ModeSwitch, WhyCalling, type CallMode } from './CallPrep'
 import { sinceCallStart } from './callNote'
 import { localPlan, nameIn, rebasePlan, type Brought, type Plan, type Suggestion } from './screen'
 import { SettingsPanel } from './SettingsPanel'
@@ -441,6 +441,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
             lines={lines} pending={pending} note={note} freshNews={news.fresh} hints={hints}
             loading={engine.pending.length > 0 || (mode === 'prep' && callPlan.writing)}
             prep={mode === 'prep' ? <CallPrep plan={callPlan.plan} writing={callPlan.writing} language={settings.language} /> : undefined}
+            reason={mode === 'inbound' ? <WhyCalling findings={client.findings} fallback={client.briefing.find((c) => c.type === 'talktrack')?.reasons} language={settings.language} /> : undefined}
             lead={
               <div className="flex min-w-0 shrink-0 items-baseline gap-2">
                 <span className="truncate text-[15px]">{client.name}</span>

@@ -48,6 +48,22 @@ describe('composeCallPlan', () => {
     expect(plan.open.text).toMatch(/Markteinschätzung/)
   })
 
+  it('keeps the decimals of the effects when the house view comes with a re-checked trade', () => {
+    // First client whose house-view finding carries a trade ('Vorschlag: … . Danach: Obligationen 20.5% → 30.4%, … .').
+    for (const c of clients) {
+      const findings = run(c, { ref: index, now: NOW, memory: [], houseView: houseView() })
+      const view = findings.find((f) => f.check === 'cio.house-view' && /Vorschlag: .+\. Danach: /.test(f.detail ?? ''))
+      if (!view) continue
+      const goal = composeCallPlan(c.ClientRef as string, findings, [{ kind: 'opportunity', severity: view.severity, title: view.title, findingId: view.id }]).goals[0]
+      expect(goal.id).toBe('goal-house-view')
+      const after = /Danach: (.+?)\.(?= (?:Neu zu beachten|Gemessen mit)|$)/.exec(view.detail!)![1]
+      expect(after).toMatch(/\d\.\d%/)
+      expect(goal.text.endsWith(`danach ${after}`)).toBe(true)
+      return
+    }
+    throw new Error('no client with a house-view trade: the test data changed')
+  })
+
   it('phrases its own sentences in English on request and still reads German finding titles (CASE-004)', () => {
     const findings = findingsOf('CASE-004')
     const wish = findings.find((f) => f.check === 'contradiction.fossil-fuel')!

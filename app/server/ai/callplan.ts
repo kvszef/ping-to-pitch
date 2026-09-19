@@ -28,6 +28,13 @@ const sentence = (text: string) => (/[.!?]$/.test(text) ? text : `${text}.`)
 // "Nestle SA (6.2%): Headline" → the holding's label, as the outbound ranking writes news reasons.
 const holdingOf = (title: string) => /^(.+?) \([\d.,]+%\): /.exec(title)?.[1]
 
+// The house-view finding's detail, read in both languages: 'reason. Vorschlag: step. Danach: effects. Gemessen mit …' /
+// 'reason. Proposal: step. After that: effects. Measured with …'. The effects hold decimal points ('20.5% → 30.4%'),
+// so they end at the full stop before the next sentence, not at the first one. Same contract as stepOf/reasonOf in
+// engine/checks/cio-house-view.ts: switch to those once they are on main.
+const HOUSE_VIEW_STEP = /(?:Vorschlag|Proposal): (.+?)\. (?:Danach|After that): (.+?)\.(?= (?:Neu zu beachten|New to watch|Gemessen mit|Measured with)|$)/
+const HOUSE_VIEW_REASON_END = / (?=Vorschlag: |Proposal: |Aufstocken |Topping up |Gemessen mit |Measured with )/
+
 const fromFinding = (id: string, f: Finding, text = clean(f.title), extra: Partial<PlanLine> = {}): PlanLine =>
   ({ id, text, kind: f.kind, source: sourceOf(f), date: dateOf(f), severity: f.severity, findings: [f.id], ...extra })
 
@@ -91,9 +98,8 @@ export function composeCallPlan(ref: string, findings: Finding[], ranked: CallRe
   const forLead = leadFinding ? steps.find((a) => a.findings.includes(leadFinding.id)) : undefined
   if (forLead) goals.push(stepLine(forLead))
   else if (leadFinding?.check.startsWith('cio.')) {
-    // The house-view check writes its re-checked trade into the detail ("Vorschlag: … . Danach: … ." in
-    // German); in any other wording the reason of the fix stands in.
-    const trade = /Vorschlag: (.+?)\. Danach: (.+?)\./.exec(leadFinding.detail ?? '')
+    // The house-view check writes its re-checked trade into the detail; without one the reason of the fix stands in.
+    const trade = HOUSE_VIEW_STEP.exec(leadFinding.detail ?? '')
     const text = trade ? `${agree}: ${trade[1]}; ${t('danach', 'afterwards')} ${trade[2]}`
       : leadFinding.fix ? `${agree}: ${fixText(leadFinding)}`
       : t('Neue Hausmeinung vorstellen und entscheiden, ob das Portfolio in diese Richtung angepasst wird', 'Present the new house view and decide whether the portfolio moves in that direction')
@@ -119,7 +125,7 @@ export function composeCallPlan(ref: string, findings: Finding[], ranked: CallRe
   if (newsLed) ownExperience()
   // The bank's view changed: its own reasoning is the argument (the detail opens with it).
   if (leadFinding?.check.startsWith('cio.') && leadFinding.detail) {
-    const why = leadFinding.detail.split(/ (?=Vorschlag: |Aufstocken |Gemessen mit )/)[0].split(/(?<=[.!?]) /).slice(0, 2).join(' ')
+    const why = leadFinding.detail.split(HOUSE_VIEW_REASON_END)[0].split(/(?<=[.!?]) /).slice(0, 2).join(' ')
     if (why) arg(t('Begründung der Bank', 'Reasoning of the bank'), leadFinding, `${t('Die Anlagestrategen begründen es so', 'How the investment strategists explain it')}: ${why.replace(/\.$/, '')}`)
   }
   const contradictions = of('contradiction').filter((f) => f.severity === 'risk' || f.severity === 'warn').sort((a, b) => rank[a.severity] - rank[b.severity])
@@ -130,7 +136,8 @@ export function composeCallPlan(ref: string, findings: Finding[], ranked: CallRe
     if (wish.fix) {
       const { before, after } = wish.numbers ?? {}
       const n = wish.fix.SecurityPositions.length
-      const safe = /Nach dem Verkauf: keine neue Warnung/.test(wish.detail ?? '')
+      // The engine re-checks the portfolio after the sale; the stopgap finding only says so in its detail.
+      const safe = wish.numbers?.newIssues === 0 || (wish.numbers?.newIssues === undefined && /Nach dem Verkauf: keine neue Warnung|After the sale: no new warning/.test(wish.detail ?? ''))
       const enough = n === 1 ? t('Ein einziger Verkauf genügt', 'One sale is enough') : t(`${n} Verkäufe genügen`, `${n} sales are enough`)
       args.push({ ...fromFinding(`arg-fix-${wish.id}`, wish, `${enough}: ${fixText(wish)}${before !== undefined && after !== undefined ? `, ${t('Anteil', 'share')} ${pct(before)} → ${pct(after)}` : ''}${safe ? t('. Danach keine neue Warnung', '. No new warning afterwards') : ''}`, { label: t('Kleiner Eingriff', 'Small step') }), kind: 'action' })
     }
