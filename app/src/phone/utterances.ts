@@ -81,11 +81,19 @@ export function recordUtterances(
 
 // Sends one utterance to the server and returns the text ('' when nothing was understood).
 // `lang` is the language spoken on the call; the server's TRANSCRIBE_LANGUAGE wins over it when set.
+// A request can get lost in the tunnel and never answer. Without a limit it would hold back every later
+// utterance, because inOrder delivers in spoken order.
+export const TRANSCRIBE_TIMEOUT_MS = 20_000
+
 export async function transcribeUtterance(audio: Blob, lang?: 'de' | 'en'): Promise<string> {
-  const r = await fetch(`/api/transcribe${lang ? `?lang=${lang}` : ''}`, { method: 'POST', headers: { 'Content-Type': audio.type || 'audio/webm' }, body: audio })
-  const data = (await r.json()) as { segments?: { text: string }[]; error?: string }
-  if (!r.ok) throw new Error(data.error ?? `Transkription ${r.status}`)
-  return (data.segments ?? []).map((s) => s.text.trim()).filter(Boolean).join(' ')
+  const abort = new AbortController()
+  const timer = setTimeout(() => abort.abort(), TRANSCRIBE_TIMEOUT_MS)
+  try {
+    const r = await fetch(`/api/transcribe${lang ? `?lang=${lang}` : ''}`, { method: 'POST', headers: { 'Content-Type': audio.type || 'audio/webm' }, body: audio, signal: abort.signal })
+    const data = (await r.json()) as { segments?: { text: string }[]; error?: string }
+    if (!r.ok) throw new Error(data.error ?? `Transkription ${r.status}`)
+    return (data.segments ?? []).map((s) => s.text.trim()).filter(Boolean).join(' ')
+  } finally { clearTimeout(timer) }
 }
 
 // Utterances are sent at once but delivered in spoken order, even when a later one finishes first.
