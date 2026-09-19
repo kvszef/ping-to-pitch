@@ -34,6 +34,12 @@ export const PLAN_RULES: PlanRule[] = [
     labelEn: 'Estate planning', en: 'Health reasons: estate and succession planning is under review', questionEn: 'How far along is your estate planning?' },
   { re: /succession planning within the company/i, label: 'Nachfolge im Unternehmen', topic: 'admin', de: 'Nachfolgeregelung im Unternehmen läuft, Ansprechperson kann wechseln', question: 'Sind Sie weiterhin unsere Ansprechperson?',
     labelEn: 'Company succession', en: 'Succession planning in the company is under way, the contact person may change', questionEn: 'Are you still our contact person?' },
+  // General forms, after the exact phrases of the case data: a client file handed over at the demo words its notes
+  // differently. The deadline comes from the note itself when it names one (horizonIn), else the default here.
+  { re: /\b(buy|buying|purchase|purchasing|acquire|acquiring)\b[^.]{0,40}\b(property|house|home|apartment|flat|chalet|real estate)\b/i, label: 'Immobilienkauf', horizonMonths: 12, topic: 'liquidity', de: 'Plant einen Immobilienkauf, Liquiditätsbedarf absehbar', question: 'Ist Ihr Immobilienkauf inzwischen erfolgt, oder ist er noch geplant?',
+    labelEn: 'Property purchase', en: 'Plans to buy a property, a liquidity need is foreseeable', questionEn: 'Has your property purchase gone through by now, or is it still planned?' },
+  { re: /\b(plans?|planning|intends?|wants?|going|expects?) to retire\b|\bretir(e|ing|ement) (in|within|next|at the end)\b/i, label: 'Pensionierung', horizonMonths: 24, topic: 'liquidity', de: 'Pensionierung steht bevor, steigender Liquiditätsbedarf', question: 'Steht Ihr Pensionierungsdatum fest, und wie viel Liquidität brauchen Sie dann?',
+    labelEn: 'Retirement', en: 'Retirement is coming up, rising liquidity need', questionEn: 'Is your retirement date fixed, and how much liquidity will you need then?' },
 ]
 
 export type PlanNote = PlanRule & { quote: string; date: string; amount?: number }
@@ -47,7 +53,19 @@ export const planQuestion = (p: PlanTexts, lang?: Lang) => (lang === 'en' ? p.qu
 /** The plan rule a note matches, or undefined for notes that are not about a plan. */
 export function readPlan(quote: string, date: string): PlanNote | undefined {
   const rule = PLAN_RULES.find((r) => r.re.test(quote))
-  return rule ? { ...rule, quote, date, amount: amountIn(quote) } : undefined
+  if (!rule) return undefined
+  // A deadline the note names wins over the rule's default, but only for rules that have a deadline at all.
+  const horizonMonths = rule.horizonMonths === undefined ? undefined : horizonIn(quote) ?? rule.horizonMonths
+  return { ...rule, horizonMonths, quote, date, amount: amountIn(quote) }
+}
+
+const NUMBER_WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, nine: 9, twelve: 12, eighteen: 18 }
+/** 'within the next 6 months' → 6, 'in two years' → 24. Undefined when the note names no time span. */
+export function horizonIn(text: string): number | undefined {
+  const m = /\b(?:within|in|over)(?: the)?(?: next| coming)? (\d{1,2}|one|two|three|four|five|six|nine|twelve|eighteen) (month|year)s?\b/i.exec(text)
+  if (!m) return undefined
+  const n = NUMBER_WORDS[m[1].toLowerCase()] ?? Number(m[1])
+  return Number.isFinite(n) && n > 0 ? (m[2].toLowerCase() === 'year' ? n * 12 : n) : undefined
 }
 
 /** 'Needs approximately CHF 15,000 …' → 15000. Only CHF amounts; undefined when the note names none. */

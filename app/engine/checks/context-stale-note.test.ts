@@ -31,3 +31,16 @@ describe('context.stale-note', () => {
     expect(staleNote(client('CASE-022'), { ...ctx, lang: 'en' })[0].title).toMatch(/^Outdated: Inheritance – open for 21 months, no deadline/)
   })
 })
+
+describe('context.stale-note on a note worded differently from the case data', () => {
+  it('reads the plan and its deadline from the note itself', () => {
+    const c = { ...client('CASE-001'), ClientNotes: [{ Note: 'Plans to buy a holiday home within the next 6 months.', CreatedByDateUTC: '2024-11-05T09:00:00' }] }
+    const f = staleNote(c, { ...ctx, lang: 'en' })
+    expect(f).toHaveLength(1)
+    expect(f[0].title).toBe('Outdated: Property purchase – time window ended on 05.05.2025 (note of 05.11.2024)')
+  })
+  it('stays silent on a note that is not a plan', () => {
+    const c = { ...client('CASE-001'), ClientNotes: [{ Note: 'Lives in a house by the lake and enjoys sailing.', CreatedByDateUTC: '2024-11-05T09:00:00' }] }
+    expect(staleNote(c, ctx)).toEqual([])
+  })
+})
