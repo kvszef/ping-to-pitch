@@ -171,6 +171,15 @@ describe('with the engine', () => {
     }
   })
 
+  it('uses the engine profile (E4) for persona, tone and the call reasons', () => {
+    const b = composeBriefing('CASE-042', merged(client('CASE-042')))
+    expect(b.persona!.text).toMatch(/^In den Jahren vor der Pensionierung \(62 Jahre\); wirkt eher selbstbestimmt/)
+    expect(b.persona!.findings).toContain('profile.persona:CASE-042:line')
+    expect(b.persona!.tone[0]).toBe('kurz und sachlich')
+    expect(b.reasons.map((r) => r.id)).toContain('reason-maturity')
+    expect(b.reasons.find((r) => r.id === 'reason-draft')!.text).toMatch(/^Rückfrage zum offenen Vorschlag «Auszahlungswunsch»/)
+  })
+
   it('takes a check from the engine once it delivers, and never both', () => {
     const c = client('CASE-012')
     const { findings, engineChecks } = mergeFindings(run(c, { ref: index, now: NOW, memory: [] }), provisionalFindings(c, reference, NOW))

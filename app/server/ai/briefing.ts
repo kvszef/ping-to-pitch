@@ -98,9 +98,21 @@ export function composeBriefing(ref: string, findings: Finding[]): Briefing60 {
   if (promises[0]) reasons.push(line('reason-promise', `Wartet auf: ${labelOf(promises[0])}`, 'interpretation', [promises[0]]))
   if (stale[0]) reasons.push(line('reason-stale', `Vielleicht schon erledigt: ${labelOf(stale[0])} (Zeitfenster abgelaufen)`, 'interpretation', [stale[0]]))
   if (contradictions[0]?.severity === 'risk') reasons.push(line('reason-esg', 'Fragt nach dem Ausschluss, der im Portfolio nicht umgesetzt ist', 'interpretation', [contradictions[0]]))
-  if (draft) reasons.push(line('reason-draft', `Rückfrage zum offenen Vorschlag`, 'interpretation', [draft]))
-  // A monthly loss hit almost every portfolio in the same month: a weaker guess than the client's own plans.
-  if (perfMonth !== undefined && perfMonth <= -0.02) reasons.push(line('reason-perf', `Wertverlust im letzten Monat (${sign(perfMonth)})`, 'interpretation', [perf]))
+  // E4 ranks the remaining guesses (draft, maturing bonds, recent note or proposal, weak month); without it, the old two.
+  const callReasons = of('profile.call-reason').sort((a, b) => (a.numbers?.rank ?? 9) - (b.numbers?.rank ?? 9))
+  if (callReasons.length) {
+    // A note already turned into a plan, promise or stale-note reason above is not repeated.
+    const notesUsed = new Set([liquidityPlan, promises[0], stale[0]].flatMap((f) => f?.evidence.map((e) => e.date) ?? []))
+    for (const f of callReasons) {
+      const subject = f.id.split(':')[2] ?? f.id
+      if (subject === 'note' && f.evidence.some((e) => e.date && notesUsed.has(e.date))) continue
+      reasons.push(line(subject === 'performance' ? 'reason-perf' : subject === 'draft' ? 'reason-draft' : `reason-${subject}`, f.title, 'interpretation', [f]))
+    }
+  } else {
+    if (draft) reasons.push(line('reason-draft', `Rückfrage zum offenen Vorschlag`, 'interpretation', [draft]))
+    // A monthly loss hit almost every portfolio in the same month: a weaker guess than the client's own plans.
+    if (perfMonth !== undefined && perfMonth <= -0.02) reasons.push(line('reason-perf', `Wertverlust im letzten Monat (${sign(perfMonth)})`, 'interpretation', [perf]))
+  }
   if (!reasons.length && violations[0]) reasons.push(line('reason-violation', 'Allgemeine Überprüfung, offene Regelverletzungen', 'interpretation', [violations[0]]))
 
   // ---- persona and tone -----------------------------------------------------------------------
@@ -119,7 +131,13 @@ export function composeBriefing(ref: string, findings: Finding[]): Briefing60 {
   const personaParts = said.slice(0, 2).map((f) => f.title)
   if (declines) personaParts.push(`lehnte ${acc.rejected} von ${acc.total} Vorschlägen ab`)
   const personaSources = [...said.slice(0, 2), ...(declines ? [acceptance!] : [])]
-  const persona = personaParts.length ? { ...line('persona', personaParts.join('; '), 'interpretation', personaSources), tone: [...new Set(tone)] } : null
+  // E4: the engine's persona line and tone (register first, then hints) replace the note-based fallback when present.
+  const enginePersona = of('profile.persona')[0]
+  const engineTone = of('profile.tone').sort((a, b) => Number(b.id.endsWith(':register')) - Number(a.id.endsWith(':register')))
+  const toneText = engineTone.length ? engineTone.map((f) => f.title.replace(/^Ton: /, '')) : tone
+  const persona = enginePersona
+    ? { ...line('persona', enginePersona.title.replace(/\.$/, ''), 'interpretation', [enginePersona, ...engineTone]), tone: [...new Set(toneText)] }
+    : personaParts.length ? { ...line('persona', personaParts.join('; '), 'interpretation', [...personaSources, ...engineTone]), tone: [...new Set(toneText)] } : null
 
   // ---- the four blocks ------------------------------------------------------------------------
   const open: Line[] = []
