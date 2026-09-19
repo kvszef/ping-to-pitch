@@ -1,6 +1,6 @@
 import { topics } from '../data/workspace'
 import { signals } from '../data/mock'
-import type { Client, NewsItem } from '../types'
+import type { Card, CardOf, Client, NewsItem } from '../types'
 import type { NewsAgentItem, NewsAgentResult } from '../../server/ai/news-agent-types'
 import { deriveTopics } from './derive'
 import { grounded } from './grounding'
@@ -212,7 +212,15 @@ export async function think(client: Client, transcript: TranscriptLine[], segmen
 
 export type Screen = { tiles: Tile[]; charts: Chart[] }
 export type AgentEvent = { type: 'start'; call?: string } | { type: 'transcript'; segments: Segment[] } | { type: 'said'; text: string }
-export type Step = { plan: Plan; lines: TranscriptLine[] }
+export type Step = { plan: Plan; lines: TranscriptLine[]; covered?: string[]; cardOrder?: Card['type'][] }
+
+// Card types the live agent may reorder mid-call: the optional insight cards, same set as
+// server/ai/insights.ts ranks before the call. Never the talk track, metrics or context cards.
+const RANKABLE_CARDS = new Set<Card['type']>(['flags', 'contradiction', 'stalenote', 'profile', 'todos'])
+const talkTrackTexts = (briefing: Card[]): Set<string> => {
+  const t = briefing.find((c): c is CardOf<'talktrack'> => c.type === 'talktrack')
+  return new Set(t ? [t.open, ...t.mention, ...t.ask].map((l) => l.text) : [])
+}
 
 export function screenFor(client: Client, news: NewsItem[] = []): Screen {
   const charts = chartsFor(client, topicsFor(client).filter((t) => t.module).map((t) => ({ id: t.id, spec: t.module!.spec })))
@@ -243,7 +251,15 @@ export async function agentStep(client: Client, screen: Screen, transcript: Tran
     const fallback = local()
     const modelLines = Array.isArray(r.segments) ? (r.segments as Segment[]).slice(-segments.length) : []
     const lines = known || modelLines.length !== segments.length ? fallback.lines : asLines(modelLines)
-    return { lines, plan: checkPlan(r, screen.tiles, screen.charts, (t) => grounded(t, evidence), { ...fallback.plan, answer: null }) }
+    // Only exact talk-track lines / known card types survive: the model chooses among what already exists, never invents one.
+    const knownTexts = talkTrackTexts(context.briefing)
+    const covered = Array.isArray(r.covered) ? r.covered.filter((t): t is string => typeof t === 'string' && knownTexts.has(t)) : []
+    const availableCards = new Set(context.briefing.map((c) => c.type).filter((t) => RANKABLE_CARDS.has(t)))
+    const cardOrder = Array.isArray(r.cardOrder) ? [...new Set(r.cardOrder.filter((t): t is Card['type'] => typeof t === 'string' && availableCards.has(t as Card['type'])))] : []
+    return {
+      lines, plan: checkPlan(r, screen.tiles, screen.charts, (t) => grounded(t, evidence), { ...fallback.plan, answer: null }),
+      ...(covered.length ? { covered } : {}), ...(cardOrder.length ? { cardOrder } : {}),
+    }
   } catch {
     return local()
   }

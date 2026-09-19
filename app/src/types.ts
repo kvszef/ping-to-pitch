@@ -40,7 +40,8 @@ export type CallNote = {
 export type Point = { text: string; kind: Kind; source?: string }
 
 // One spoken line of the 60-second talk track, always with the source it can be traced to.
-export type TalkLine = { text: string; source: string; date?: string; detail?: string; severity?: Severity }
+// `covered`: set live during a call once the screen agent sees the transcript already address it.
+export type TalkLine = { text: string; source: string; date?: string; detail?: string; severity?: Severity; covered?: boolean }
 
 // A finding of the engine (contract v0 in PLAN.md), as far as the UI reads it.
 export type EngineFinding = { id: string; check: string; kind: Kind; severity: Severity; title: string; detail?: string; numbers?: Record<string, number>; evidence: { source: string; ref?: string; quote?: string; date?: string }[]; topic?: string }

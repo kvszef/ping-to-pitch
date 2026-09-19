@@ -2,12 +2,13 @@ import { Mic, MicOff, PanelLeftClose, Phone, PhoneCall, PhoneOff, Search, Settin
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useBriefing } from '../data/useBriefing'
+import { sortCards } from '../data/source'
 import { useNews } from '../data/useNews'
 import * as deskLine from '../phone/deskLine'
 import { usePhoneAudio } from '../phone/usePhoneAudio'
 import { demoCalls, lineDelay, type DemoLine } from '../data/demoCalls'
 import { useOutbound } from '../data/useOutbound'
-import type { Client, Signal } from '../types'
+import type { Card, CardOf, Client, Signal } from '../types'
 import { activeProvider, agentStep, answer, demoScript, fetchStatus, question, screenFor, topicsFor, type AgentEvent, type Segment, type Status } from './brain'
 import { localPlan, nameIn, rebasePlan, type Plan, type Suggestion } from './screen'
 import { SettingsPanel } from './SettingsPanel'
@@ -15,6 +16,12 @@ import { useSettings } from './settings'
 import { Stage, Transcript } from './Stage'
 import type { ChatEntry, Hint, TranscriptLine } from './types'
 import { canListen, useCallAudio } from './useCallAudio'
+
+// Marks talk-track lines the live agent has heard addressed, for a struck-through checkmark in the UI.
+const markCovered = (card: CardOf<'talktrack'>, covered: Set<string>): CardOf<'talktrack'> => {
+  const mark = (l: typeof card.open) => (covered.has(l.text) ? { ...l, covered: true } : l)
+  return { ...card, open: mark(card.open), mention: card.mention.map(mark), ask: card.ask.map(mark) }
+}
 
 const stem = (t: string) => new Set(t.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 3).map((w) => w.slice(0, 6)))
 // A spoken line counts as the talking point when it shares at least half of its content words.
@@ -68,9 +75,20 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
   // The client, enriched with the engine's briefing once the server answered.
   const listed = clients.find((c) => c.ref === ref) ?? clients[0]
   const engine = useBriefing(listed.ref)
-  const client = useMemo(() => (engine.findings.length || engine.cards.length
-    ? { ...listed, briefing: engine.cards.length ? engine.cards : listed.briefing, findings: engine.findings.length ? engine.findings : undefined }
-    : listed), [listed, engine.cards, engine.findings])
+  // Live during a call: which talk-track lines the agent has heard addressed, and its current
+  // read on which insight cards matter most right now (server/ai/insights.ts ranks them pre-call;
+  // this re-ranks live from the transcript). Reset whenever the advisor moves to another client.
+  const [liveCovered, setLiveCovered] = useState<Set<string>>(new Set())
+  const [liveOrder, setLiveOrder] = useState<Card['type'][]>([])
+  useEffect(() => { setLiveCovered(new Set()); setLiveOrder([]) }, [listed.ref])
+  const client = useMemo(() => {
+    const base = engine.findings.length || engine.cards.length
+      ? { ...listed, briefing: engine.cards.length ? engine.cards : listed.briefing, findings: engine.findings.length ? engine.findings : undefined }
+      : listed
+    if (!liveCovered.size && !liveOrder.length) return base
+    const briefing = base.briefing.map((c): Card => c.type === 'talktrack' ? markCovered(c, liveCovered) : c)
+    return { ...base, briefing: sortCards(briefing, liveOrder) }
+  }, [listed, engine.cards, engine.findings, liveCovered, liveOrder])
   // The elements the agent can show for this client, and its current plan.
   // Live news on the client's holdings (polled); the tiles and the agent see it.
   const news = useNews(identifying ? null : client.ref)
@@ -122,6 +140,8 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
       if (spoken.length) mark(spoken)
       const now = latest.current.screen
       setPlan(now === on ? r.plan : rebasePlan(r.plan, now.tiles, now.charts))
+      if (r.covered?.length) setLiveCovered((prev) => new Set([...prev, ...r.covered!]))
+      if (r.cardOrder?.length) setLiveOrder(r.cardOrder)
     }
     setThinking(false)
     running.current = false

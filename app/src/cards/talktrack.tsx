@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Ban, CircleAlert, CircleHelp, MessageCircle, Pause, Play, PhoneIncoming, Timer } from 'lucide-react'
+import { Ban, Check, CircleAlert, CircleHelp, MessageCircle, Pause, Play, PhoneIncoming, Timer } from 'lucide-react'
 import type { CardOf, TalkLine } from '../types'
 import { KindTag, Panel, SeverityIcon } from './ui'
 
@@ -15,9 +15,9 @@ function Line({ line, active, big = false, muted = false }: { line: TalkLine; ac
   const [open, setOpen] = useState(false)
   return (
     <li className={`rounded-sm transition-colors duration-300 ${active ? 'bg-brand-soft/50' : ''}`}>
-      <button onClick={() => setOpen((o) => !o)} aria-expanded={open} title="Quelle anzeigen" className={`flex w-full items-start gap-1.5 px-1.5 py-1 text-left leading-snug hover:bg-stripe ${big ? 'text-[17px]' : 'text-[13px]'} ${muted ? 'text-muted' : ''}`}>
-        {line.severity && <span className="mt-[3px]"><SeverityIcon severity={line.severity} size={12} /></span>}
-        <span>{line.text}</span>
+      <button onClick={() => setOpen((o) => !o)} aria-expanded={open} title="Quelle anzeigen" className={`flex w-full items-start gap-1.5 px-1.5 py-1 text-left leading-snug hover:bg-stripe ${big ? 'text-[17px]' : 'text-[13px]'} ${muted || line.covered ? 'text-muted' : ''}`}>
+        {line.covered ? <span className="mt-[3px] text-ok"><Check size={12} /></span> : line.severity && <span className="mt-[3px]"><SeverityIcon severity={line.severity} size={12} /></span>}
+        <span className={line.covered ? 'line-through decoration-1' : ''}>{line.text}</span>
       </button>
       {open && <div className="anim-rise px-1.5 pb-1 text-[11px] text-muted">Quelle: {line.source}{line.date ? `, ${line.date}` : ''}{line.detail ? ` · ${line.detail}` : ''}</div>}
     </li>

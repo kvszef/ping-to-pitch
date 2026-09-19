@@ -110,10 +110,13 @@ function agentPrompt(p: { context: unknown; catalogue: unknown; tiles: unknown; 
     { role: 'system', content: `${RULES}
 Du steuerst den Bildschirm eines Kundenberaters${live ? ' während eines laufenden Telefongesprächs' : ' vor dem Gespräch'}. Du wählst aus dem KATALOG, was er jetzt sieht, damit er in 60 Sekunden das Wichtigste weiss und im Gespräch immer das Passende vor Augen hat.
 KATALOG: ${JSON.stringify(p.catalogue)}
-Schema: {"tiles": [{"id": string, "text"?: string}], "focus": string | null, "widgets": [string], "suggestions": [{"label": string, "text": string, "tile": string}], "answer": {"heard": string, "text": string} | null${live ? ', "segments": [{"speaker": "Kunde" | "Berater", "text": string}]' : ''}}
+Schema: {"tiles": [{"id": string, "text"?: string}], "focus": string | null, "widgets": [string], "suggestions": [{"label": string, "text": string, "tile": string}], "answer": {"heard": string, "text": string} | null${live ? ', "segments": [{"speaker": "Kunde" | "Berater", "text": string}], "covered": [string], "cardOrder": [string]' : ''}}
 - Verwende nur ids aus KACHELN und GRAFIKEN. "focus" ist eine id, kein Text.
 - ${live ? 'Richte "focus", "widgets" und "suggestions" nach dem, was zuletzt gesagt wurde. Greife das Anliegen des Kunden auf; wiederhole nichts aus GESAGT.' : 'Vor dem Gespräch: "focus" ist die wichtigste Kachel, "suggestions" sind die drei besten Einstiege.'}
-${live ? '- "segments": die NEUEN ABSCHNITTE in Reihenfolge mit Rolle. Der Berater erklärt und schlägt vor; der Kunde fragt und schildert. Nichts hinzufügen.\n' : ''}- Jede Zahl, die du schreibst, muss wörtlich in KUNDENKONTEXT, KACHELN oder GRAFIKEN stehen.` },
+${live ? `- "segments": die NEUEN ABSCHNITTE in Reihenfolge mit Rolle. Der Berater erklärt und schlägt vor; der Kunde fragt und schildert. Nichts hinzufügen.
+- "covered": Texte AUS KUNDENKONTEXT.briefing, Karte vom Typ "talktrack" (Felder open/mention/ask), wörtlich übernommen, die im bisherigen und neuen Gespräch bereits angesprochen wurden. Sonst leer.
+- "cardOrder": Kartentypen aus KUNDENKONTEXT.briefing (z. B. "flags", "contradiction", "stalenote", "profile", "todos"), die jetzt im Gespräch am wichtigsten sind, wichtigste zuerst. Nur Typen, die tatsächlich in KUNDENKONTEXT.briefing vorkommen.
+` : ''}- Jede Zahl, die du schreibst, muss wörtlich in KUNDENKONTEXT, KACHELN oder GRAFIKEN stehen.` },
     { role: 'user', content: `KUNDENKONTEXT:\n${JSON.stringify(p.context)}\n\nKACHELN:\n${JSON.stringify(p.tiles)}\n\nGRAFIKEN:\n${JSON.stringify(p.charts)}\n\nBISHERIGES GESPRÄCH:\n${JSON.stringify(p.transcript ?? [])}\n\nNEUE ABSCHNITTE:\n${JSON.stringify(p.segments ?? [])}\n\nGESAGT:\n${JSON.stringify(p.said ?? [])}\n\nEREIGNIS: ${p.event}` },
   ]
 }
