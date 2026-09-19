@@ -8,7 +8,7 @@
 // - Currencies only have a target. The bank's limits live in rule texts ("USD Anteil < 35.5%", "EUR Anteil < 9%",
 //   "Fremdwährungsanteil ... grösser als 50%"), so they are read from there, never hard-coded.
 // - "No strategy" portfolios have 0–100% bands and no targets: nothing to compare against, and we say so.
-import { exposure, type Band, type Client, type Dimension, type Exposure, type Portfolio, type ReferenceIndex } from '../data.ts'
+import { exposure, UNCLASSIFIED, type Band, type Client, type Dimension, type Exposure, type Portfolio, type ReferenceIndex } from '../data.ts'
 import { categoryName, pct, pts, shortName } from '../format.ts'
 import { pick, sourceName, type Lang } from '../lang.ts'
 import type { Check, Evidence, Finding } from '../types.ts'
@@ -19,6 +19,9 @@ const WEIGHT_WARN = 0.05 // bank rule: over/underweight at ±5 points from the S
 const WEIGHT_RISK = 0.1 // bank rule: significant over/underweight at ±10 points
 const OPAQUE_NOTE = 0.1 // mention funds without a breakdown when they hold ≥ 10% of the base
 
+// From this share of unclassified securities on, shares are reported as lower bounds. Our judgement.
+const UNCLASSIFIED_MENTION = 0.05
+const UNCLASSIFIED_WARN = 0.2
 const isTrivial = (b: Band) => (b.min ?? 0) <= 0 && (b.max ?? 1) >= 1 && !b.target
 
 function ruleLimit(ref: ReferenceIndex, code: string): number | undefined {
@@ -93,12 +96,52 @@ export const allocation: Check = (raw, ctx) => {
 
     // Asset classes: hard bands. One finding per portfolio: an all-cash portfolio breaks three bands at once,
     // and that is one fact for the advisor, not three.
-    const breaches = bands.filter((x) => x.dimension === 'AssetClass').map((b) => {
+    // Securities the reference data does not know (an uploaded client file) have no asset class, region or sector.
+    // A measured share is then a lower bound: "above the maximum" still holds, "below the minimum" only if
+    // the unknown part could not close the gap. We say so instead of asserting it.
+    const unknown = ac.shares.get(UNCLASSIFIED) ?? 0
+    const unsure = unknown >= UNCLASSIFIED_MENTION
+    if (unsure) {
+      out.push({
+        id: id('unclassified'), check: CHECK, kind: 'fact', severity: unknown >= UNCLASSIFIED_WARN ? 'warn' : 'info', topic: 'allocation',
+        title: t(
+          `${p.nr}: ${pct(unknown)} des Portfolios nicht klassifizierbar, der Vergleich mit der Strategie ist unvollständig`,
+          `${p.nr}: ${pct(unknown)} of the portfolio cannot be classified, the comparison with the strategy is incomplete`,
+        ),
+        detail: [
+          contributorsText(ac, UNCLASSIFIED, ctx.lang) ? `${t('Grösste', 'Largest')}: ${contributorsText(ac, UNCLASSIFIED, ctx.lang)}.` : '',
+          t('Diese Titel fehlen in den Stammdaten der Bank: Anlageklasse, Region und Sektor sind unbekannt. Anteile sind deshalb Mindestwerte, und Ausschlusswünsche lassen sich für diese Titel nicht prüfen.',
+            "These securities are not in the bank's reference data: asset class, region and sector are unknown. Shares are therefore minimum values, and exclusion wishes cannot be checked for these securities."),
+        ].filter(Boolean).join(' '),
+        numbers: { unclassified: unknown },
+        evidence: [SRC.portfolio(p.nr)],
+      })
+    }
+
+    const measured = bands.filter((x) => x.dimension === 'AssetClass').map((b) => {
       const actual = ac.shares.get(b.category) ?? 0
       const below = b.min !== undefined && actual < b.min, above = b.max !== undefined && actual > b.max
       const limit = below ? b.min! : above ? b.max! : undefined
       return { b, actual, below, limit, gap: limit === undefined ? 0 : actual - limit }
     }).filter((x) => x.limit !== undefined).sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap))
+    const open = measured.filter((x) => x.below && x.actual + unknown >= x.limit!)
+    const breaches = measured.filter((x) => !open.includes(x))
+    if (open.length) {
+      const [first] = open
+      out.push({
+        id: id('AssetClass:uncertain'), check: CHECK, kind: 'interpretation', severity: 'info', topic: 'allocation',
+        title: t(
+          `${p.nr}: ${open.map((x) => `${cat(x.b.category)} ${pct(x.actual)} (Minimum ${pct(x.limit!)})`).join(', ')}: mit den Daten nicht zu beurteilen`,
+          `${p.nr}: ${open.map((x) => `${cat(x.b.category)} ${pct(x.actual)} (minimum ${pct(x.limit!)})`).join(', ')}: cannot be judged from the data`,
+        ),
+        detail: t(
+          `Gemessen unter dem Minimum, aber ${pct(unknown)} des Portfolios sind nicht klassifizierbar und könnten die Lücke schliessen. Titel gemeinsam durchgehen, nicht als Verletzung ansprechen.`,
+          `Measured below the minimum, but ${pct(unknown)} of the portfolio cannot be classified and could close the gap. Go through the securities together; do not raise it as a breach.`,
+        ),
+        numbers: { actual: first.actual, limit: first.limit!, unclassified: unknown },
+        evidence: [saaEvidence, SRC.portfolio(p.nr)],
+      })
+    }
     if (breaches.length) {
       const text = (x: (typeof breaches)[number]) => t(
         `${cat(x.b.category)} ${pct(x.actual)}, ${x.below ? 'unter dem Minimum' : 'über dem Maximum'} von ${pct(x.limit!)}`,
@@ -134,7 +177,7 @@ export const allocation: Check = (raw, ctx) => {
         const evidence: Evidence[] = [saaEvidence, SRC.portfolio(p.nr)]
         if (bank) evidence.push(SRC.violation(bank.rule, bank.date))
         out.push({
-          id: id(`${dim}:${b.category}`), check: CHECK, kind: 'fact', severity: strong ? 'risk' : 'warn', topic: 'allocation',
+          id: id(`${dim}:${b.category}`), check: CHECK, kind: 'fact', severity: strong && !unsure ? 'risk' : 'warn', topic: 'allocation',
           title: t(
             `${p.nr}: ${strong ? 'deutliches ' : ''}${deviation > 0 ? 'Übergewicht' : 'Untergewicht'} ${kind === 'sector' ? 'Sektor' : 'Region'} ${cat(b.category)}: ${pct(actual)} statt ${pct(b.target!)} (${pts(deviation)})`,
             `${p.nr}: ${strong ? 'significant ' : ''}${deviation > 0 ? 'overweight' : 'underweight'} in the equity ${kind} ${cat(b.category)}: ${pct(actual)} instead of ${pct(b.target!)} (${pts(deviation, 'en')})`,
@@ -143,6 +186,7 @@ export const allocation: Check = (raw, ctx) => {
             t(`Anteil am Aktienteil (${pct(e.baseWeight)} des Portfolios), Fonds durchgeschaut.`, `Share of the equity part (${pct(e.baseWeight)} of the portfolio), with fund look-through.`),
             deviation > 0 ? `${t('Grösste Beiträge', 'Largest contributions')}: ${contributorsText(e, b.category, ctx.lang)}.` : '',
             bank ? t('Die letzte Regelprüfung der Bank meldet dies ebenfalls.', "The bank's last rule run reports this as well.") : '',
+            unsure ? t(`${pct(unknown)} des Portfolios sind nicht klassifizierbar und fehlen in dieser Messung.`, `${pct(unknown)} of the portfolio cannot be classified and is missing from this measure.`) : '',
           ].filter(Boolean).join(' '),
           numbers: { actual, target: b.target!, deviation, equityWeight: e.baseWeight, bankFlagged: bank ? 1 : 0 },
           evidence,

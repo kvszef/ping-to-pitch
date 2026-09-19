@@ -50,3 +50,28 @@ describe('portfolio.allocation', () => {
     expect(f.find((x) => x.id.endsWith('CASE-037-02:CountryGroup:North America'))!.title).toContain('underweight in the equity region North America')
   })
 })
+
+describe('portfolio.allocation with securities the reference data does not know', () => {
+  // Half of CASE-037's securities get ids nobody has seen, as in a client file handed over at the live demo.
+  const unseen = structuredClone(client('CASE-037'))
+  for (const p of unseen.Portfolios as { SecurityPositions: { SecurityId: number }[] }[]) p.SecurityPositions.forEach((s, i) => { if (i % 2 === 0) s.SecurityId += 9_000_000 })
+
+  it('states the unclassified share and does not assert a band breach the unknown part could undo', () => {
+    const f = allocation(unseen, { ...ctx, lang: 'en' })
+    const gap = f.find((x) => x.id.endsWith('CASE-037-02:unclassified'))
+    expect(gap?.severity).toBe('warn')
+    expect(gap?.title).toMatch(/of the portfolio cannot be classified/)
+    expect(gap?.numbers?.unclassified).toBeGreaterThan(0.2)
+    // Shares are measured below the 20% minimum, but more than half of the portfolio is unknown: not a fact.
+    expect(f.some((x) => x.id.endsWith('CASE-037-02:AssetClass') && x.severity === 'risk' && /below the minimum/.test(x.title))).toBe(false)
+    const open = f.find((x) => x.id.endsWith('CASE-037-02:AssetClass:uncertain'))
+    expect(open?.kind).toBe('interpretation')
+    expect(open?.severity).toBe('info')
+    // Region and sector gaps stay visible, but never as a hard risk while the equity part itself is uncertain.
+    expect(f.filter((x) => /CASE-037-02:(CountryGroup|Industry):/.test(x.id)).every((x) => x.severity !== 'risk')).toBe(true)
+  })
+
+  it('changes nothing for a client whose securities are all known', () => {
+    expect(allocation(client('CASE-037'), ctx).some((x) => /:unclassified$|:uncertain$/.test(x.id))).toBe(false)
+  })
+})
