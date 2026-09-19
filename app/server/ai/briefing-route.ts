@@ -169,3 +169,15 @@ export async function briefingClients() {
   const { clients } = await data()
   return clients.map((c) => ({ ref: str(c.ClientRef), name: header(c).name, profile: str(c.RiskProfileName) }))
 }
+
+/** Every client (case file plus uploads) with its engine findings, for the news agent and the outbound ranking. No model, no names to anyone. */
+export async function clientsWithFindings(now: Date): Promise<{ raw: Record<string, unknown>; ref: string; name: string; index: ReferenceIndex; findings: Finding[] }[]> {
+  const { clients, index } = await data()
+  const all = [...clients.filter((c) => !uploaded.has(str(c.ClientRef))), ...uploaded.values()]
+  const peers = peersOf(clients, index)
+  return all.map((raw) => {
+    let findings: Finding[] = []
+    try { findings = run(raw, { ref: index, now, memory: [], peers }) } catch { /* ranked on news only */ }
+    return { raw, ref: str(raw.ClientRef), name: header(raw).name, index, findings }
+  })
+}

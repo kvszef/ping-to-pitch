@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { resolve } from 'node:path'
 import type { Plugin } from 'vite'
 import { appBriefing, briefing60, briefingClients, uploadClients } from './ai/briefing-route.ts'
+import { briefingNews, clientNews, newsFeed, outbound, pushNews, snapshotNews } from './market/route.ts'
 import { callRoute } from './call.ts'
 
 // Kleine API im Vite-Server. Die Schlüssel bleiben hier und erreichen den Browser nie.
@@ -179,6 +180,18 @@ export function api(env: Env): Plugin {
             if (req.url.startsWith('/api/briefing60/clients')) return send(res, 200, await briefingClients())
             const out = await briefing60(req.method ?? 'GET', req.url, req.method === 'POST' ? await body(req) : null, llm)
             return send(res, out.status, out.data)
+          }
+          // News agent (server/market): fast model judges headlines; without a key, keyword rules.
+          const pick: Provider | null = ready(env, 'openai') ? 'openai' : ready(env, 'apertus') ? 'apertus' : null
+          const judgeLlm = pick ? (m: Message[]) => complete(env, pick, true, m) : null
+          const path = req.url.split('?')[0]
+          if (path === '/api/outbound' && req.method === 'GET') { const out = await outbound(judgeLlm); return send(res, out.status, out.data) }
+          if (path === '/api/news' && req.method === 'GET') { const out = await newsFeed(judgeLlm); return send(res, out.status, out.data) }
+          if (path === '/api/news' && req.method === 'POST') { const out = pushNews(await body(req)); return send(res, out.status, out.data) }
+          if (path === '/api/news/snapshot' && req.method === 'POST') { const out = await snapshotNews(); return send(res, out.status, out.data) }
+          if (path.startsWith('/api/news/') && req.method === 'GET') { const out = await clientNews(decodeURIComponent(path.slice('/api/news/'.length)), judgeLlm); return send(res, out.status, out.data) }
+          if (path.startsWith('/api/briefing/') && req.method === 'GET' && new URL(req.url, 'http://local').searchParams.get('tier') === 'slow') {
+            return send(res, 200, { cards: [], findings: await briefingNews(decodeURIComponent(path.split('/')[3] ?? ''), judgeLlm) })
           }
           if (req.url.startsWith('/api/briefing/') && req.method === 'GET') { const out = await appBriefing(req.url, llm); return send(res, out.status, out.data) }
           if (req.url === '/api/clients/upload' && req.method === 'POST') { const out = uploadClients(await body(req)); return send(res, out.status, out.data) }

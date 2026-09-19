@@ -133,12 +133,14 @@ Split: N1 (Arash) computes, N2 (Kaushik) shows. The UI types already exist in `a
 
 ```
 GET  /api/news                  NewsItem[]  newest first; affects[ref] filled by N1 for every client it touches
+GET  /api/news/:ref             inbound: { items: NewsItem[], findings, offline, judgedBy } for one client (< 1 s)
 GET  /api/outbound              { ref, score, reasons: { kind: 'risk' | 'opportunity', title, severity, findingId?, newsId? }[] }[]  highest score first
 POST /api/news                  demo only: push one news item, matched on arrival (N2's demo control)
+POST /api/news/snapshot         save fetched news as the offline fallback (run once before the demo, with network)
 GET  /api/briefing/:ref         unchanged; news hits arrive as `news.*` findings in tier=slow, and as a call reason
 ```
 
-Engine side: matched news enters the check context as `ctx.news` (absent = no news, nothing breaks). Check `news.hit` emits one finding per relevant item (fact: what happened and the exposure in % incl. look-through; source: the news item and the position). `profile.call-reason` ranks a hit from the last 3 days like its other reasons. Matching is by `SecurityId`/issuer, sector and region first; embeddings only for items the rules cannot place.
+Engine side: matched news enters the check context as `ctx.news` (absent = no news, nothing breaks). Check `news.hit` emits one finding per relevant item (fact: what happened and the exposure in % incl. look-through; source: the news item and the position). `profile.call-reason` ranks a hit from the last 3 days like its other reasons. No retrieval system: the agent searches the web live per holding (Bing News RSS, free, no key), keeps articles that name the holding, and the fast model judges relevance, importance and risk vs opportunity from headline and holding name only. Weights and scores are computed in code. No key: keyword rules. No network: `server/market/news-snapshot.json`.
 
 An ex-custody portfolio is just a `Portfolios[]` entry with `isExCustody: true`. The engine needs no special case, and neither does the fix simulator: apply the fix to a copy, run the checks again, show before and after.
 
