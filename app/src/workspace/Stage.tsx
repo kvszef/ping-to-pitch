@@ -7,7 +7,7 @@ import type { Screen } from './brain'
 import { Wave } from './CallIsland'
 import { ChatPanel, FOLLOW_UPS } from './ChatPanel'
 import { Smooth, useFlip, usePresence } from './motion'
-import { bestTile, sameTile, widgetMain, type Plan, type Tile } from './screen'
+import { bestTile, sameTile, widgetMain, type Brought, type Plan, type Tile } from './screen'
 import type { ChatEntry, Detail, Hint, TranscriptLine } from './types'
 import { useSummary } from './useSummary'
 import { Bars, Spark, WidgetRail, type Widget } from './Widgets'
@@ -115,8 +115,8 @@ function Profile({ client, compact = false, language }: { client: Client; compac
   )
 }
 
-export function Stage({ client, screen, plan, thinking, inCall, recording, lines, pending, note, hints, freshNews, lead, actions, chat, busy, detail, chatSuggestions, onAsk, onShowChart, graphsOpen, onGraphs, graphWidth, onGraphWidth, language }: {
-  client: Client; screen: Screen; plan: Plan; thinking: boolean
+export function Stage({ client, screen, plan, brought, thinking, inCall, recording, lines, pending, note, hints, freshNews, lead, actions, chat, busy, detail, chatSuggestions, onAsk, onShowChart, graphsOpen, onGraphs, graphWidth, onGraphWidth, language }: {
+  client: Client; screen: Screen; plan: Plan; brought: Brought[]; thinking: boolean
   inCall: boolean; recording: boolean; lines: TranscriptLine[]; pending: string[]; note: string | null; hints: Hint[]; freshNews: Set<string>
   lead: ReactNode; actions: ReactNode
   chat: ChatEntry[]; busy: boolean; detail: Detail; chatSuggestions: string[]; onAsk: (text: string) => void; onShowChart: (id: string) => void
@@ -204,23 +204,17 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
   // until the advisor pins it back. Without this, closing an unpinned widget was a no-op — the
   // agent's own picks (including the single fallback graph below) always re-filled the column.
   const [dismissed, setDismissed] = useState<string[]>([])
-  // Nothing enters the column on its own. It holds the advisor's pins and, during a call, what a
-  // question of the client brought up (Workspace only passes widgets for those steps). What has come
-  // up stays where it is: a new pick is added below the others, nothing is swapped out, changes place
-  // or changes its text until the advisor closes it.
-  const picks = inCall ? plan.widgets : []
-  const held = useRef<{ ref: string; ids: string[]; texts: Record<string, string | undefined>; answers: Record<string, Plan['answer']> }>({ ref: '', ids: [], texts: {}, answers: {} })
-  if (!inCall || held.current.ref !== client.ref) held.current = { ref: client.ref, ids: [], texts: {}, answers: {} }
-  if (inCall) {
-    const fresh = picks.filter((w) => !held.current.ids.includes(w))
-    if (fresh.length) held.current = { ...held.current, ids: [...held.current.ids, ...fresh] }
-    // The answer that came with a pick is kept with it and only shown when the advisor asks for it ("Gespräch").
-    if (plan.answer) for (const w of picks) held.current.answers[w] = plan.answer
-  }
-  const stay = held.current.ids
-  // The widget whose answer the advisor asked for.
+  // Nothing enters the column on its own, and the agent's plan never fills it. It holds exactly two
+  // things: what the advisor pinned, and `brought`: during a call, the one graph or tile per question
+  // of the client (Workspace decides that). What has come up stays where it is: the next one is added
+  // below, nothing is swapped out, changes place or changes its text until the advisor closes it.
+  const stay = useMemo(() => (inCall ? brought.map((b) => b.widget) : []), [inCall, brought])
+  const answers = useMemo(() => Object.fromEntries(brought.map((b) => [b.widget, b.answer])) as Record<string, Plan['answer']>, [brought])
+  const held = useRef<{ ref: string; texts: Record<string, string | undefined> }>({ ref: '', texts: {} })
+  if (!inCall || held.current.ref !== client.ref) held.current = { ref: client.ref, texts: {} }
+  // The widget whose answer the advisor asked for ("Antwort zeigen").
   const [talk, setTalk] = useState<string | null>(null)
-  if (talk && !held.current.ids.includes(talk)) setTalk(null)
+  if (talk && !stay.includes(talk)) setTalk(null)
   const wanted = useMemo(() => [...pins, ...stay.filter((w) => !pins.includes(w) && !dismissed.includes(w))], [pins, dismissed, stay.join('|')]) // eslint-disable-line react-hooks/exhaustive-deps
   const [shown, setShown] = useState<Widget[]>([])
   const toWidget = useCallback((key: string): Widget | null => {
@@ -236,10 +230,10 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
     const t = byId.get(key.slice(5))
     if (!t) return null
     const chart = t.chart ? chartById.get(t.chart)?.spec : undefined
-    const isHeld = held.current.ids.includes(key)
+    const isHeld = stay.includes(key)
     if (isHeld && !(key in held.current.texts)) held.current.texts[key] = plan.texts[t.id]
     return { id: key, group: t.group, severity: t.severity, main: widgetMain(t, client.ref), chart, text: (isHeld ? held.current.texts[key] : plan.texts[t.id]) ?? t.item?.text ?? t.news?.[0].title ?? (t.card?.type === 'proposal' ? t.card.summary : undefined), source: t.item?.source ?? (t.news ? t.news[0].source : 'Anlagevorschlag'), pinned }
-  }, [pins, byId, chartById, client.ref, plan.texts, chat])
+  }, [pins, byId, chartById, client.ref, plan.texts, chat, stay])
   useEffect(() => {
     const next = wanted.map(toWidget).filter((w): w is Widget => !!w)
     const nextById = new Map(next.map((w) => [w.id, w]))
@@ -260,7 +254,7 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
   }, [wanted, toWidget])
   // A widget added during a call lands at the bottom: scroll the column just far enough to show it.
   const rail = useRef<HTMLDivElement>(null)
-  const lastHeld = held.current.ids[held.current.ids.length - 1]
+  const lastHeld = stay[stay.length - 1]
   useEffect(() => {
     if (!inCall || !lastHeld) return
     const t = setTimeout(() => rail.current?.querySelector<HTMLElement>(`[data-flip="${CSS.escape(lastHeld)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 360)
@@ -328,8 +322,9 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
             <div className="h-2" aria-hidden />
             <Profile client={client} compact={inCall} language={language} />
             {tiles.map((t, i) => (
-              <article key={t.id} data-tile={t.id} data-flip={t.id} onClick={() => focus(t.id)}
-                className={`group relative mb-3 rounded-xl bg-white/85 p-4 shadow-card ring-1 transition-[box-shadow] duration-500 ${flash === t.id ? 'ring-2 ring-brand' : 'ring-black/5'}`}>
+              // Keyed per client, so opening a client mounts its tiles anew and they come in one after another.
+              <article key={`${client.ref}:${t.id}`} data-tile={t.id} data-flip={t.id} onClick={() => focus(t.id)} style={{ animationDelay: `${Math.min(i, 10) * 130}ms` }}
+                className={`tile-in group relative mb-3 rounded-xl bg-white/85 p-4 shadow-card ring-1 transition-[box-shadow] duration-500 ${flash === t.id ? 'ring-2 ring-brand' : 'ring-black/5'}`}>
                 <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-muted">
                   {t.severity && <SeverityIcon severity={t.severity} size={11} />}
                   <span>{groupLabels[i]}</span>
@@ -348,7 +343,7 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
           </div>
           <Smooth className="shrink-0">
             <div className={`transition-[opacity,transform] duration-[450ms] ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none ${dock.visible ? 'translate-y-0 opacity-100' : 'translate-y-3 opacity-0'}`}>
-              <Dock answer={talk ? held.current.answers[talk] ?? null : null} language={language} inCall={dock.mounted} transcript recording={recording} lines={lines} pending={pending} note={note} name={client.name} />
+              <Dock answer={talk ? answers[talk] ?? null : null} language={language} inCall={dock.mounted} transcript recording={recording} lines={lines} pending={pending} note={note} name={client.name} />
             </div>
           </Smooth>
         </div>
@@ -374,8 +369,8 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
                   <span className="flex items-center gap-1.5"><BarChart3 size={12} /> {graphsChrome[0]}</span>
                   <button onClick={() => onGraphs(false)} aria-label="Grafiken einklappen" title="Grafiken einklappen" className="flex h-6 w-6 items-center justify-center rounded-full normal-case hover:bg-pill hover:text-ink"><PanelRightClose size={14} /></button>
                 </div>
-                {inCall && <div className="mb-3 mt-3"><Dock answer={talk ? held.current.answers[talk] ?? null : null} language={language} inCall transcript={false} recording={recording} lines={lines} pending={pending} note={note} name={client.name} /></div>}
-                <WidgetRail widgets={shown} hot={talk} onTalk={inCall ? (w) => { setTalk(w.id); if (!held.current.answers[w.id]) onAsk(FOLLOW_UPS[2].ask(w.group)) } : undefined} onPin={(id) => togglePin(id)} onRemove={removeWidget}
+                {inCall && <div className="mb-3 mt-3"><Dock answer={talk ? answers[talk] ?? null : null} language={language} inCall transcript={false} recording={recording} lines={lines} pending={pending} note={note} name={client.name} /></div>}
+                <WidgetRail widgets={shown} hot={talk} onTalk={inCall ? (w) => { setTalk(w.id); if (!answers[w.id]) onAsk(FOLLOW_UPS[2].ask(w.group)) } : undefined} onPin={(id) => togglePin(id)} onRemove={removeWidget}
                   onFocus={(id) => { if (id.startsWith('tile:')) focus(id.slice(5)) }} onAsk={(w) => { if (w.ask) onAsk(FOLLOW_UPS[0].ask(w.ask)) }} language={language} />
               </div>
               <ChatPanel above={inCall ? <Transcript lines={lines} pending={pending} language={language} /> : null} name={client.name} chat={chat} busy={busy} detail={detail} suggestions={chatSuggestions} onAsk={onAsk} onShow={onShowChart}
@@ -407,7 +402,7 @@ function Dock({ answer, language, inCall, transcript, recording, lines, pending,
     const t = setInterval(() => setSeconds((s) => s + 1), 1000)
     return () => { clearInterval(t); setSeconds(0) }
   }, [inCall])
-  const [yourAnswer, hint, noRecording] = useTranslated(['Ihre Antwort', 'Fragt der Kunde nach etwas, erscheint darunter die passende Grafik. Ein Klick auf «Gespräch» bei einer Grafik zeigt hier den Antwortvorschlag dazu.', 'keine Aufzeichnung'], language)
+  const [yourAnswer, hint, noRecording] = useTranslated(['Ihre Antwort', 'Fragt der Kunde nach etwas, erscheint darunter die eine passende Grafik. Ein Klick auf «Antwort zeigen» bei der Grafik zeigt hier den Antwortvorschlag dazu.', 'keine Aufzeichnung'], language)
   const clock = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
   // Before a call starts, the talk track's own "Einstieg" line already covers the opener; the three
   // talking-point chips only earn their place once there's a live conversation to react to.

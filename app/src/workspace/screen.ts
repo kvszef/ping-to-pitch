@@ -14,6 +14,10 @@ import type { Hint, ModuleSpec } from './types'
 export type Tile = { id: string; group: string; topics: string[]; words: string; seconds: number; severity?: Severity; item?: BriefItem; news?: NewsItem[]; card?: Card; chart?: string }
 export type Chart = { id: string; title: string; note: string; spec: ModuleSpec }
 export type Suggestion = { id: string; label: string; text: string; tile?: string }
+// What a question of the client brought into the graph column during a call: one graph or tile
+// ("chart:<id>" | "tile:<id>") and the answer that belongs to it.
+export type Brought = { widget: string; answer: Plan['answer'] }
+
 export type Plan = {
   order: string[]                // tile ids in speaking order
   texts: Record<string, string>  // shorter wording per tile, optional

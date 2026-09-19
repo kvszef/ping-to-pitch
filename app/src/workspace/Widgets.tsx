@@ -98,7 +98,7 @@ export function WidgetRail({ widgets, hot, onTalk, onPin, onRemove, onFocus, onA
 }) {
   const rail = useRef<HTMLDivElement>(null)
   useFlip(rail, widgets.map((w) => `${w.id}${w.leaving ? '-' : ''}`).join('|'))
-  const chrome = useTranslated(['Hier erscheinen die passenden Grafiken zum Gespräch. Kacheln lassen sich auch anheften.', 'Gespräch', 'Mehr dazu fragen', 'Mehr', 'Behalten', 'Lösen', 'Ausblenden', 'Antwortvorschlag zu dieser Grafik zeigen'], language)
+  const chrome = useTranslated(['Hier erscheinen die passenden Grafiken zum Gespräch. Kacheln lassen sich auch anheften.', 'Gespräch', 'Mehr dazu fragen', 'Mehr', 'Behalten', 'Lösen', 'Ausblenden', 'Antwortvorschlag zu dieser Grafik zeigen', 'Antwort zeigen'], language)
   const groups = useTranslated(widgets.map((w) => w.group), language)
   const texts = useTranslated(widgets.map((w) => w.text ?? ''), language)
   const asks = useTranslated(widgets.map((w) => w.ask ?? ''), language)
@@ -120,7 +120,7 @@ export function WidgetRail({ widgets, hot, onTalk, onPin, onRemove, onFocus, onA
               <span className="truncate">{groups[i] || w.group}</span>
               {/* Came up in the conversation. During a call it is a button: it shows the answer that belongs to this widget. */}
               {!w.pinned && (onTalk
-                ? <button onClick={(e) => { e.stopPropagation(); onTalk(w) }} title={chrome[7]} className={`flex items-center gap-0.5 rounded-full px-1.5 py-px ${hot === w.id ? 'bg-brand text-white' : 'bg-brand-soft/50 text-brand-dark hover:bg-brand-soft'}`}><Sparkles size={10} /> {chrome[1]}</button>
+                ? <button onClick={(e) => { e.stopPropagation(); onTalk(w) }} title={chrome[7]} className={`flex items-center gap-0.5 rounded-full px-1.5 py-px ${hot === w.id ? 'bg-brand text-white' : 'bg-brand-soft/50 text-brand-dark hover:bg-brand-soft'}`}><Sparkles size={10} /> {chrome[8]}</button>
                 : <span className="flex items-center gap-0.5 text-brand"><Sparkles size={10} /> {chrome[1]}</span>)}
               <span className="ml-auto flex gap-0.5">
                 {w.ask && onAsk && <button onClick={(e) => { e.stopPropagation(); onAsk(w) }} aria-label="Mehr dazu fragen" title={chrome[2]} className="flex h-5 items-center gap-0.5 rounded-full px-1.5 hover:bg-pill hover:text-ink"><MessageSquare size={10} /> {chrome[3]}</button>}

@@ -13,7 +13,7 @@ import type { Card, CardOf, Client, Signal } from '../types'
 import { AfterCall, type EndedCall } from './AfterCall'
 import { activeProvider, agentStep, answer, demoScript, fetchStatus, question, screenFor, topicsFor, type AgentEvent, type Segment, type Status } from './brain'
 import { sinceCallStart } from './callNote'
-import { localPlan, nameIn, rebasePlan, type Plan, type Suggestion } from './screen'
+import { localPlan, nameIn, rebasePlan, type Brought, type Plan, type Suggestion } from './screen'
 import { SettingsPanel } from './SettingsPanel'
 import { useSettings } from './settings'
 import { Stage, Transcript } from './Stage'
@@ -97,6 +97,9 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
   const news = useNews(identifying ? null : client.ref)
   const screen = useMemo(() => screenFor(client, news.items), [client, news.items])
   const [plan, setPlan] = useState<Plan>(() => localPlan(screen.tiles, []))
+  // What the client's questions brought into the graph column during this call (see drain).
+  const [brought, setBrought] = useState<Brought[]>([])
+  useEffect(() => { setBrought([]) }, [inCall, client.ref])
   const [thinking, setThinking] = useState(false)
 
   // ---- the conversation ------------------------------------------------------------------------
@@ -141,12 +144,17 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
       const spoken = r.lines.filter((l) => l.speaker === 'Berater').flatMap((l) => planRef.current.suggestions.filter((s) => sameSentence(s.text, l.text)))
       if (spoken.length) mark(spoken)
       const now = latest.current.screen
-      // Graphs only come up when the CLIENT asked for something: a step without a client line (call
-      // start, the advisor speaking, a clicked talking point) brings no widgets and no answer, and one
-      // question brings exactly one (several at once only confuse).
-      const clientSpoke = job.segments.some((x) => x.speaker === 'Kunde') || r.lines.some((l) => l.speaker === 'Kunde')
-      const stepPlan = clientSpoke ? { ...r.plan, widgets: r.plan.widgets.slice(0, 1) } : { ...r.plan, widgets: [], answer: null }
-      setPlan(now === on ? stepPlan : rebasePlan(stepPlan, now.tiles, now.charts))
+      setPlan(now === on ? r.plan : rebasePlan(r.plan, now.tiles, now.charts))
+      // The graph column takes nothing from the plan. One thing only reaches it from here: during a
+      // call, when the CLIENT said something of substance, the single graph or tile the agent picked
+      // for it, together with the answer that belongs to it. No client line (call start, the advisor
+      // speaking, a clicked talking point) or mere small talk brings nothing.
+      const clientSaid = [...job.segments.filter((x) => x.speaker === 'Kunde').map((x) => x.text), ...r.lines.filter((l) => l.speaker === 'Kunde').map((l) => l.text)]
+      const pick = r.plan.widgets[0]
+      if (live && pick && clientSaid.length && (r.plan.answer || clientSaid.some((t) => t.trim().split(/\s+/).length >= 4))) {
+        const answer = r.plan.answer
+        setBrought((b) => (b.some((x) => x.widget === pick) ? b.map((x) => (x.widget === pick && answer ? { ...x, answer } : x)) : [...b, { widget: pick, answer }]))
+      }
       if (r.covered?.length) setLiveCovered((prev) => new Set([...prev, ...r.covered!]))
       // The brief holds still during a call (what the conversation brings up shows in the graph column),
       // so the agent's live card re-ranking (r.cardOrder -> setLiveOrder) is not applied.
@@ -408,7 +416,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
               <div className="rounded-2xl bg-white/55 p-1 shadow-[0_8px_32px_rgba(31,56,88,0.10)] ring-1 ring-white/70 backdrop-blur-xl"><Transcript lines={lines} pending={pending} tall /></div>
             </div>
           ) : (
-          <Stage client={client} screen={screen} plan={plan} thinking={thinking} inCall={inCall} recording={settings.record}
+          <Stage client={client} screen={screen} plan={plan} brought={brought} thinking={thinking} inCall={inCall} recording={settings.record}
             lines={lines} pending={pending} note={note} freshNews={news.fresh} hints={hints}
             lead={
               <div className="flex min-w-0 shrink-0 items-baseline gap-2">
