@@ -10,7 +10,7 @@ import { uiLang } from '../data/uiLang'
 // code compares; the screen shows it through the label dictionary (data/i18n-static.ts).
 
 export type BriefGroup = 'Anlass' | 'Positionen' | 'Hausmeinung' | 'Verlauf' | 'Kunde' | 'Frühere Fälle' | 'Vorschlag' | 'Aus dem Chat'
-export type BriefItem = { id: string; topics?: string[]; group: BriefGroup; figure?: string; text: string; source: string; severity?: Severity }
+export type BriefItem = { id: string; topics?: string[]; group: BriefGroup; figure?: string; text: string; next?: string; source: string; severity?: Severity }
 
 export const WORDS_PER_SECOND = 2.5 // 150 words per minute
 export const readSeconds = (item: BriefItem) => `${item.figure ?? ''} ${item.text}`.split(/\s+/).filter(Boolean).length / WORDS_PER_SECOND
@@ -58,11 +58,11 @@ function fromFindings(client: Client, findings: EngineFinding[], lang: Lang): Br
       const title = f.title.replace(/^CASE-[\w-]+:\s*/, '')
       // Bank rule breaches: the rule name alone says little, so the tile reads the engine's explanation and cites the rule.
       if (f.check === 'portfolio.violations' && f.numbers?.actual !== undefined && f.detail) {
-        out.push({ id: f.id, group, topics: [...(TOPICS[f.topic ?? ''] ?? []), ...(f.topic ? [f.topic] : [])], text: f.detail, source: `${t('Regel', 'Rule')} «${title.replace(/:\s*[−+-]?\d[\d.,]*%$/, '')}»`, severity: f.severity })
+        out.push({ id: f.id, group, topics: [...(TOPICS[f.topic ?? ''] ?? []), ...(f.topic ? [f.topic] : [])], text: f.detail, next: f.next, source: `${t('Regel', 'Rule')} «${title.replace(/:\s*[−+-]?\d[\d.,]*%$/, '')}»`, severity: f.severity })
         continue
       }
       const lead = /^([−+-]?\d[\d'.,]*\s?%)\s+(.+)$/.exec(title)
-      out.push({ id: f.id, group, topics: [...(TOPICS[f.topic ?? ''] ?? []), ...(f.topic ? [f.topic] : [])], figure: lead?.[1], text: lead ? lead[2] : title, source: f.evidence[0]?.source ?? 'Engine', severity: f.severity })
+      out.push({ id: f.id, group, topics: [...(TOPICS[f.topic ?? ''] ?? []), ...(f.topic ? [f.topic] : [])], figure: lead?.[1], text: lead ? lead[2] : title, next: f.next, source: f.evidence[0]?.source ?? 'Engine', severity: f.severity })
     }
   }
   // The engine has no precedents yet (E3): the client's own earlier drops come from the computed facts.

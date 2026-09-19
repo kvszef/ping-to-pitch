@@ -24,6 +24,7 @@ export type Finding = {
   severity: Severity
   title: string // one line, written for the advisor, in ctx.lang (German with Swiss spelling when absent)
   detail?: string
+  next?: string // what the advisor does with it: one line, "so what → ask or do this" (engine/next-step.ts, set by run())
   numbers?: Record<string, number> // raw, fractions 0–1, never pre-formatted
   evidence: Evidence[]
   fix?: DraftProposal

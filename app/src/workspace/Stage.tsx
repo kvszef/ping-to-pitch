@@ -1,4 +1,4 @@
-import { BarChart3, Ear, FileText, LayoutList, PanelRightClose, PanelRightOpen, Pin, Sparkles } from 'lucide-react'
+import { ArrowRight, BarChart3, Ear, FileText, LayoutList, PanelRightClose, PanelRightOpen, Pin, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { SeverityIcon } from '../cards/ui'
 import type { Client } from '../types'
@@ -43,6 +43,7 @@ function TileBody({ tile, text, clientRef, chart, fresh, language, onReady }: { 
       <p className="min-w-0 flex-1 text-[16px] leading-snug">
         {tile.item.figure && <span className="mr-2 text-[24px] leading-none tabular-nums text-brand-dark">{tile.item.figure}</span>}
         {main}
+        {tile.item.next && <span className="mt-1.5 flex items-start gap-1.5 text-[13px] leading-snug text-brand-dark"><ArrowRight size={13} className="mt-0.5 shrink-0" />{tile.item.next}</span>}
       </p>
       {chart && <div className="w-32 shrink-0">{chart.spec.type === 'verlauf' ? <Spark spec={chart.spec} language={language} /> : <Bars spec={chart.spec} language={language} />}</div>}
     </div>

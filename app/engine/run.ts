@@ -1,5 +1,6 @@
 // The check runner. A check is `(client, ctx) => Finding[]`; connecting one means adding one line to CHECKS.
 import { checks } from './checks/index.ts'
+import { nextStep } from './next-step.ts'
 import type { CheckContext, Finding, RawClient, Severity } from './types.ts'
 
 export { indexReference } from './data.ts'
@@ -22,6 +23,7 @@ export function run(client: unknown, ctx: CheckContext): RunResult {
       failed.push({ check: name, error: e instanceof Error ? e.message : String(e) })
     }
   }
+  for (const f of findings) f.next ??= nextStep(f, ctx.lang)
   findings.sort((a, b) => ORDER[a.severity] - ORDER[b.severity])
   if (failed.length) findings.failed = failed
   return findings

@@ -261,7 +261,7 @@ function AllFindings({ findings, origin }: { findings: Finding[]; origin: Briefi
         {sorted.map((f) => (
           <li key={f.id} className="flex gap-2.5 text-[14px] leading-snug">
             <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${dot[f.severity]}`} />
-            <span>{cleanTitle(f.title)}{f.detail ? <span className="text-muted"> – {f.detail}</span> : null}</span>
+            <span>{cleanTitle(f.title)}{f.detail ? <span className="text-muted"> – {f.detail}</span> : null}{f.next ? <span className="block text-brand-dark">→ {f.next}</span> : null}</span>
           </li>
         ))}
       </ul>

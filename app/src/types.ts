@@ -45,7 +45,7 @@ export type Point = { text: string; kind: Kind; source?: string }
 export type TalkLine = { text: string; source: string; date?: string; detail?: string; severity?: Severity; covered?: boolean }
 
 // A finding of the engine (contract v0 in PLAN.md), as far as the UI reads it.
-export type EngineFinding = { id: string; check: string; kind: Kind; severity: Severity; title: string; detail?: string; numbers?: Record<string, number>; evidence: { source: string; ref?: string; quote?: string; date?: string }[]; topic?: string }
+export type EngineFinding = { id: string; check: string; kind: Kind; severity: Severity; title: string; detail?: string; next?: string; numbers?: Record<string, number>; evidence: { source: string; ref?: string; quote?: string; date?: string }[]; topic?: string }
 
 export type CardOf<T extends Card['type']> = Extract<Card, { type: T }>
 
