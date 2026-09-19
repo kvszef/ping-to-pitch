@@ -10,7 +10,7 @@ export const canListen = (elevenlabs: boolean) => (elevenlabs ? !!navigator.medi
 
 // Nimmt das Gespräch über das Mikrofon auf. Mit ElevenLabs werden abgeschlossene Abschnitte von je
 // 7 Sekunden transkribiert (mit Sprechertrennung); ohne Schlüssel dient die Spracherkennung des Browsers.
-export function useCallAudio(active: boolean, elevenlabs: boolean, onSegments: (s: Segment[]) => void, onStop: (error?: string) => void) {
+export function useCallAudio(active: boolean, elevenlabs: boolean, onSegments: (s: Segment[]) => void, onStop: (error?: string) => void, language: 'de' | 'en' = 'en') {
   const handlers = useRef({ onSegments, onStop })
   handlers.current = { onSegments, onStop }
 
@@ -44,7 +44,7 @@ export function useCallAudio(active: boolean, elevenlabs: boolean, onSegments: (
         const blob = new Blob(parts, { type: current.mimeType })
         if (blob.size < 2500) return
         try {
-          const r = await fetch('/api/transcribe', { method: 'POST', headers: { 'Content-Type': blob.type || 'audio/webm' }, body: blob })
+          const r = await fetch(`/api/transcribe?lang=${language}`, { method: 'POST', headers: { 'Content-Type': blob.type || 'audio/webm' }, body: blob })
           const data = await r.json()
           if (!r.ok) throw new Error(data.error)
           if (data.segments?.length && !stopped) handlers.current.onSegments(data.segments)

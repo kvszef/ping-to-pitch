@@ -5,6 +5,7 @@ import { useBriefing } from '../data/useBriefing'
 import { sortCards } from '../data/source'
 import { useNews } from '../data/useNews'
 import { useTranslated } from '../data/useTranslate'
+import { tr } from '../data/i18n-static'
 import * as deskLine from '../phone/deskLine'
 import { usePhoneAudio } from '../phone/usePhoneAudio'
 import { demoCalls, lineDelay, type DemoLine } from '../data/demoCalls'
@@ -98,7 +99,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
   // The elements the agent can show for this client, and its current plan.
   // Live news on the client's holdings (polled); the tiles and the agent see it.
   const news = useNews(identifying ? null : client.ref)
-  const screen = useMemo(() => screenFor(client, news.items), [client, news.items])
+  const screen = useMemo(() => screenFor(client, news.items, settings.language), [client, news.items, settings.language])
   const [plan, setPlan] = useState<Plan>(() => localPlan(screen.tiles, []))
   // What the client's questions brought into the graph column during this call (see drain).
   const [brought, setBrought] = useState<Brought[]>([])
@@ -276,7 +277,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
     if (lines.length) setScript({ id: `out-${target}-${Date.now()}`, lines })
   }
   // The app needs to know whether a call is on, so a second caller is put on the callback list.
-  useEffect(() => { onCallState?.(inCall ? { inCall, name: identifying ? 'Unbekannter Anrufer' : client.name } : null) }, [inCall, identifying, client.name]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { onCallState?.(inCall ? { inCall, name: identifying ? tr('Unbekannter Anrufer', settings.language) : client.name } : null) }, [inCall, identifying, client.name]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // A call listens to the microphone straight away when recording is on (real transcript, no script).
   useEffect(() => { if (inCall && settings.record && canListen(!!status.transcribe) && !script && !dialling && !phone) setMic(true) }, [inCall, status.transcribe]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -289,7 +290,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
     if (gaveUp && inCall && settings.record && canListen(!!status.transcribe) && !script) setMic(true)
   }, [line.state]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useCallAudio(mic && inCall && settings.record && !phone, !!status.transcribe, (segments) => hearRef.current(segments), (error) => { setMic(false); if (error) setNote(error) })
+  useCallAudio(mic && inCall && settings.record && !phone, !!status.transcribe, (segments) => hearRef.current(segments), (error) => { setMic(false); if (error) setNote(error) }, settings.language)
 
   async function ask(text: string) {
     if (!text.trim() || busy) return
@@ -309,7 +310,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
     return q ? shown : [...shown].sort((a, b) => (rankOf.get(b.ref)?.score ?? 0) - (rankOf.get(a.ref)?.score ?? 0))
   }, [clients, rosterQuery, rankOf])
   const topSignal = (r: string) => signals.flatMap((s) => s.affected.filter((a) => a.ref === r).map((a) => ({ ...a, title: s.title }))).sort((a, b) => rank[a.severity] - rank[b.severity])[0]
-  const chatSuggestions = useMemo(() => topicsFor(client).map((t) => t.label), [client])
+  const chatSuggestions = useMemo(() => topicsFor(client, settings.language).map((t) => t.label), [client, settings.language])
 
   // Two views of a client (CallPrep.tsx): the call plan when we call, the overview when the client
   // calls. A call going out or coming in picks the view; outside a call, clients on today's list open
@@ -391,7 +392,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
               </ul>
               <div className="flex shrink-0 items-center gap-1 border-t border-line/60 px-2 py-1.5">
                 <button onClick={() => setSettingsOpen(true)} className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] text-muted hover:bg-pill hover:text-ink">
-                  <SettingsIcon size={14} className="shrink-0" /><span className="truncate">KI: {providerLabel[activeProvider(settings, status) ?? 'beispiel']}</span>
+                  <SettingsIcon size={14} className="shrink-0" /><span className="truncate">{tr('KI', settings.language)}: {tr(providerLabel[activeProvider(settings, status) ?? 'beispiel'], settings.language)}</span>
                 </button>
                 <div className="relative">
                   <button onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setMenuAt({ left: r.left, bottom: window.innerHeight - r.top + 6 }); setDemoMenu((v) => !v) }} aria-label="Demo-Anruf" title="Demo-Anruf" aria-expanded={demoMenu} className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg hover:bg-pill hover:text-ink ${demoMenu ? 'bg-pill text-ink' : 'text-muted'}`}><PhoneCall size={14} /></button>
@@ -430,9 +431,9 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
             <div className="flex min-h-0 flex-1 flex-col gap-3">
               <div className="anim-rise flex flex-col items-center justify-center gap-3 rounded-2xl bg-white/55 px-6 py-10 text-center shadow-[0_8px_32px_rgba(31,56,88,0.10)] ring-1 ring-white/70 backdrop-blur-xl">
                 <span className="relative flex h-14 w-14 items-center justify-center rounded-full bg-ok text-white"><span className="absolute inset-0 animate-ping rounded-full bg-ok/40" /><Phone size={22} className="relative" /></span>
-                <div className="text-[18px]">Unbekannter Anrufer</div>
+                <div className="text-[18px]">{tr('Unbekannter Anrufer', settings.language)}</div>
                 <p className="max-w-md text-[13px] text-muted">Die Nummer ist keinem Kunden zugeordnet. Sobald im Gespräch ein Name fällt, öffnet sich der Kunde mit allen Angaben.</p>
-                <button onClick={() => { setInCall(false); setIdentifying(false) }} className="flex items-center gap-1.5 rounded-full bg-risk px-3 py-1 text-xs text-white"><PhoneOff size={12} /> Beenden</button>
+                <button onClick={() => { setInCall(false); setIdentifying(false) }} className="flex items-center gap-1.5 rounded-full bg-risk px-3 py-1 text-xs text-white"><PhoneOff size={12} /> {tr('Beenden', settings.language)}</button>
               </div>
               <div className="rounded-2xl bg-white/55 p-1 shadow-[0_8px_32px_rgba(31,56,88,0.10)] ring-1 ring-white/70 backdrop-blur-xl"><Transcript lines={lines} pending={pending} tall /></div>
             </div>
@@ -452,7 +453,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
             actions={
               <div className="flex shrink-0 gap-1.5">
                 {inCall && settings.record && canListen(!!status.transcribe) && <button onClick={() => (phone ? togglePhoneMute() : setMic((m) => !m))} aria-label="Mikrofon" title="Mikrofon" className={`flex h-7 w-7 items-center justify-center rounded-full ${(phone ? !phoneMuted : mic) ? 'bg-risk text-white' : 'bg-pill hover:bg-track'}`}>{(phone ? !phoneMuted : mic) ? <Mic size={13} /> : <MicOff size={13} />}</button>}
-                <button onClick={() => (inCall ? endCall() : void callOut(client.ref, false))} className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs text-white transition-colors ${inCall ? 'bg-risk' : 'bg-brand hover:bg-brand-dark'}`}>{inCall ? <><PhoneOff size={12} /> Beenden</> : <><Phone size={12} /> Anrufen</>}</button>
+                <button onClick={() => (inCall ? endCall() : void callOut(client.ref, false))} className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs text-white transition-colors ${inCall ? 'bg-risk' : 'bg-brand hover:bg-brand-dark'}`}>{inCall ? <><PhoneOff size={12} /> {tr('Beenden', settings.language)}</> : <><Phone size={12} /> {tr('Anrufen', settings.language)}</>}</button>
               </div>
             }
             chat={chat} busy={busy} detail={settings.detail} chatSuggestions={chatSuggestions} onAsk={ask}

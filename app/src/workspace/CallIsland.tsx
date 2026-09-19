@@ -1,6 +1,7 @@
 import { ChevronDown, Clock, Compass, Ear, Phone, PhoneOff } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useLanguage } from '../data/useLanguage'
+import { stripPrefix } from '../../engine/lang.ts'
 import { useTranslated } from '../data/useTranslate'
 import type { Client, IncomingCall, Signal } from '../types'
 import type { Slot } from './types'
@@ -57,7 +58,7 @@ export function RingingIsland({ client, call, signal, onAccept, onDecline, busyW
   const fromEngine = (client?.findings ?? []).filter((f) => (f.check === 'profile.call-reason' || (f.check === 'cio.house-view' && !!f.numbers?.changed))).map((f) => ({ text: f.title }))
   const reasons = fromEngine.length ? fromEngine.slice(0, 3) : track?.type === 'talktrack' ? (track.reasons ?? []).slice(0, 3) : []
   const persona = client?.findings?.find((f) => f.check === 'profile.persona')?.title
-  const tone = (client?.findings ?? []).filter((f) => f.check === 'profile.tone').map((f) => f.title.replace(/^Ton:\s*/, '')).slice(0, 3)
+  const tone = (client?.findings ?? []).filter((f) => f.check === 'profile.tone').map((f) => stripPrefix(f.title, 'tone')).slice(0, 3)
   const [profileT, strategyT, lastT, violationsT, serviceT, personaT, headlineT, fallbackT] = useTranslated(client ? [
     client.profile, client.strategy, client.lastConsultation, `${client.errors} Fehler · ${client.warnings} Warnungen`, client.service,
     persona ?? '', headline?.type === 'headline' ? headline.text : '', signal ? signal.title : call.reason,

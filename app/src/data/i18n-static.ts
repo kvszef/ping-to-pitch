@@ -5,6 +5,18 @@
 // New fixed label: add one line here. Text with numbers or names in it: a PATTERNS entry below.
 
 export const STATIC_EN: Record<string, string> = {
+  // ---- added at integration: call buttons, provider label, the rewritten client list ----
+  'KI': 'AI',
+  'Name oder Kundennummer': 'Name or client number',
+  'Alle': 'All',
+  'Mit offenen Punkten': 'With open items',
+  'Letzte Beratung über 12 Monate her': 'Last consultation over 12 months ago',
+  'Strategie · Dienstleistung': 'Strategy · Service',
+  'Offene Punkte': 'Open items',
+  'Gesamtvermögen': 'Total assets',
+  'noch nie': 'never',
+  'Kunde öffnen': 'Open client',
+  'keine': 'none',
   // ---- top bar, dashboard, client header (App.tsx, Dashboard.tsx, Chrome.tsx) ----
   'Kunde wird geladen': 'Loading client',
   'Kundenberater-Dashboard': 'Client advisor dashboard',

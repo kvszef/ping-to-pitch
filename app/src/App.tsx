@@ -40,7 +40,8 @@ export default function App() {
   // First paint from local data (samples + uploads of this session), then the engine's list if it answers.
   const [clients, setClients] = useState(localClients)
   const [listed, setListed] = useState(false)
-  const refresh = useCallback(() => { void listClients().then(setClients).catch(() => setClients(localClients())).finally(() => setListed(true)) }, [])
+  const language = useLanguage()
+  const refresh = useCallback(() => { void listClients(language).then(setClients).catch(() => setClients(localClients())).finally(() => setListed(true)) }, [language])
   useEffect(refresh, [refresh])
   // A demo call rings a real client; its conversation is scripted in data/demoCalls.ts.
   const ring = useCallback((demoId: string) => {
@@ -85,7 +86,6 @@ export default function App() {
   // Ein angenommener Anruf öffnet den Arbeitsplatz mit dem Kunden und laufendem Gespräch.
   const accept = () => { if (!call) return; setSession((s) => ({ n: s.n + 1, ref: call.ref || undefined, call: true, demo: call.demo })); setCall(null); home('signale') }
 
-  const language = useLanguage()
   const [
     tKundeWirdGeladen,
     tKundenberaterDashboard,
