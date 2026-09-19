@@ -121,10 +121,11 @@ function Profile({ client, compact = false, language }: { client: Client; compac
   )
 }
 
-export function Stage({ client, screen, plan, brought, thinking, inCall, recording, lines, pending, note, hints, freshNews, lead, actions, chat, busy, detail, chatSuggestions, onAsk, onShowChart, graphsOpen, onGraphs, graphWidth, onGraphWidth, language }: {
+export function Stage({ client, screen, plan, brought, thinking, inCall, recording, lines, pending, note, hints, freshNews, lead, prep, actions, chat, busy, detail, chatSuggestions, onAsk, onShowChart, graphsOpen, onGraphs, graphWidth, onGraphWidth, language }: {
   client: Client; screen: Screen; plan: Plan; brought: Brought[]; thinking: boolean
   inCall: boolean; recording: boolean; lines: TranscriptLine[]; pending: string[]; note: string | null; hints: Hint[]; freshNews: Set<string>
   lead: ReactNode; actions: ReactNode
+  prep?: ReactNode // outbound mode: the call plan (CallPrep.tsx), shown above the brief
   chat: ChatEntry[]; busy: boolean; detail: Detail; chatSuggestions: string[]; onAsk: (text: string) => void; onShowChart: (id: string) => void
   graphsOpen: boolean; onGraphs: (open: boolean) => void; graphWidth?: number; onGraphWidth: (width: number) => void; language: Language
 }) {
@@ -184,6 +185,9 @@ export function Stage({ client, screen, plan, brought, thinking, inCall, recordi
   }, [])
   const onScroll = () => { cancelAnimationFrame(frame.current); frame.current = requestAnimationFrame(paint) }
   useLayoutEffect(paint, [paint, feedKey])
+  // Switching between the call plan and the overview starts at the top again.
+  const hasPrep = !!prep
+  useEffect(() => { box.current?.scrollTo({ top: 0 }) }, [hasPrep])
   const focus = useCallback((id: string, glow = false) => {
     const el = box.current?.querySelector<HTMLElement>(`[data-tile="${id}"]`)
     // The first tile scrolls to the very top, so the client card above it is in view again.
@@ -332,7 +336,8 @@ export function Stage({ client, screen, plan, brought, thinking, inCall, recordi
           </div>
           <div ref={box} onScroll={onScroll} className={`relative min-h-0 flex-1 overflow-y-auto px-3 [scrollbar-width:none] ${GLASS}`}>
             <div className="h-2" aria-hidden />
-            {!asText && <Profile client={client} compact={inCall} language={language} />}
+            {!asText && <Profile client={client} compact={inCall || !!prep} language={language} />}
+            {prep}
             {asText && <TextView digest={digest} asOf={client.facts?.asOf} language={language} />}
             {!asText && tiles.map((t, i) => (
               // Tiles are revealed strictly top to bottom; one that is not ready yet stays blurred in place (reveal.ts).

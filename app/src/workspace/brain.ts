@@ -226,7 +226,7 @@ export async function think(client: Client, transcript: TranscriptLine[], segmen
 // model (or when the call fails) the local plan follows the transcript by keyword.
 
 export type Screen = { tiles: Tile[]; charts: Chart[] }
-export type AgentEvent = { type: 'start'; call?: string } | { type: 'transcript'; segments: Segment[] } | { type: 'said'; text: string }
+export type AgentEvent = { type: 'start'; call?: string; out?: string } | { type: 'transcript'; segments: Segment[] } | { type: 'said'; text: string }
 export type Step = { plan: Plan; lines: TranscriptLine[]; covered?: string[]; cardOrder?: Card['type'][] }
 
 // Card types the live agent may reorder mid-call: the optional insight cards, same set as
@@ -260,7 +260,7 @@ export async function agentStep(client: Client, screen: Screen, transcript: Tran
     const context = contextFor(client, news)
     const tiles = describeTiles(screen.tiles), charts = describeCharts(screen.charts)
     const r = await post<Record<string, unknown>>('/api/agent', {
-      provider, language: settings.language, context, catalogue: CATALOGUE, tiles, charts, transcript: transcript.slice(-8), segments, said, event: event.type === 'said' ? `Berater sagte: ${event.text}` : event.type === 'start' && event.call ? `Eingehender Anruf, soeben angenommen. Vermutlicher Anlass: ${event.call}. Richte Kacheln, Fokus, Grafiken und Vorschläge auf diesen Anlass aus.` : event.type,
+      provider, language: settings.language, context, catalogue: CATALOGUE, tiles, charts, transcript: transcript.slice(-8), segments, said, event: event.type === 'said' ? `Berater sagte: ${event.text}` : event.type === 'start' && event.out ? `Ausgehender Anruf: der Berater ruft den Kunden von sich aus an. Anlass des Anrufs: ${event.out}. Richte Kacheln, Fokus und Vorschläge auf diesen Anlass aus.` : event.type === 'start' && event.call ? `Eingehender Anruf, soeben angenommen. Vermutlicher Anlass: ${event.call}. Richte Kacheln, Fokus, Grafiken und Vorschläge auf diesen Anlass aus.` : event.type,
     })
     const evidence = JSON.stringify(context) + JSON.stringify(tiles) + JSON.stringify(charts) + segments.map((s) => s.text).join(' ') + transcript.map((l) => l.text).join(' ')
     const fallback = local()

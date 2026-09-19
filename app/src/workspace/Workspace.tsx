@@ -8,10 +8,12 @@ import { useTranslated } from '../data/useTranslate'
 import * as deskLine from '../phone/deskLine'
 import { usePhoneAudio } from '../phone/usePhoneAudio'
 import { demoCalls, lineDelay, type DemoLine } from '../data/demoCalls'
-import { useOutbound } from '../data/useOutbound'
+import { useCallPlan } from '../data/useCallPlan'
+import { useOutbound, type OutboundReason } from '../data/useOutbound'
 import type { Card, CardOf, Client, Signal } from '../types'
 import { AfterCall, type EndedCall } from './AfterCall'
 import { activeProvider, agentStep, answer, demoScript, fetchStatus, question, screenFor, topicsFor, type AgentEvent, type Segment, type Status } from './brain'
+import { CallPrep, ModeSwitch, type CallMode } from './CallPrep'
 import { sinceCallStart } from './callNote'
 import { localPlan, nameIn, rebasePlan, type Brought, type Plan, type Suggestion } from './screen'
 import { SettingsPanel } from './SettingsPanel'
@@ -48,6 +50,7 @@ const rank = { risk: 0, warn: 1, info: 2, ok: 3 }
 const callReasons = (client: Client) => (client.findings ?? []).filter((f) => (f.check === 'profile.call-reason' || (f.check === 'cio.house-view' && !!f.numbers?.changed))).map((f) => f.title).join('; ') || undefined
 const providerLabel = { openai: 'OpenAI', apertus: 'Apertus', beispiel: 'Beispielmodus' }
 const TODAY = 6 // how many of today's ranked clients show their reason
+const NO_REASONS: OutboundReason[] = []
 // A call that came in while the advisor was on another call.
 export type Callback = { id: string; ref?: string; demo?: string; label: string; reason: string; at: string }
 
@@ -111,8 +114,8 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
   const saidRef = useRef<{ ids: string[]; texts: string[] }>({ ids: [], texts: [] })
   const planRef = useRef(plan)
   planRef.current = plan
-  const latest = useRef({ client, screen, settings, status, inCall })
-  latest.current = { client, screen, settings, status, inCall }
+  const latest = useRef({ client, screen, settings, status, inCall, outbound: undefined as string | undefined })
+  latest.current = { ...latest.current, client, screen, settings, status, inCall }
   type Inbox = { segments: Segment[]; unknown: string[]; said: string[]; start: boolean }
   const empty = (): Inbox => ({ segments: [], unknown: [], said: [], start: false })
   const inbox = useRef<Inbox>(empty())
@@ -125,12 +128,12 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
     while (inbox.current.segments.length || inbox.current.said.length || inbox.current.start) {
       const job = inbox.current
       inbox.current = empty()
-      const { client: c, screen: on, settings: st, status: su, inCall: live } = latest.current
+      const { client: c, screen: on, settings: st, status: su, inCall: live, outbound: out } = latest.current
       const knownCount = job.segments.length - job.unknown.length
       const before = linesRef.current.slice(0, linesRef.current.length - knownCount)
       const event: AgentEvent = job.segments.length ? { type: 'transcript', segments: job.segments }
         : job.said.length ? { type: 'said', text: job.said.join(' · ') }
-        : { type: 'start', call: live ? callReasons(c) : undefined }
+        : { type: 'start', call: live && !out ? callReasons(c) : undefined, out: live ? out : undefined }
       const r = await agentStep(c, on, before, saidRef.current.texts, event, st, su)
       if (latest.current.client.ref !== c.ref) continue // the advisor moved on to another client
       if (job.unknown.length) {
@@ -257,10 +260,13 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
   // client's data and today's reasons (the ranking moves with the news, a fixed script would not fit).
   const ranking = useOutbound()
   const [dialling, setDialling] = useState<string | null>(null)
+  const [direction, setDirection] = useState<'in' | 'out' | null>(initialCall ? 'in' : null)
+  const [picked, setPicked] = useState<{ ref: string; mode: CallMode } | null>(null) // the advisor's own choice of view
   const callOut = async (target: string, asDemo: boolean) => {
     // A demo call: no microphone (the conversation is written and played); set before the call starts.
     if (asDemo) setDialling(target)
     setDemoMenu(false); setIdentifying(false); setRef(target); setScript(null); setInCall(true)
+    setDirection('out'); setPicked(null)
     // A real call also rings the client's phone page (call.html); if nobody picks up, the laptop microphone takes over.
     if (!asDemo) { deskLine.dial(target); return }
     const who = clients.find((c) => c.ref === target)
@@ -304,6 +310,16 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
   }, [clients, rosterQuery, rankOf])
   const topSignal = (r: string) => signals.flatMap((s) => s.affected.filter((a) => a.ref === r).map((a) => ({ ...a, title: s.title }))).sort((a, b) => rank[a.severity] - rank[b.severity])[0]
   const chatSuggestions = useMemo(() => topicsFor(client).map((t) => t.label), [client])
+
+  // Two views of a client (CallPrep.tsx): the call plan when we call, the overview when the client
+  // calls. A call going out or coming in picks the view; outside a call, clients on today's list open
+  // with the plan. The advisor's own switch wins until the next call goes out.
+  const today = useMemo(() => new Set(ranking.slice(0, TODAY).filter((r) => r.reasons.length).map((r) => r.ref)), [ranking])
+  const mode: CallMode = picked?.ref === client.ref ? picked.mode : inCall && direction ? (direction === 'out' ? 'prep' : 'inbound') : today.has(client.ref) ? 'prep' : 'inbound'
+  const reasonsToCall = rankOf.get(client.ref)?.reasons ?? NO_REASONS
+  const callPlan = useCallPlan(mode === 'prep' && !identifying ? client.ref : null, reasonsToCall, activeProvider(settings, status))
+  // The screen agent is told which way the call goes: on a call we make, the reasons are ours.
+  latest.current.outbound = inCall && direction === 'out' ? reasonsToCall.slice(0, 3).map((r) => r.title).join('; ') || 'Kontaktpflege' : undefined
 
   // The left roster and the demo-call menu are the last hand-built German chrome: batched once,
   // cached, so the rest of the app (already language-aware via useTranslated) stays consistent.
@@ -418,10 +434,12 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
           ) : (
           <Stage client={client} screen={screen} plan={plan} brought={brought} thinking={thinking} inCall={inCall} recording={settings.record}
             lines={lines} pending={pending} note={note} freshNews={news.fresh} hints={hints}
+            prep={mode === 'prep' ? <CallPrep plan={callPlan.plan} writing={callPlan.writing} language={settings.language} /> : undefined}
             lead={
               <div className="flex min-w-0 shrink-0 items-baseline gap-2">
                 <span className="truncate text-[15px]">{client.name}</span>
                 <span className="flex items-center gap-1 text-[11px] text-muted"><span className={`h-1.5 w-1.5 rounded-full ${inCall ? 'animate-pulse bg-risk' : 'bg-track'}`} />{dialling ? 'Verbindet …' : phone && line.state === 'dialling' ? 'Klingelt …' : inCall ? 'Gespräch' : 'Vorbereitung'}</span>
+                <span className="self-center"><ModeSwitch mode={mode} onMode={(m) => setPicked({ ref: client.ref, mode: m })} language={settings.language} /></span>
               </div>
             }
             actions={

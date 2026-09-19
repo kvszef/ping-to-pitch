@@ -6,6 +6,7 @@ import { callRoute } from './call.ts'
 import { newsAgentRoute } from './ai/news-agent.ts'
 import { houseView } from './houseview.ts'
 import { callsRoute } from './calls.ts'
+import { callPlanRoute } from './ai/callplan-route.ts'
 import { importRoute } from './import/route.ts'
 import { askData, chatWithData } from './ai/chat-route.ts'
 import { dataStatus, loadData } from './database.ts'
@@ -276,6 +277,7 @@ export function api(env: Env): Plugin {
           if (req.url.startsWith('/api/news-agent') && req.method === 'GET') { const out = await newsAgentRoute(req.url, llm); return send(res, out.status, out.data) }
           if (req.url.startsWith('/api/briefing/') && req.method === 'GET') { const out = await appBriefing(req.url, llm); return send(res, out.status, out.data) }
           if (req.url === '/api/clients/upload' && req.method === 'POST') { const out = uploadClients(await body(req)); return send(res, out.status, out.data) }
+          if (path === '/api/call-plan' && req.method === 'POST') { const out = await callPlanRoute(await body(req), llm); return send(res, out.status, out.data) }
           if (path.startsWith('/api/calls/') && req.method === 'POST') {
             const out = await callsRoute(path, req.method, await body(req), llm)
             if (out) return send(res, out.status, out.data)
