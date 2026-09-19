@@ -6,7 +6,7 @@ import type { Screen } from './brain'
 import { usePaced, Wave } from './CallIsland'
 import { ChatPanel } from './ChatPanel'
 import { Smooth, useFlip, usePresence } from './motion'
-import { bestTile, widgetMain, type Plan, type Tile } from './screen'
+import { bestTile, sameTile, widgetMain, type Plan, type Tile } from './screen'
 import type { ChatEntry, Detail, Hint, TranscriptLine } from './types'
 import { useSummary } from './useSummary'
 import { Bars, Spark, WidgetRail, type Widget } from './Widgets'
@@ -109,14 +109,25 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
   const byId = useMemo(() => new Map(screen.tiles.map((t) => [t.id, t])), [screen.tiles])
   const chartById = useMemo(() => new Map(screen.charts.map((c) => [c.id, c])), [screen.charts])
   const ordered = plan.order.map((id) => byId.get(id)).filter((t): t is Tile => !!t)
-  const tiles = ordered.length ? ordered : screen.tiles
+  // During a call the feed only grows: tiles already shown keep their place, and what the agent
+  // surfaces from the transcript is appended — unless it repeats a tile already in the feed.
+  // Before a call (and on a new client) the agent's order is shown as is.
+  const feed = useRef<{ ref: string; ids: string[] }>({ ref: client.ref, ids: [] })
+  if (!inCall || feed.current.ref !== client.ref) feed.current = { ref: client.ref, ids: inCall ? (ordered.length ? ordered : screen.tiles).map((t) => t.id) : [] }
+  else {
+    const shown = feed.current.ids.map((id) => byId.get(id)).filter((t): t is Tile => !!t)
+    const fresh = ordered.filter((t) => !shown.some((s) => s.id === t.id || sameTile(s, t)))
+    if (fresh.length) feed.current = { ref: client.ref, ids: [...feed.current.ids, ...fresh.map((t) => t.id)] }
+  }
+  const grown = feed.current.ids.map((id) => byId.get(id)).filter((t): t is Tile => !!t)
+  const tiles = inCall && grown.length ? grown : ordered.length ? ordered : screen.tiles
 
   // ---- tiles: focus by scrolling, dimming away from the middle, gliding when the order changes ----
   const box = useRef<HTMLDivElement>(null)
   const frame = useRef(0)
   const [focusIdx, setFocusIdx] = useState(0)
   const [flash, setFlash] = useState<string | null>(null)
-  useFlip(box, plan.order.join('|'))
+  useFlip(box, tiles.map((t) => t.id).join('|'))
   const paint = useCallback(() => {
     const el = box.current
     if (!el) return

@@ -87,7 +87,26 @@ export function tilesFor(client: Client, charts: Chart[], news: NewsItem[] = [])
     const byTopic = charts.find((c) => t.topics.includes(c.id)) ?? (t.topics.includes('waehrungen') || t.topics.includes('konzentration') ? charts.find((c) => c.id === 'waehrungen') : undefined)
     t.chart = byTopic?.id
   }
-  return tiles
+  return usefulTiles(tiles)
+}
+
+// A tile says something only with a figure, a sentence, news or a proposal behind it.
+const hasSubstance = (t: Tile) => !!(t.news?.length || t.card || t.item?.figure || (t.item?.text && t.item.text.trim().length > 12))
+
+/** Two tiles say the same thing when most of the shorter one's content words appear in the other. */
+export function sameTile(a: Tile, b: Tile): boolean {
+  const x = new Set(tokens(a.words)), y = new Set(tokens(b.words))
+  if (!x.size || !y.size) return false
+  let both = 0
+  for (const w of x) if (y.has(w)) both++
+  return both / Math.min(x.size, y.size) >= 0.8
+}
+
+/** Drops empty tiles and near-duplicates (the first, higher-ranked one stays). */
+export function usefulTiles(tiles: Tile[]): Tile[] {
+  const out: Tile[] = []
+  for (const t of tiles) if (hasSubstance(t) && !out.some((o) => o.id === t.id || sameTile(o, t))) out.push(t)
+  return out
 }
 
 // What the agent sees of the elements: ids, labels and the text with its figures.
