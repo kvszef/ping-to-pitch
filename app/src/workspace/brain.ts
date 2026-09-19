@@ -187,7 +187,7 @@ export async function think(client: Client, transcript: TranscriptLine[], segmen
 // model (or when the call fails) the local plan follows the transcript by keyword.
 
 export type Screen = { tiles: Tile[]; charts: Chart[] }
-export type AgentEvent = { type: 'start' } | { type: 'transcript'; segments: Segment[] } | { type: 'said'; text: string }
+export type AgentEvent = { type: 'start'; call?: string } | { type: 'transcript'; segments: Segment[] } | { type: 'said'; text: string }
 export type Step = { plan: Plan; lines: TranscriptLine[] }
 
 export function screenFor(client: Client): Screen {
@@ -212,13 +212,13 @@ export async function agentStep(client: Client, screen: Screen, transcript: Tran
     const context = contextFor(client)
     const tiles = describeTiles(screen.tiles), charts = describeCharts(screen.charts)
     const r = await post<Record<string, unknown>>('/api/agent', {
-      provider, context, catalogue: CATALOGUE, tiles, charts, transcript: transcript.slice(-8), segments, said, event: event.type === 'said' ? `Berater sagte: ${event.text}` : event.type,
+      provider, context, catalogue: CATALOGUE, tiles, charts, transcript: transcript.slice(-8), segments, said, event: event.type === 'said' ? `Berater sagte: ${event.text}` : event.type === 'start' && event.call ? `Eingehender Anruf, soeben angenommen. Vermutlicher Anlass: ${event.call}. Richte Kacheln, Fokus, Grafiken und Vorschläge auf diesen Anlass aus.` : event.type,
     })
     const evidence = JSON.stringify(context) + JSON.stringify(tiles) + JSON.stringify(charts) + segments.map((s) => s.text).join(' ') + transcript.map((l) => l.text).join(' ')
     const fallback = local()
     const modelLines = Array.isArray(r.segments) ? (r.segments as Segment[]).slice(-segments.length) : []
     const lines = known || modelLines.length !== segments.length ? fallback.lines : asLines(modelLines)
-    return { lines, plan: checkPlan(r, screen.tiles, screen.charts, (t) => grounded(t, evidence), fallback.plan) }
+    return { lines, plan: checkPlan(r, screen.tiles, screen.charts, (t) => grounded(t, evidence), { ...fallback.plan, answer: null }) }
   } catch {
     return local()
   }

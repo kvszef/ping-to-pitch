@@ -89,6 +89,6 @@ export type NewsItem = {
   affects: Record<string, { tag: string; position: string; meaning: string; severity: Severity }>
 }
 
-export type IncomingCall = { ref: string; number: string; reason: string }
+export type IncomingCall = { ref: string; number: string; reason: string; demo?: string } // demo: id of a scripted call in data/demoCalls.ts
 
 export type ChatMessage = { role: 'advisor' | 'assistant'; text: string }

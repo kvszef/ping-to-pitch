@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { Segment } from './brain'
 
-const CHUNK_MS = 7000
+const CHUNK_MS = 4000 // shorter chunks: text on screen sooner
 
 type Recognition = { lang: string; continuous: boolean; interimResults: boolean; start: () => void; stop: () => void; onresult: ((e: { resultIndex: number; results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void) | null; onend: (() => void) | null }
 const BrowserRecognition = ((window as unknown as Record<string, unknown>).SpeechRecognition ?? (window as unknown as Record<string, unknown>).webkitSpeechRecognition) as (new () => Recognition) | undefined
@@ -42,7 +42,7 @@ export function useCallAudio(active: boolean, elevenlabs: boolean, onSegments: (
       current.onstop = async () => {
         record()
         const blob = new Blob(parts, { type: current.mimeType })
-        if (blob.size < 4000) return
+        if (blob.size < 2500) return
         try {
           const r = await fetch('/api/transcribe', { method: 'POST', headers: { 'Content-Type': blob.type || 'audio/webm' }, body: blob })
           const data = await r.json()

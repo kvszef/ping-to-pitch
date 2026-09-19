@@ -61,7 +61,7 @@ function TileBody({ tile, text, clientRef, chart }: { tile: Tile; text?: string;
 }
 
 // Who the client is, in a few facts: stays above the scrolling tiles, so the advisor always sees the person.
-function Profile({ client }: { client: Client }) {
+function Profile({ client, compact = false }: { client: Client; compact?: boolean }) {
   const context = client.briefing.find((c) => c.type === 'context')
   const persona = client.briefing.find((c) => c.type === 'profile')
   const fact = (label: string) => context?.type === 'context' ? context.facts.find((f) => f.label === label)?.value : undefined
@@ -70,15 +70,19 @@ function Profile({ client }: { client: Client }) {
     ['Alter', fact('Alter')], ['ESG', fact('ESG-Profil')], ['Letzte Beratung', client.lastConsultation], ['Regelverletzungen', client.errors + client.warnings ? `${client.errors} Fehler · ${client.warnings} Warnungen` : undefined],
   ].filter((f): f is [string, string] => !!f[1] && f[1] !== '–')
   const notes = context?.type === 'context' ? context.notes.slice(0, 2) : []
+  const reasons = (client.findings ?? []).filter((f) => f.check === 'profile.call-reason').map((f) => f.title).slice(0, 2)
   return (
     <section className={`shrink-0 px-4 py-3 ${GLASS}`}>
-      <dl className="grid grid-cols-2 gap-x-5 gap-y-2 sm:grid-cols-4">
+      <dl className={compact ? 'flex flex-wrap gap-x-4 gap-y-0.5' : 'grid grid-cols-2 gap-x-5 gap-y-2 sm:grid-cols-4'}>
         {facts.map(([label, value]) => (
-          <div key={label} className="min-w-0"><dt className="text-[10px] uppercase tracking-wide text-muted">{label}</dt><dd className="truncate text-[13px]" title={value}>{value}</dd></div>
+          <div key={label} className={compact ? 'flex min-w-0 items-baseline gap-1' : 'min-w-0'}><dt className="text-[10px] uppercase tracking-wide text-muted">{label}</dt><dd className="truncate text-[13px]" title={value}>{value}</dd></div>
         ))}
       </dl>
       {persona?.type === 'profile' && <p className="mt-3 border-t border-black/5 pt-2 text-[13px] leading-snug"><span className="mr-1.5 text-[10px] uppercase tracking-wide text-brand-dark">Einschätzung</span>{persona.persona}</p>}
-      {notes.length > 0 && (
+      {reasons.length > 0 && (
+        <p className="mt-1.5 text-[13px] leading-snug"><span className="mr-1.5 text-[10px] uppercase tracking-wide text-brand-dark">Anlass</span>{reasons.join(' · ')}</p>
+      )}
+      {notes.length > 0 && !compact && (
         <ul className="mt-2 space-y-0.5 text-[12px] leading-snug text-ink/80">
           {notes.map((n) => <li key={n.text} className="truncate" title={n.text}><span className="mr-1.5 tabular-nums text-muted">{n.date}</span>{n.text}</li>)}
         </ul>
@@ -87,9 +91,9 @@ function Profile({ client }: { client: Client }) {
   )
 }
 
-export function Stage({ client, screen, plan, thinking, said, onUse, inCall, recording, lines, note, onEnd, hints, lead, actions, chat, busy, detail, chatSuggestions, onAsk, onShowChart }: {
+export function Stage({ client, screen, plan, thinking, said, onUse, inCall, recording, lines, pending, note, hints, lead, actions, chat, busy, detail, chatSuggestions, onAsk, onShowChart }: {
   client: Client; screen: Screen; plan: Plan; thinking: boolean; said: string[]; onUse: (s: Suggestion) => void
-  inCall: boolean; recording: boolean; lines: TranscriptLine[]; note: string | null; onEnd: () => void; hints: Hint[]
+  inCall: boolean; recording: boolean; lines: TranscriptLine[]; pending: string[]; note: string | null; hints: Hint[]
   lead: ReactNode; actions: ReactNode
   chat: ChatEntry[]; busy: boolean; detail: Detail; chatSuggestions: string[]; onAsk: (text: string) => void; onShowChart: (id: string) => void
 }) {
@@ -141,7 +145,10 @@ export function Stage({ client, screen, plan, thinking, said, onUse, inCall, rec
 
   // ---- widgets: the agent's picks plus the advisor's pins; leaving ones shrink out first ----
   const [pins, setPins] = useState<string[]>([])
-  const wanted = useMemo(() => [...pins, ...plan.widgets.filter((w) => !pins.includes(w))], [pins, plan.widgets])
+  // Never an empty column: without the agent's picks, the graph (or figure) of the tile in focus.
+  const focusTile = plan.focus ? byId.get(plan.focus) : undefined
+  const picks = plan.widgets.length ? plan.widgets : focusTile ? [focusTile.chart ? `chart:${focusTile.chart}` : `tile:${focusTile.id}`] : []
+  const wanted = useMemo(() => [...pins, ...picks.filter((w) => !pins.includes(w))], [pins, picks.join('|')]) // eslint-disable-line react-hooks/exhaustive-deps
   const [shown, setShown] = useState<Widget[]>([])
   const toWidget = useCallback((key: string): Widget | null => {
     const pinned = pins.includes(key)
@@ -182,7 +189,7 @@ export function Stage({ client, screen, plan, thinking, said, onUse, inCall, rec
             </div>
             {actions}
           </div>
-          <Profile client={client} />
+          <Profile client={client} compact={inCall} />
           <div ref={box} onScroll={onScroll} className={`relative min-h-0 flex-1 snap-y snap-proximity overflow-y-auto px-3 [scrollbar-width:none] ${GLASS}`}>
             <div className="h-2" aria-hidden />
             {tiles.map((t) => (
@@ -204,7 +211,7 @@ export function Stage({ client, screen, plan, thinking, said, onUse, inCall, rec
             <div className="h-[40%]" aria-hidden />
           </div>
           <Smooth className="shrink-0">
-            <Dock plan={plan} said={said} onUse={onUse} inCall={inCall} recording={recording} lines={lines} note={note} onEnd={onEnd} name={client.name} />
+            <Dock plan={plan} said={said} onUse={onUse} inCall={inCall} recording={recording} lines={lines} pending={pending} note={note} name={client.name} />
           </Smooth>
         </div>
 
@@ -223,8 +230,8 @@ export function Stage({ client, screen, plan, thinking, said, onUse, inCall, rec
 // The dark dock under the tiles: three talking points side by side. Saying one (the transcript
 // matches it) or clicking it marks it and asks the agent for the next step. During a call the answer
 // to the client's last concern and the latest transcript line sit with it. Labels live in the borders.
-function Dock({ plan, said, onUse, inCall, recording, lines, note, onEnd, name }: {
-  plan: Plan; said: string[]; onUse: (s: Suggestion) => void; inCall: boolean; recording: boolean; lines: TranscriptLine[]; note: string | null; onEnd: () => void; name: string
+function Dock({ plan, said, onUse, inCall, recording, lines, pending, note, name }: {
+  plan: Plan; said: string[]; onUse: (s: Suggestion) => void; inCall: boolean; recording: boolean; lines: TranscriptLine[]; pending: string[]; note: string | null; name: string
 }) {
   const [seconds, setSeconds] = useState(0)
   useEffect(() => {
@@ -243,7 +250,6 @@ function Dock({ plan, said, onUse, inCall, recording, lines, note, onEnd, name }
   }, [plan.suggestions, onUse])
   const answer = usePaced(plan.answer, 6000)
   const clock = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
-  const last = lines[lines.length - 1]
 
   return (
     <div data-dock className={`relative mt-2 ${GLASS}`}>
@@ -251,7 +257,6 @@ function Dock({ plan, said, onUse, inCall, recording, lines, note, onEnd, name }
         {inCall ? <><Wave /> <span className="text-ink">{name}</span> <span className="tabular-nums">{clock}</span>{!recording && <span>· keine Aufzeichnung</span>}</>
           : <span className="uppercase tracking-wide text-brand-dark">Einstieg</span>}
       </div>
-      {inCall && <button onClick={onEnd} className="absolute right-4 top-0 -translate-y-1/2 rounded-full bg-risk px-3 py-0.5 text-[11px] text-white shadow-sm transition-transform hover:scale-105">Beenden</button>}
       {note && <p className="px-4 pt-4 text-[11px] text-risk">{note}</p>}
 
       {inCall && answer && (
@@ -277,7 +282,33 @@ function Dock({ plan, said, onUse, inCall, recording, lines, note, onEnd, name }
           )
         })}
       </div>
-      {inCall && last && <p key={lines.length} className="island-swap truncate px-4 pb-3 text-[12px] text-muted"><span className="mr-1.5 text-ink/70">{last.speaker}</span>{last.text}</p>}
+      {inCall && <Transcript lines={lines} pending={pending} />}
+    </div>
+  )
+}
+
+// The live transcript under the talking points: who said what, newest at the bottom, scrolls itself.
+export function Transcript({ lines, pending = [], tall = false }: { lines: TranscriptLine[]; pending?: string[]; tall?: boolean }) {
+  const box = useRef<HTMLDivElement>(null)
+  useEffect(() => { box.current?.scrollTo({ top: box.current.scrollHeight, behavior: 'smooth' }) }, [lines.length, pending.length])
+  return (
+    <div className="relative mx-3 mb-3 mt-2 rounded-xl border border-line bg-white/50">
+      <span className="absolute left-3 top-0 -translate-y-1/2 rounded-full bg-white px-1.5 text-[10px] uppercase tracking-wide text-muted">Transkript</span>
+      <div ref={box} className={`${tall ? 'max-h-[50vh]' : 'max-h-36'} min-h-[3.5rem] space-y-1.5 overflow-y-auto px-3.5 pb-2.5 pt-3.5 text-[13px] leading-snug [scrollbar-width:thin]`}>
+        {lines.length + pending.length === 0 && <p className="text-[12px] text-muted">Wartet auf das Gespräch …</p>}
+        {lines.map((l, i) => (
+          <p key={i} className={`anim-rise flex gap-2 ${l.speaker === 'Berater' ? 'text-ink/65' : ''}`}>
+            <span className={`mt-px w-14 shrink-0 text-[10px] uppercase tracking-wide ${l.speaker === 'Kunde' ? 'text-brand-dark' : 'text-muted'}`}>{l.speaker}</span>
+            <span className="min-w-0 flex-1">{l.text}</span>
+          </p>
+        ))}
+        {pending.map((t, i) => (
+          <p key={`p${i}`} className="anim-rise flex gap-2 text-ink/60">
+            <span className="mt-px w-14 shrink-0 animate-pulse text-[10px] uppercase tracking-wide text-muted">…</span>
+            <span className="min-w-0 flex-1">{t}</span>
+          </p>
+        ))}
+      </div>
     </div>
   )
 }

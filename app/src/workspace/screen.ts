@@ -29,7 +29,7 @@ export const CATALOGUE = {
   kacheln: 'Linke Spalte, scrollbar, Reihenfolge = Sprechreihenfolge des 60-Sekunden-Briefings. Jede Kachel hat eine Kennzahl und einen Satz. Du wählst 5 bis 8 und darfst den Text kürzen (Stichpunkt, höchstens 12 Wörter, keine neuen Zahlen).',
   fokus: 'Die Kachel, um die es gerade geht. Sie wird in die Mitte geholt.',
   grafiken: 'Rechte Spalte, höchstens 3 gleichzeitig: "chart:<id>" für eine Grafik aus GRAFIKEN oder "tile:<id>" für die Kennzahl einer Kachel. Nur zeigen, was jetzt hilft.',
-  vorschlaege: 'Genau 3 Stichpunkte, was der Berater als Nächstes sagt: höchstens 10 Wörter, Nominalstil, ohne Artikel am Anfang, ohne Anrede, eine Kernzahl. Mit "label" (2–3 Wörter) und "tile" (id der passenden Kachel).',
+  vorschlaege: 'Genau 3 Stichpunkte, was der Berater als Nächstes sagt: höchstens 10 Wörter, Nominalstil, ohne Artikel am Anfang, ohne Anrede, eine Kernzahl. "text" muss für sich allein verständlich sein (nennt Gegenstand und Zahl), "label" ist nur das Thema in 2–3 Wörtern, "tile" die id der passenden Kachel.',
   antwort: 'Nur wenn der Kunde in NEUE ABSCHNITTE ein Anliegen äussert: {"heard": seine Aussage, "text": Stichpunkt für die Antwort, höchstens 12 Wörter}.',
 }
 
@@ -131,3 +131,28 @@ export function checkPlan(raw: unknown, tiles: Tile[], charts: Chart[], grounded
 
 export const hintOf = (s: Suggestion): Pick<Hint, 'topicId' | 'label' | 'text'> => ({ topicId: s.tile ?? s.id, label: s.label, text: s.text })
 export const widgetMain = (t: Tile, clientRef: string) => t.item?.figure ?? (t.item ? firstNumber(t.item.text) : t.news ? t.news[0].affects[clientRef].tag : t.card?.type === 'proposal' && t.card.effects[0] ? `${t.card.effects[0].before} → ${t.card.effects[0].after}` : undefined)
+
+// A plan made on an older set of tiles (the engine's later tiers arrived meanwhile), moved onto the
+// current one: ids that still exist keep their place, new tiles are appended, the rest is dropped.
+export function rebasePlan(plan: Plan, tiles: Tile[], charts: Chart[]): Plan {
+  const ids = new Set(tiles.map((t) => t.id))
+  const order = [...plan.order.filter((id) => ids.has(id)), ...tiles.map((t) => t.id).filter((id) => !plan.order.includes(id))]
+  const widgets = plan.widgets.filter((w) => (w.startsWith('tile:') ? ids.has(w.slice(5)) : charts.some((c) => `chart:${c.id}` === w)))
+  return { ...plan, order, focus: plan.focus && ids.has(plan.focus) ? plan.focus : order[0] ?? null, widgets, suggestions: plan.suggestions.map((s) => (s.tile && !ids.has(s.tile) ? { ...s, tile: undefined } : s)) }
+}
+
+// Who is calling: a client's name heard in the transcript. Whole words only; for names of two or more
+// words the full name or the last word counts ("Balboa"), company names without the legal form ("Company 001").
+export function nameIn(text: string, clients: { ref: string; name: string }[]): string | undefined {
+  const norm = (s: string) => ` ${s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()} `
+  const heard = norm(text)
+  const hit = clients.map((c) => {
+    const full = norm(c.name).trim()
+    const bare = full.replace(/\s(ag|gmbh|sa|ltd|inc)$/, '')
+    const words = full.split(' ')
+    const keys = [full, bare, ...(words.length > 1 && !/\d/.test(full) ? [words[words.length - 1]] : [])].filter((k) => k.length >= 3)
+    const best = Math.max(0, ...keys.filter((k) => heard.includes(` ${k} `)).map((k) => k.length))
+    return { ref: c.ref, best }
+  }).filter((x) => x.best > 0).sort((a, b) => b.best - a.best)[0]
+  return hit?.ref
+}

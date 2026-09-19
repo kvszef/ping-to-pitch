@@ -31,10 +31,27 @@ function Fact({ label, value }: { label: string; value: string }) {
   return <div className="min-w-0"><div className="text-[10px] uppercase tracking-wide text-white/45">{label}</div><div className="truncate text-xs">{value}</div></div>
 }
 
-export function RingingIsland({ client, call, signal, onAccept, onDecline }: { client: Client; call: IncomingCall; signal?: Signal; onAccept: () => void; onDecline: () => void }) {
+export function RingingIsland({ client, call, signal, onAccept, onDecline }: { client?: Client; call: IncomingCall; signal?: Signal; onAccept: () => void; onDecline: () => void }) {
+  if (!client) return (
+    <Island width={420} radius={30}>
+      <div className="flex items-center gap-3 p-4">
+        <span className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-ok"><span className="absolute inset-0 animate-ping rounded-full bg-ok/60" /><Phone size={18} className="relative" /></span>
+        <div className="min-w-0 flex-1">
+          <div className="text-[10px] uppercase tracking-wide text-white/50">Eingehender Anruf{call.number ? ` · ${call.number}` : ''}</div>
+          <div className="truncate text-[17px]">Unbekannte Nummer</div>
+          <div className="text-[11px] text-white/50">Der Kunde wird im Gespräch am Namen erkannt.</div>
+        </div>
+        <button onClick={onDecline} aria-label="Ablehnen" className="flex h-10 w-10 items-center justify-center rounded-full bg-risk transition-transform hover:scale-110"><PhoneOff size={16} /></button>
+        <button onClick={onAccept} aria-label="Annehmen" className="flex h-10 w-10 items-center justify-center rounded-full bg-ok transition-transform hover:scale-110"><Phone size={16} /></button>
+      </div>
+    </Island>
+  )
   const headline = client.briefing.find((c) => c.type === 'headline')
   const track = client.briefing.find((c) => c.type === 'talktrack')
-  const reasons = track?.type === 'talktrack' ? (track.reasons ?? []).slice(0, 3) : []
+  const fromEngine = (client.findings ?? []).filter((f) => f.check === 'profile.call-reason').map((f) => ({ text: f.title }))
+  const reasons = fromEngine.length ? fromEngine.slice(0, 3) : track?.type === 'talktrack' ? (track.reasons ?? []).slice(0, 3) : []
+  const persona = client.findings?.find((f) => f.check === 'profile.persona')?.title
+  const tone = (client.findings ?? []).filter((f) => f.check === 'profile.tone').map((f) => f.title.replace(/^Ton:\s*/, ''))
   return (
     <Island width={470} radius={30}>
       <div className="flex items-center gap-3 px-4 pt-4">
@@ -54,6 +71,12 @@ export function RingingIsland({ client, call, signal, onAccept, onDecline }: { c
         <Fact label="Regelverletzungen" value={`${client.errors} Fehler · ${client.warnings} Warnungen`} />
         <Fact label="Anlagedienstleistung" value={client.service} />
       </div>
+      {(persona || tone.length > 0) && (
+        <div className="island-stagger px-4 pt-3 text-xs leading-snug">
+          {persona && <p className="text-white/80">{persona}</p>}
+          {tone.length > 0 && <p className="mt-1 flex flex-wrap gap-1">{tone.slice(0, 3).map((t) => <span key={t} className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/70">{t}</span>)}</p>}
+        </div>
+      )}
       <div className="island-stagger m-3 rounded-[18px] bg-white/[0.07] p-3">
         {headline && <p className="text-xs leading-snug">{headline.text}</p>}
         {/* Why the client is probably calling, ranked from the data (talk track), else the call's own reason. */}

@@ -7,6 +7,7 @@ import { ClientUpload } from './components/ClientUpload'
 import { Dashboard } from './components/Dashboard'
 import { LiveOverlay } from './components/LiveOverlay'
 import { CardSkeleton, MetricsSkeleton } from './components/Skeleton'
+import { demoCalls } from './data/demoCalls'
 import { listClients, localClients } from './data/source'
 import { useBriefing } from './data/useBriefing'
 import type { Card, Client, IncomingCall } from './types'
@@ -38,12 +39,12 @@ export default function App() {
   const [listed, setListed] = useState(false)
   const refresh = useCallback(() => { void listClients().then(setClients).catch(() => setClients(localClients())).finally(() => setListed(true)) }, [])
   useEffect(refresh, [refresh])
-  // A simulated call rings the real client with the most open rule violations (no phone numbers in the data).
-  const ring = useCallback((list: Client[]) => {
-    const next = [...list].sort((a, b) => b.errors * 10 + b.warnings - (a.errors * 10 + a.warnings))[0]
-    if (next) setCall({ ref: next.ref, number: '', reason: next.errors ? `${next.errors} offene Regelverletzungen` : next.context })
+  // A demo call rings a real client; its conversation is scripted in data/demoCalls.ts.
+  const ring = useCallback((demoId: string) => {
+    const demo = demoCalls.find((d) => d.id === demoId)
+    if (demo) setCall({ ref: demo.direction === 'eingehend' ? '' : demo.ref, number: '', reason: demo.label, demo: demo.id })
   }, [])
-  useEffect(() => { if (listed && hash.includes('anruf')) ring(clients) }, [listed]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (listed && hash.includes('anruf')) ring(demoCalls[0].id) }, [listed]) // eslint-disable-line react-hooks/exhaustive-deps
   // An internet call from the client's phone (call.html) rings like a simulated one.
   const line = deskLine.useDeskLine()
   useEffect(() => deskLine.startListening(), [])
@@ -56,16 +57,22 @@ export default function App() {
   }, [ringingRef]) // eslint-disable-line react-hooks/exhaustive-deps
   const client = clients.find((c) => c.ref === ref)
   const briefing = useBriefing(client?.ref ?? null)
-  const caller = clients.find((c) => c.ref === call?.ref)
+  // While it rings, the engine's briefing of the caller loads, so the banner shows why they are probably calling.
+  const callerListed = clients.find((c) => c.ref === call?.ref)
+  const callerBrief = useBriefing(call?.ref ?? null)
+  const caller: Client | undefined = callerListed && (callerBrief.cards.length || callerBrief.findings.length)
+    ? { ...callerListed, briefing: callerBrief.cards.length ? callerBrief.cards : callerListed.briefing, findings: callerBrief.findings }
+    : callerListed
 
   const open = (r: string, asCall = false) => { setRef(r); setLive(asCall) }
   const home = (p: Page) => { setRef(null); setLive(false); setPage(p) }
-  const [session, setSession] = useState<{ n: number; ref?: string; call?: boolean }>({ n: 0, ref: demoCall ? hash[2] : undefined, call: demoCall })
+  const [session, setSession] = useState<{ n: number; ref?: string; call?: boolean; demo?: string }>({ n: 0, ref: demoCall ? hash[2] : undefined, call: demoCall })
   // Ein angenommener Anruf öffnet den Arbeitsplatz mit dem Kunden und laufendem Gespräch.
-  const accept = () => { if (!call) return; setSession((s) => ({ n: s.n + 1, ref: call.ref, call: true })); setCall(null); home('signale') }
+  const accept = () => { if (!call) return; setSession((s) => ({ n: s.n + 1, ref: call.ref || undefined, call: true, demo: call.demo })); setCall(null); home('signale') }
 
   const signalsItem: ToolItem = { label: 'Anrufe & Signale', icon: Radio, badge: call ? 1 : undefined, badgeTone: 'red', active: !client && page === 'signale', onClick: () => home('signale') }
-  const banner = call && caller && <RingingIsland client={caller} call={call} onAccept={() => { if (deskLine.getLine().state === 'ringing') void deskLine.accept(); accept() }} onDecline={() => { deskLine.decline(); setCall(null) }} />
+  // An unknown number rings without client details; the name is picked up from the conversation.
+  const banner = call && (caller || !call.ref) && <RingingIsland client={caller} call={call} onAccept={() => { if (deskLine.getLine().state === 'ringing') void deskLine.accept(); accept() }} onDecline={() => { deskLine.decline(); setCall(null) }} />
 
   // Deep link to a client that only the engine knows: wait for the list before falling back to the dashboard.
   if (!client && ref && !listed) {
@@ -92,7 +99,7 @@ export default function App() {
         ]} />
         {page === 'kunden'
           ? <Dashboard clients={clients} onUploaded={refresh} />
-          : listed ? <Workspace key={session.n} clients={clients} signals={[]} initialRef={session.ref} initialCall={session.call} onSimulateCall={() => ring(clients)} onOpenBriefing={open} />
+          : listed ? <Workspace key={session.n} clients={clients} signals={[]} initialRef={session.ref} initialCall={session.call} initialDemo={session.demo} onSimulateCall={ring} onOpenBriefing={open} />
           : <div className="p-3"><CardSkeleton label="Kunden werden geladen" /></div>}
         {banner}
       </div>
