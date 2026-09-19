@@ -8,7 +8,7 @@
 import { factsFromRaw } from '../../src/data/facts.ts'
 import { ruleText } from '../../src/data/ruleText.ts'
 import { amount, day, pct, type DraftProposal, type Evidence, type Finding } from './findings.ts'
-import { addMonths, monthsBetween, readNote, type Exclusion, type ReadNote } from './notes.ts'
+import { monthsBetween, readNote, type Exclusion, type ReadNote } from './notes.ts'
 
 type Raw = Record<string, unknown>
 const isObj = (v: unknown): v is Raw => typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -168,33 +168,12 @@ function contradictions(ref: string, note: ReadNote, positions: Position[], inde
     evidence: [noteEvidence(note), ...positionEvidence, ...trades] }]
 }
 
-function noteFindings(ref: string, note: ReadNote, now: Date, liquidity: { share: number; value: number; currency: string }): Finding[] {
+function noteFindings(ref: string, note: ReadNote, now: Date): Finding[] {
   const id = (check: string) => `${check}:${ref}:${note.date}`
   const ev = [noteEvidence(note)]
   const age = monthsBetween(new Date(`${note.date}T00:00:00Z`), now)
   switch (note.category) {
-    case 'plan': {
-      if (note.horizonMonths) {
-        const due = addMonths(note.date, note.horizonMonths)
-        const expired = due.getTime() < now.getTime()
-        const dueIso = due.toISOString().slice(0, 10)
-        if (expired) {
-          return [{ id: id('context.stale-note'), check: 'context.stale-note', kind: 'interpretation', severity: 'warn', topic: note.topic,
-            numbers: { ageMonths: age, overdueMonths: monthsBetween(due, now) },
-            title: `Veraltet: ${note.label ?? `«${note.de}»`} – Zeitfenster lief am ${day(dueIso)} ab (Notiz vom ${day(note.date)})`, detail: note.question, evidence: ev }]
-        }
-        const left = monthsBetween(now, due)
-        return [{ id: id('context.plan'), check: 'context.plan', kind: 'fact', severity: note.topic === 'liquidity' ? 'warn' : 'info', topic: note.topic,
-          numbers: { monthsLeft: left, liquidityShare: liquidity.share },
-          title: `${note.label ?? note.de}: ${left === 0 ? 'noch weniger als 1 Monat' : left === 1 ? 'noch 1 Monat' : `noch ${left} Monate`} (bis ${day(dueIso)})`,
-          detail: [`Notiz: ${note.de}.`, note.topic === 'liquidity' ? `Liquidität heute: ${pct(liquidity.share)} (${liquidity.currency} ${amount(liquidity.value)}).` : '', note.question ?? ''].filter(Boolean).join(' '),
-          evidence: ev }]
-      }
-      const stale = age >= 12
-      return [{ id: id(stale ? 'context.stale-note' : 'context.plan'), check: stale ? 'context.stale-note' : 'context.plan', kind: stale ? 'interpretation' : 'fact',
-        severity: stale ? 'warn' : 'info', topic: note.topic, numbers: { ageMonths: age },
-        title: stale ? `Seit ${age} Monaten offen: ${note.label ?? `«${note.de}»`}` : note.de, detail: note.question, evidence: ev }]
-    }
+    // 'plan' notes: context.plan / context.stale-note come from the engine (engine/checks/context-*.ts).
     case 'request':
       return [{ id: id('memory.promise'), check: 'memory.promise', kind: 'action', severity: 'warn', topic: note.topic, numbers: { ageMonths: age },
         title: `Offener Wunsch seit ${day(note.date)}: ${note.label ?? note.de}`,
@@ -298,9 +277,6 @@ export function provisionalFindings(client: unknown, reference: unknown, now: Da
   const ref = str(raw.ClientRef) || 'UNBEKANNT'
   const index = indexReference(reference)
   const positions = positionsOf(raw)
-  const aum = num(raw.AssetsUnderManagementInDefaultCurrency) || list(raw.Portfolios).reduce((n, p) => n + num(p.AssetsUnderManagementInDefaultCurrency), 0)
-  const liquidityValue = num(raw.LiquidityInDefaultCurrency)
-  const liquidity = { share: aum > 0 ? liquidityValue / aum : 0, value: liquidityValue, currency: str(raw.ReportingCurrency) || 'CHF' }
   const notes = list(raw.ClientNotes)
     .map((n) => ({ text: str(n.Note), date: str(n.CreatedByDateUTC).slice(0, 10) }))
     .filter((n) => n.text && /^\d{4}-\d{2}-\d{2}$/.test(n.date))
@@ -314,13 +290,9 @@ export function provisionalFindings(client: unknown, reference: unknown, now: Da
     ...performance(ref, raw),
     ...concentration(ref, positions),
     ...proposals(ref, raw),
-    ...notes.filter((n) => !n.exclusion).flatMap((n) => noteFindings(ref, n, now, liquidity)),
+    ...notes.filter((n) => !n.exclusion).flatMap((n) => noteFindings(ref, n, now)),
   ]
-  if (aum > 0) {
-    findings.push({ id: `portfolio.liquidity:${ref}:total`, check: 'portfolio.liquidity', kind: 'fact', severity: 'info', topic: 'liquidity',
-      numbers: { share: liquidity.share, value: liquidity.value }, title: `Liquidität ${pct(liquidity.share)} (${liquidity.currency} ${amount(liquidity.value)})`,
-      evidence: [{ source: 'Kundendatei', quote: 'LiquidityInDefaultCurrency' }] })
-  }
+  // portfolio.liquidity comes from the engine (engine/checks/portfolio-liquidity.ts).
   return findings
 }
 

@@ -14,6 +14,9 @@ const client = (ref: string) => clients.find((c) => c.ClientRef === ref)!
 const findingsOf = (ref: string) => provisionalFindings(client(ref), reference, NOW)
 const briefingOf = (ref: string) => composeBriefing(ref, findingsOf(ref))
 const allLines = (b: Briefing60) => Object.values(b.blocks).flat()
+// Plans, stale notes and liquidity come from the engine now (E3); the stopgap no longer emits them.
+const engineIndex = indexReference(reference)
+const withEngine = (ref: string) => mergeFindings(run(client(ref), { ref: engineIndex, now: NOW, memory: [] }), findingsOf(ref)).findings
 
 describe('provisional findings', () => {
   it('finds the energy held through funds against a "no fossil fuels" wish (CASE-004)', () => {
@@ -38,13 +41,13 @@ describe('provisional findings', () => {
   })
 
   it('turns an expired plan into a question instead of a fact (CASE-007)', () => {
-    const stale = findingsOf('CASE-007').find((x) => x.check === 'context.stale-note')!
+    const stale = withEngine('CASE-007').find((x) => x.check === 'context.stale-note')!
     expect(stale.title).toMatch(/^Veraltet: Immobilienkauf/)
     expect(stale.detail).toMatch(/\?$/)
   })
 
   it('keeps a plan that is still running as a fact with the months left (CASE-004)', () => {
-    const plan = findingsOf('CASE-004').find((x) => x.check === 'context.plan')!
+    const plan = withEngine('CASE-004').find((x) => x.check === 'context.plan')!
     expect(plan.title).toMatch(/^Pensionierung: noch \d+ Monate/)
   })
 
@@ -79,9 +82,9 @@ describe('composeBriefing', () => {
   })
 
   it('asks about the expired property plan instead of stating it (CASE-007)', () => {
-    const b = briefingOf('CASE-007')
+    const b = composeBriefing('CASE-007', withEngine('CASE-007'))
     expect(b.blocks.ask.some((l) => /Immobilienkauf/.test(l.text) && l.text.endsWith('?'))).toBe(true)
-    expect(b.blocks.mention.some((l) => /Benchmark/.test(l.text))).toBe(true)
+    expect(briefingOf('CASE-007').blocks.mention.some((l) => /Benchmark/.test(l.text))).toBe(true)
   })
 
   it('lists rejected ideas under "don\'t bring up" (CASE-012)', () => {

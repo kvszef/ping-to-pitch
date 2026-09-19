@@ -11,6 +11,7 @@ import { composeBriefing, writeBriefing, type Briefing60 } from './briefing.ts'
 import { factCards, talkTrackCard } from './cards.ts'
 import type { Finding } from './findings.ts'
 import { provisionalFindings } from './provisional-findings.ts'
+import { peerStats, type PeerStats } from '../../engine/peers.ts'
 
 type Provider = 'openai' | 'apertus'
 type Message = { role: 'system' | 'user'; content: string }
@@ -68,7 +69,7 @@ export async function briefing60(method: string, url: string, body: Buffer | nul
   let engine: Finding[] = []
   let engineError: string | undefined
   try {
-    engine = run(raw, { ref: index, now, memory: [] })
+    engine = run(raw, { ref: index, now, memory: [], peers: peersOf(clients, index) })
   } catch (e) {
     engineError = e instanceof Error ? e.message : String(e)
   }
@@ -103,11 +104,19 @@ export async function briefing60(method: string, url: string, body: Buffer | nul
 // Client files uploaded in this server session (the live demo hands over three unseen ones).
 const uploaded = new Map<string, Record<string, unknown>>()
 
+// Peer statistics for context.peers over the case clients plus uploads: computed once, rebuilt after an upload.
+let peerCache: PeerStats | null = null
+function peersOf(clients: Record<string, unknown>[], index: ReferenceIndex): PeerStats {
+  peerCache ??= peerStats([...clients, ...uploaded.values()], index)
+  return peerCache
+}
+
 export function uploadClients(body: Buffer) {
   const data: unknown = JSON.parse(body.toString('utf8') || 'null')
   const items = Array.isArray(data) ? data : typeof data === 'object' && data !== null && Array.isArray((data as { clients?: unknown }).clients) ? (data as { clients: unknown[] }).clients : [data]
   const ok = items.filter((c): c is Record<string, unknown> => typeof c === 'object' && c !== null && typeof (c as { ClientRef?: unknown }).ClientRef === 'string')
   for (const c of ok) uploaded.set(str(c.ClientRef), c)
+  if (ok.length) peerCache = null
   return { status: ok.length ? 200 : 400, data: ok.length ? { ok: true, count: ok.length, refs: ok.map((c) => str(c.ClientRef)) } : { error: 'Keine Kunden mit ClientRef in der Datei' } }
 }
 
@@ -125,7 +134,7 @@ export async function appBriefing(url: string, llm: Llm) {
 
   const now = new Date()
   let engine: Finding[] = []
-  try { engine = run(raw, { ref: index, now, memory: [] }) } catch { /* the stopgap still answers */ }
+  try { engine = run(raw, { ref: index, now, memory: [], peers: peersOf(clients, index) }) } catch { /* the stopgap still answers */ }
   const { findings } = mergeFindings(engine, provisionalFindings(raw, reference, now))
   const template = composeBriefing(ref, findings)
   const provider = providerFor(llm)
