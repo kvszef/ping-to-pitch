@@ -94,7 +94,6 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
   const news = useNews(identifying ? null : client.ref)
   const screen = useMemo(() => screenFor(client, news.items), [client, news.items])
   const [plan, setPlan] = useState<Plan>(() => localPlan(screen.tiles, []))
-  const [said, setSaid] = useState<string[]>([])
   const [thinking, setThinking] = useState(false)
 
   // ---- the conversation ------------------------------------------------------------------------
@@ -149,15 +148,6 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
 
   const mark = (list: Suggestion[]) => {
     saidRef.current = { ids: [...saidRef.current.ids, ...list.map((s) => s.id)], texts: [...saidRef.current.texts, ...list.map((s) => s.text)] }
-    setSaid(saidRef.current.ids)
-  }
-  // Clicking a talking point: marked at once and its tile comes forward; the agent follows up.
-  const use = (s: Suggestion) => {
-    if (saidRef.current.ids.includes(s.id)) return
-    mark([s])
-    if (s.tile) setPlan((p) => ({ ...p, focus: s.tile!, widgets: [`tile:${s.tile}`, ...p.widgets.filter((w) => w !== `tile:${s.tile}`)].slice(0, 3) }))
-    inbox.current.said.push(s.text)
-    void drain()
   }
 
   // Who is calling: until a name is heard, an unknown caller; then the client opens and the call goes on.
@@ -184,9 +174,9 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
 
   // New client: a fresh start, except when the caller was just recognised mid-call (the call goes on).
   useEffect(() => {
-    if (keepCall.current) { keepCall.current = false; saidRef.current = { ids: [], texts: [] }; setSaid([]); setChat([]); setHints([]); return }
+    if (keepCall.current) { keepCall.current = false; saidRef.current = { ids: [], texts: [] }; setChat([]); setHints([]); return }
     linesRef.current = []; saidRef.current = { ids: [], texts: [] }; inbox.current = empty()
-    setLines([]); setPending([]); setChat([]); setHints([]); setSaid([]); setMic(false); setNote(null)
+    setLines([]); setPending([]); setChat([]); setHints([]); setMic(false); setNote(null)
   }, [client.ref])
   // New tiles (client, engine tiers) or the model became reachable: before a call a fresh plan;
   // during a call the running plan is only moved onto the new tiles, the conversation keeps steering.
@@ -376,7 +366,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
               <div className="rounded-2xl bg-white/55 p-1 shadow-[0_8px_32px_rgba(31,56,88,0.10)] ring-1 ring-white/70 backdrop-blur-xl"><Transcript lines={lines} pending={pending} tall /></div>
             </div>
           ) : (
-          <Stage client={client} screen={screen} plan={plan} thinking={thinking} said={said} onUse={use} inCall={inCall} recording={settings.record}
+          <Stage client={client} screen={screen} plan={plan} thinking={thinking} inCall={inCall} recording={settings.record}
             lines={lines} pending={pending} note={note} freshNews={news.fresh} hints={hints}
             lead={
               <div className="flex min-w-0 shrink-0 items-baseline gap-2">

@@ -46,3 +46,21 @@ export function useFlip(box: RefObject<HTMLElement | null>, key: string) {
     before.current = next
   }, [box, key])
 }
+
+// Keeps something mounted for `ms` after it was switched off, so it can animate out.
+// `visible` flips one frame after mounting, so it can animate in as well.
+export function usePresence(on: boolean, ms = 400) {
+  const [mounted, setMounted] = useState(on)
+  const [visible, setVisible] = useState(on)
+  useLayoutEffect(() => {
+    if (on) {
+      setMounted(true)
+      const f = requestAnimationFrame(() => requestAnimationFrame(() => setVisible(true)))
+      return () => cancelAnimationFrame(f)
+    }
+    setVisible(false)
+    const t = setTimeout(() => setMounted(false), ms)
+    return () => clearTimeout(t)
+  }, [on, ms])
+  return { mounted, visible }
+}

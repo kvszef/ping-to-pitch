@@ -1,12 +1,12 @@
-import { Ear, Pin, Sparkles, Timer } from 'lucide-react'
+import { BarChart3, Ear, PanelRightClose, PanelRightOpen, Pin, Sparkles, Timer } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { SeverityIcon } from '../cards/ui'
 import type { Client } from '../types'
 import type { Screen } from './brain'
 import { usePaced, Wave } from './CallIsland'
 import { ChatPanel } from './ChatPanel'
-import { Smooth, useFlip } from './motion'
-import { bestTile, widgetMain, type Plan, type Suggestion, type Tile } from './screen'
+import { Smooth, useFlip, usePresence } from './motion'
+import { bestTile, widgetMain, type Plan, type Tile } from './screen'
 import type { ChatEntry, Detail, Hint, TranscriptLine } from './types'
 import { useSummary } from './useSummary'
 import { Bars, Spark, WidgetRail, type Widget } from './Widgets'
@@ -99,11 +99,12 @@ function Profile({ client, compact = false }: { client: Client; compact?: boolea
   )
 }
 
-export function Stage({ client, screen, plan, thinking, said, onUse, inCall, recording, lines, pending, note, hints, freshNews, lead, actions, chat, busy, detail, chatSuggestions, onAsk, onShowChart }: {
-  client: Client; screen: Screen; plan: Plan; thinking: boolean; said: string[]; onUse: (s: Suggestion) => void
+export function Stage({ client, screen, plan, thinking, inCall, recording, lines, pending, note, hints, freshNews, lead, actions, chat, busy, detail, chatSuggestions, onAsk, onShowChart, graphsOpen, onGraphs }: {
+  client: Client; screen: Screen; plan: Plan; thinking: boolean
   inCall: boolean; recording: boolean; lines: TranscriptLine[]; pending: string[]; note: string | null; hints: Hint[]; freshNews: Set<string>
   lead: ReactNode; actions: ReactNode
   chat: ChatEntry[]; busy: boolean; detail: Detail; chatSuggestions: string[]; onAsk: (text: string) => void; onShowChart: (id: string) => void
+  graphsOpen: boolean; onGraphs: (open: boolean) => void
 }) {
   const byId = useMemo(() => new Map(screen.tiles.map((t) => [t.id, t])), [screen.tiles])
   const chartById = useMemo(() => new Map(screen.charts.map((c) => [c.id, c])), [screen.charts])
@@ -178,12 +179,15 @@ export function Stage({ client, screen, plan, thinking, said, onUse, inCall, rec
   const pinnedTile = (id: string) => pins.includes(`tile:${id}`)
   const togglePin = (key: string) => setPins((p) => (p.includes(key) ? p.filter((x) => x !== key) : [key, ...p]))
 
+  const dock = usePresence(inCall, 450)
+  const graphs = usePresence(graphsOpen, 450)
   const total = tiles.reduce((n, t) => n + t.seconds, 0)
   const done = tiles.slice(0, focusIdx + 1).reduce((n, t) => n + t.seconds, 0)
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="grid min-h-0 flex-1 grid-cols-[3fr_2fr] gap-3">
+      {/* The graph column folds away when not needed; the text side then takes the width. */}
+      <div className="grid min-h-0 flex-1 gap-3 transition-[grid-template-columns] duration-500 ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none" style={{ gridTemplateColumns: graphsOpen ? '3fr 2fr' : '1fr 44px' }}>
         <div className="flex min-h-0 min-w-0 flex-col gap-3">
           <div className={`flex shrink-0 items-center gap-3 px-4 py-2 ${GLASS}`}>
             {lead}
@@ -220,28 +224,43 @@ export function Stage({ client, screen, plan, thinking, said, onUse, inCall, rec
             <div className="h-[40%]" aria-hidden />
           </div>
           <Smooth className="shrink-0">
-            <Dock plan={plan} said={said} onUse={onUse} inCall={inCall} recording={recording} lines={lines} pending={pending} note={note} name={client.name} />
+            <div className={`transition-[opacity,transform] duration-[450ms] ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none ${dock.visible ? 'translate-y-0 opacity-100' : 'translate-y-3 opacity-0'}`}>
+              <Dock plan={plan} inCall={dock.mounted} recording={recording} lines={lines} pending={pending} note={note} name={client.name} />
+            </div>
           </Smooth>
         </div>
 
         <div className="relative min-h-0 min-w-0">
-          <div className={`absolute inset-0 overflow-y-auto p-3 pb-16 [scrollbar-width:none] ${GLASS}`}>
-            <WidgetRail widgets={shown} hot={plan.focus ? `tile:${plan.focus}` : null} onPin={(id) => togglePin(id)} onRemove={(id) => setPins((p) => p.filter((x) => x !== id))}
-              onFocus={(id) => { if (id.startsWith('tile:')) focus(id.slice(5)) }} />
-          </div>
-          <ChatPanel name={client.name} chat={chat} busy={busy} detail={detail} suggestions={chatSuggestions} onAsk={onAsk} onShow={onShowChart} />
+          {graphs.mounted && (
+            <div className={`absolute inset-0 origin-right transition-[opacity,transform] duration-[450ms] ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none ${graphs.visible ? 'scale-100 opacity-100' : 'pointer-events-none scale-[0.97] opacity-0'}`}>
+              <div className={`absolute inset-0 overflow-y-auto p-3 pb-16 [scrollbar-width:none] ${GLASS}`}>
+                <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-wide text-muted">
+                  <span className="flex items-center gap-1.5"><BarChart3 size={12} /> Grafiken</span>
+                  <button onClick={() => onGraphs(false)} aria-label="Grafiken einklappen" title="Grafiken einklappen" className="flex h-6 w-6 items-center justify-center rounded-full normal-case hover:bg-pill hover:text-ink"><PanelRightClose size={14} /></button>
+                </div>
+                <WidgetRail widgets={shown} hot={plan.focus ? `tile:${plan.focus}` : null} onPin={(id) => togglePin(id)} onRemove={(id) => setPins((p) => p.filter((x) => x !== id))}
+                  onFocus={(id) => { if (id.startsWith('tile:')) focus(id.slice(5)) }} />
+              </div>
+              <ChatPanel name={client.name} chat={chat} busy={busy} detail={detail} suggestions={chatSuggestions} onAsk={onAsk} onShow={onShowChart} />
+            </div>
+          )}
+            <button onClick={() => onGraphs(true)} aria-label="Grafiken und Chat öffnen" title="Grafiken und Chat öffnen"
+              className={`absolute inset-0 flex flex-col transition-opacity duration-300 ${graphsOpen ? 'pointer-events-none opacity-0' : 'opacity-100 delay-200'} items-center gap-2.5 py-4 text-muted transition-colors hover:text-ink ${GLASS}`}>
+              <PanelRightOpen size={15} />
+              <BarChart3 size={15} strokeWidth={1.5} />
+              {shown.filter((w) => !w.leaving).length > 0 && <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-[10px] tabular-nums text-white">{shown.filter((w) => !w.leaving).length}</span>}
+              <span className="whitespace-nowrap text-[11px] [writing-mode:vertical-rl]">Grafiken · Chat</span>
+            </button>
         </div>
       </div>
     </div>
   )
 }
 
-// The dark dock under the tiles, live calls only: three talking points side by side. Saying one (the
-// transcript matches it) or clicking it marks it and asks the agent for the next step. The answer to
-// the client's last concern and the latest transcript line sit with it. Labels live in the borders.
-// Hidden before a call starts: the brief's own "Einstieg" line is the opener, these chips would repeat it.
-function Dock({ plan, said, onUse, inCall, recording, lines, pending, note, name }: {
-  plan: Plan; said: string[]; onUse: (s: Suggestion) => void; inCall: boolean; recording: boolean; lines: TranscriptLine[]; pending: string[]; note: string | null; name: string
+// The dark dock under the tiles, live calls only: the answer to the client's last concern and the
+// live transcript. Hidden before a call starts: the brief's own "Einstieg" line is the opener already.
+function Dock({ plan, inCall, recording, lines, pending, note, name }: {
+  plan: Plan; inCall: boolean; recording: boolean; lines: TranscriptLine[]; pending: string[]; note: string | null; name: string
 }) {
   const [seconds, setSeconds] = useState(0)
   useEffect(() => {
@@ -249,16 +268,6 @@ function Dock({ plan, said, onUse, inCall, recording, lines, pending, note, name
     const t = setInterval(() => setSeconds((s) => s + 1), 1000)
     return () => { clearInterval(t); setSeconds(0) }
   }, [inCall])
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLElement && e.target.closest('input, textarea')) return
-      if (!inCall) return
-      const s = plan.suggestions[Number(e.key) - 1]
-      if (s) onUse(s)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [plan.suggestions, onUse, inCall])
   const answer = usePaced(plan.answer, 6000)
   const clock = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
   // Before a call starts, the talk track's own "Einstieg" line already covers the opener; the three
@@ -281,21 +290,6 @@ function Dock({ plan, said, onUse, inCall, recording, lines, pending, note, name
         </div>
       )}
 
-      <div className="grid gap-3 px-3 pb-4 pt-6 md:grid-cols-3">
-        {plan.suggestions.map((s, n) => {
-          const done = said.includes(s.id)
-          return (
-            <button key={s.id} onClick={() => onUse(s)}
-              className={`island-swap group relative min-h-[96px] rounded-xl border bg-white/60 px-4 pb-3.5 pt-4 text-left transition-[background-color,border-color,opacity] duration-300 ${done ? 'border-line opacity-45' : 'border-line hover:border-brand/60 hover:bg-white'}`}>
-              <span className="absolute left-3 top-0 flex max-w-[calc(100%-1.5rem)] -translate-y-1/2 items-center gap-1.5 rounded-full bg-white px-1.5 text-[10px] uppercase tracking-wide text-brand-dark">
-                <span className="tabular-nums text-muted">{done ? '✓' : n + 1}</span>
-                <span className="truncate">{s.label}</span>
-              </span>
-              <span className="block text-[15px] leading-snug">{s.text}</span>
-            </button>
-          )
-        })}
-      </div>
       {inCall && <Transcript lines={lines} pending={pending} />}
     </div>
   )
