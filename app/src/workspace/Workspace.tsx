@@ -1,12 +1,13 @@
-import { Mic, MicOff, PanelLeftClose, Phone, PhoneCall, PhoneOff, Settings as SettingsIcon, Users } from 'lucide-react'
+import { Mic, MicOff, PanelLeftClose, Phone, PhoneCall, PhoneOff, Search, Settings as SettingsIcon, Users } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useBriefing } from '../data/useBriefing'
 import { useNews } from '../data/useNews'
 import * as deskLine from '../phone/deskLine'
 import { usePhoneAudio } from '../phone/usePhoneAudio'
-import { demoCalls, lineDelay } from '../data/demoCalls'
+import { demoCalls, lineDelay, type DemoLine } from '../data/demoCalls'
+import { useOutbound } from '../data/useOutbound'
 import type { Client, Signal } from '../types'
-import { activeProvider, agentStep, answer, fetchStatus, question, screenFor, topicsFor, type AgentEvent, type Segment, type Status } from './brain'
+import { activeProvider, agentStep, answer, demoScript, fetchStatus, question, screenFor, topicsFor, type AgentEvent, type Segment, type Status } from './brain'
 import { localPlan, nameIn, rebasePlan, type Plan, type Suggestion } from './screen'
 import { SettingsPanel } from './SettingsPanel'
 import { useSettings } from './settings'
@@ -25,6 +26,9 @@ type Props = {
   initialCall?: boolean
   initialDemo?: string
   onSimulateCall: (demoId: string) => void
+  callbacks?: Callback[]
+  onCallbackDone?: (id: string) => void
+  onCallState?: (state: { inCall: boolean; name: string } | null) => void
   onOpenBriefing: (ref: string) => void
 }
 
@@ -32,8 +36,11 @@ const rank = { risk: 0, warn: 1, info: 2, ok: 3 }
 // Why the client is probably calling, from the engine's profile check.
 const callReasons = (client: Client) => (client.findings ?? []).filter((f) => f.check === 'profile.call-reason').map((f) => f.title).join('; ') || undefined
 const providerLabel = { openai: 'OpenAI', apertus: 'Apertus', beispiel: 'Beispielmodus' }
+const TODAY = 6 // how many of today's ranked clients show their reason
+// A call that came in while the advisor was on another call.
+export type Callback = { id: string; ref?: string; demo?: string; label: string; reason: string; at: string }
 
-export function Workspace({ clients, signals, initialRef, initialCall, initialDemo, onSimulateCall }: Props) {
+export function Workspace({ clients, signals, initialRef, initialCall, initialDemo, onSimulateCall, callbacks = [], onCallbackDone, onCallState }: Props) {
   const [settings, update] = useSettings()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [ref, setRef] = useState(initialRef ?? clients[0].ref)
@@ -47,6 +54,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
   const [chat, setChat] = useState<ChatEntry[]>([])
   const [busy, setBusy] = useState(false)
   const [demoMenu, setDemoMenu] = useState(false)
+  const [rosterQuery, setRosterQuery] = useState('')
   const [identifying, setIdentifying] = useState(!!initialCall && !initialRef)
 
   // The client, enriched with the engine's briefing once the server answered.
@@ -178,20 +186,39 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
 
   // A demo call plays its script at speaking pace through the same path as live transcription.
   const demo = demoCalls.find((d) => d.id === initialDemo)
+  const [script, setScript] = useState<{ id: string; lines: Segment[] } | null>(demo ? { id: demo.id, lines: demo.script } : null)
   useEffect(() => {
-    if (!inCall || !demo || phone) return
+    if (!inCall || !script || phone) return
     let stop = false, timer = 0
     const play = (i: number) => {
-      if (stop || i >= demo.script.length) return
-      hearRef.current([demo.script[i]])
-      timer = window.setTimeout(() => play(i + 1), lineDelay(demo.script[i]))
+      if (stop || i >= script.lines.length) return
+      hearRef.current([script.lines[i]])
+      timer = window.setTimeout(() => play(i + 1), lineDelay(script.lines[i] as DemoLine))
     }
     timer = window.setTimeout(() => play(0), 2000)
     return () => { stop = true; clearTimeout(timer) }
-  }, [inCall, demo?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [inCall, script?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Outbound: the advisor calls a client. As a demo, the model writes the conversation from the
+  // client's data and today's reasons (the ranking moves with the news, a fixed script would not fit).
+  const ranking = useOutbound()
+  const [dialling, setDialling] = useState<string | null>(null)
+  const callOut = async (target: string, asDemo: boolean) => {
+    // A demo call: no microphone (the conversation is written and played); set before the call starts.
+    if (asDemo) setDialling(target)
+    setDemoMenu(false); setIdentifying(false); setRef(target); setScript(null); setInCall(true)
+    if (!asDemo) return
+    const who = clients.find((c) => c.ref === target)
+    const reasons = ranking.find((r) => r.ref === target)?.reasons.map((r) => r.title) ?? []
+    const lines = who ? await demoScript(who, reasons, settings, status) : []
+    setDialling(null)
+    if (lines.length) setScript({ id: `out-${target}-${Date.now()}`, lines })
+  }
+  // The app needs to know whether a call is on, so a second caller is put on the callback list.
+  useEffect(() => { onCallState?.(inCall ? { inCall, name: identifying ? 'Unbekannter Anrufer' : client.name } : null) }, [inCall, identifying, client.name]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // A call listens to the microphone straight away when recording is on (real transcript, no script).
-  useEffect(() => { if (inCall && settings.record && canListen(!!status.transcribe) && !demo && !phone) setMic(true) }, [inCall, status.transcribe]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (inCall && settings.record && canListen(!!status.transcribe) && !script && !dialling && !phone) setMic(true) }, [inCall, status.transcribe]) // eslint-disable-line react-hooks/exhaustive-deps
   // (the internet call brings its own audio; see usePhoneAudio above) // eslint-disable-line react-hooks/exhaustive-deps
 
   useCallAudio(mic && inCall && settings.record && !phone, !!status.transcribe, (segments) => hearRef.current(segments), (error) => { setMic(false); if (error) setNote(error) })
@@ -207,6 +234,12 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
   }
 
   const select = (r: string) => { setRef(r); setInCall(false) }
+  const rankOf = useMemo(() => new Map(ranking.map((r) => [r.ref, r])), [ranking])
+  const roster = useMemo(() => {
+    const q = rosterQuery.trim().toLowerCase()
+    const shown = clients.filter((c) => !q || c.name.toLowerCase().includes(q) || c.ref.toLowerCase().includes(q))
+    return q ? shown : [...shown].sort((a, b) => (rankOf.get(b.ref)?.score ?? 0) - (rankOf.get(a.ref)?.score ?? 0))
+  }, [clients, rosterQuery, rankOf])
   const topSignal = (r: string) => signals.flatMap((s) => s.affected.filter((a) => a.ref === r).map((a) => ({ ...a, title: s.title }))).sort((a, b) => rank[a.severity] - rank[b.severity])[0]
   const chatSuggestions = useMemo(() => topicsFor(client).map((t) => t.label), [client])
 
@@ -222,18 +255,42 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
             </button>
           ) : (
             <>
-              <div className="flex shrink-0 items-center justify-end border-b border-line/60 px-1.5 py-1">
-                <button onClick={() => update({ clientsOpen: false })} aria-label="Kundenliste einklappen" title="Kundenliste einklappen" className="flex h-7 w-7 items-center justify-center rounded-full text-muted hover:bg-pill hover:text-ink"><PanelLeftClose size={15} /></button>
+              <div className="flex shrink-0 items-center gap-1 border-b border-line/60 px-1.5 py-1.5">
+                <label className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg bg-white/70 px-2 py-1 text-[12px] text-muted">
+                  <Search size={12} className="shrink-0" />
+                  <input value={rosterQuery} onChange={(e) => setRosterQuery(e.target.value)} placeholder="Name suchen …" aria-label="Kunden suchen" className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted" />
+                </label>
+                <button onClick={() => update({ clientsOpen: false })} aria-label="Kundenliste einklappen" title="Kundenliste einklappen" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted hover:bg-pill hover:text-ink"><PanelLeftClose size={15} /></button>
               </div>
               <ul className="min-h-0 flex-1 overflow-y-auto py-1.5">
-                {clients.map((c) => {
+                {callbacks.length > 0 && (
+                  <li className="px-3 pb-1 pt-1">
+                    <div className="mb-1 text-[10px] uppercase tracking-wide text-risk">Rückrufe</div>
+                    {callbacks.map((cb) => (
+                      <button key={cb.id} onClick={() => { onCallbackDone?.(cb.id); if (cb.ref) void callOut(cb.ref, false); else if (cb.demo) onSimulateCall(cb.demo) }}
+                        className="anim-rise mb-1 flex w-full items-start gap-2 rounded-lg bg-risk/10 px-2 py-1.5 text-left hover:bg-risk/15">
+                        <PhoneCall size={12} className="mt-0.5 shrink-0 text-risk" />
+                        <span className="min-w-0 flex-1"><span className="block truncate text-[12px]">{cb.label}</span><span className="block text-[10px] text-muted">{cb.at} · {cb.reason}</span></span>
+                      </button>
+                    ))}
+                  </li>
+                )}
+                {roster.map((c, i) => {
+                  const r = rankOf.get(c.ref)
+                  const top = r?.reasons[0]
                   const s = topSignal(c.ref)
-                  const severity = s?.severity ?? (c.errors ? 'risk' : c.warnings ? 'warn' : null)
+                  const severity = top?.severity ?? s?.severity ?? (c.errors ? 'risk' : c.warnings ? 'warn' : null)
+                  const today = !rosterQuery && r && i < TODAY
                   return (
-                    <li key={c.ref}>
-                      <button onClick={() => select(c.ref)} title={s?.title ?? c.profile} className={`flex w-full items-center gap-2.5 px-4 py-2 text-left text-[13px] transition-colors duration-200 ${c.ref === client.ref && !identifying ? 'bg-brand-soft/40 text-ink' : 'text-ink/75 hover:bg-brand-soft/20'}`}>
-                        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${severity === 'risk' ? 'bg-risk' : severity === 'warn' ? 'bg-warn' : 'bg-transparent'}`} />
-                        <span className="min-w-0 flex-1 truncate">{c.name}</span>
+                    <li key={c.ref} data-flip={c.ref}>
+                      {!rosterQuery && i === 0 && r && <div className="px-4 pb-1 pt-1 text-[10px] uppercase tracking-wide text-brand-dark">Heute anrufen</div>}
+                      {!rosterQuery && i === TODAY && <div className="mt-1 border-t border-line/60 px-4 pb-1 pt-2 text-[10px] uppercase tracking-wide text-muted">Alle Kunden</div>}
+                      <button onClick={() => select(c.ref)} title={top?.title ?? s?.title ?? c.profile} className={`flex w-full items-start gap-2.5 px-4 py-2 text-left text-[13px] transition-colors duration-200 ${c.ref === client.ref && !identifying ? 'bg-brand-soft/40 text-ink' : 'text-ink/75 hover:bg-brand-soft/20'}`}>
+                        <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${severity === 'risk' ? 'bg-risk' : severity === 'warn' ? 'bg-warn' : severity === 'ok' ? 'bg-ok' : 'bg-transparent'}`} />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate">{c.name}</span>
+                          {today && top && <span className="line-clamp-2 text-[10px] leading-snug text-muted">{top.kind === 'opportunity' ? 'Chance: ' : ''}{top.title}</span>}
+                        </span>
                       </button>
                     </li>
                   )
@@ -250,7 +307,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
                       {(['eingehend', 'ausgehend'] as const).map((dir) => (
                         <div key={dir}>
                           <div className="px-2 pb-0.5 pt-1.5 text-[10px] uppercase tracking-wide text-muted">{dir === 'eingehend' ? 'Eingehender Anruf' : 'Ausgehender Anruf'}</div>
-                          {demoCalls.filter((d) => d.direction === dir).map((d) => {
+                          {dir === 'eingehend' ? demoCalls.filter((d) => d.direction === dir).map((d) => {
                             const who = clients.find((c) => c.ref === d.ref)
                             return (
                               <button key={d.id} onClick={() => { setDemoMenu(false); onSimulateCall(d.id) }} className="flex w-full flex-col rounded-lg px-2 py-1.5 text-left hover:bg-brand-soft/40">
@@ -258,8 +315,13 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
                                 <span className="text-[11px] text-muted">{d.label}</span>
                               </button>
                             )
-                          })}
-                          {!demoCalls.some((d) => d.direction === dir) && <p className="px-2 py-1 text-[11px] text-muted">Folgt.</p>}
+                          }) : ranking.slice(0, 2).map((r) => (
+                            <button key={r.ref} onClick={() => void callOut(r.ref, true)} className="flex w-full flex-col rounded-lg px-2 py-1.5 text-left hover:bg-brand-soft/40">
+                              <span className="text-[12px]">{clients.find((c) => c.ref === r.ref)?.name ?? r.name ?? r.ref}</span>
+                              <span className="line-clamp-2 text-[11px] text-muted">{r.reasons[0]?.title ?? 'Heute an erster Stelle'}</span>
+                            </button>
+                          ))}
+                          {dir === 'ausgehend' && !ranking.length && <p className="px-2 py-1 text-[11px] text-muted">Rangliste lädt …</p>}
                         </div>
                       ))}
                     </div>
@@ -287,7 +349,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
             lead={
               <div className="flex min-w-0 shrink-0 items-baseline gap-2">
                 <span className="truncate text-[15px]">{client.name}</span>
-                <span className="flex items-center gap-1 text-[11px] text-muted"><span className={`h-1.5 w-1.5 rounded-full ${inCall ? 'animate-pulse bg-risk' : 'bg-track'}`} />{inCall ? 'Gespräch' : 'Vorbereitung'}</span>
+                <span className="flex items-center gap-1 text-[11px] text-muted"><span className={`h-1.5 w-1.5 rounded-full ${inCall ? 'animate-pulse bg-risk' : 'bg-track'}`} />{dialling ? 'Verbindet …' : inCall ? 'Gespräch' : 'Vorbereitung'}</span>
               </div>
             }
             actions={

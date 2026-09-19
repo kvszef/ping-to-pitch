@@ -27,7 +27,7 @@ Shared "what is done, what is open" board for the 60-second client briefing. Pla
 | A3 Memory | Ahmet | not started | – (no `server/memory*`, no call-note table in `phone/toolbox/schema.sql`) | Post-call draft → confirm → SQLite → `ctx.memory`. unknown – owner to confirm. |
 | A4 Ask-the-data chat | Kaushik | in progress | 9dd6731, be9906f, 53df718: chat under the graph column, answers through OpenAI from the client's data and the engine's findings, number-checked, with sources | Tools over the engine's data index (a transaction, a fee, one position's history) not built yet. |
 | N1 News matching | Arash | done | `server/market/`: web news per holding (Bing News RSS, no key), model judges relevance/importance/risk vs opportunity (tested with gpt-4o-mini; keyword rules without key), watcher refreshes all clients at server start and every 10 min, inbound refetches the caller's holdings (< 1 s warm, model gets 4 s for unseen articles), `/api/news/:ref`, `/api/news`, `/api/outbound`, `/api/news/status`, `news.hit` + news call reason in `/api/briefing?tier=slow`, offline snapshot | Fund contents only via the fund theme ("S&P 500"). Responses carry `fetchedAt` for a "Stand" label in the UI. `NEWS_WATCHER=off` in .env.local disables the watcher. |
-| N2 News on screen + inbound/outbound ranking | Kaushik | not started | – | News agent + feed, inbound news call reason on the banner and workspace, outbound "who to call today" ranking on Anrufe & Signale, internal tooling (agent tools, demo push of a news item). Build on mock `newsFeed`/`signals` until N1's endpoints land. |
+| N2 News on screen + inbound/outbound ranking | Kaushik | in progress | 071b396 news agent (Yahoo Finance + Bing, Google News blocked on this network) `/api/news-agent`; live news tile merging it with N1's `/api/news/:ref`; "Heute anrufen" ranking from `/api/outbound` in the client list; outbound demo calls on today's top two; call waiting with a callback list | Demo control to push a news item live. |
 | N3 Ex-custody PDF | free hands | not started | – (sample PDFs sit in `side-challenge/`) | PDF → virtual portfolio → same engine path. |
 | U1 Real data in the UI | Kaushik | done | b85ab39 … 9f92d36, 53df718: real client list only (samples are the offline fallback), engine briefing in the Briefing page and the workspace, tier skeletons, upload | Rehearse from a fresh clone. |
 | U2 New cards | Kaushik | in progress | af7f990, dfddd55, a1f6f2d: contradiction, look-through, stale note, profile, peers, to-do, call-note cards; engine sends real ones via /api/briefing | Click-to-source on every card. |
@@ -57,6 +57,7 @@ Shared "what is done, what is open" board for the 60-second client briefing. Pla
 
 ## Log
 
+- 2026-09-19 · Kaushik · N2/U3: inbound demo calls with caller recognition, outbound ranking and demo calls, call waiting, live news tile
 - 2026-09-19 · Arash (Claude) · N1: news watcher keeps news at most 10 min old; calls answer from cache in 0.3 s, tested with the real model
 - 2026-09-19 · Arash (Claude) · N1: news agent searches the web per holding, inbound news + outbound ranking endpoints for Kaushik's N2
 - 2026-09-19 · Arash (Claude) · News split: N1 matching stays with Arash, N2 news on screen + inbound/outbound ranking + internal tooling moves to Kaushik; contract in PLAN.md

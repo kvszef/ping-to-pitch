@@ -1,4 +1,4 @@
-import { ChevronDown, Compass, Ear, Phone, PhoneOff } from 'lucide-react'
+import { ChevronDown, Clock, Compass, Ear, Phone, PhoneOff } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Client, IncomingCall, Signal } from '../types'
 import type { Slot } from './types'
@@ -31,7 +31,20 @@ function Fact({ label, value }: { label: string; value: string }) {
   return <div className="min-w-0"><div className="text-[10px] uppercase tracking-wide text-white/45">{label}</div><div className="truncate text-xs">{value}</div></div>
 }
 
-export function RingingIsland({ client, call, signal, onAccept, onDecline }: { client?: Client; call: IncomingCall; signal?: Signal; onAccept: () => void; onDecline: () => void }) {
+// While the advisor is on another call: a knock ("Anklopfen") with the choice to note a callback
+// or to end the current call and take this one.
+function Knock({ busyWith, onLater, onAccept }: { busyWith: string; onLater: () => void; onAccept: () => void }) {
+  return (
+    <div className="island-stagger mx-3 mb-3 flex flex-wrap items-center gap-2 rounded-[18px] bg-white/[0.07] p-2.5 text-xs">
+      <span className="w-full text-white/70">Anklopfen: Sie sprechen gerade mit <span className="text-white">{busyWith}</span>.</span>
+      <button onClick={onLater} className="ml-auto flex items-center gap-1 rounded-full bg-warn px-3 py-1.5 text-[11px] text-ink transition-transform hover:scale-105"><Clock size={12} /> Rückruf vormerken</button>
+      <button onClick={onAccept} className="rounded-full bg-ok px-3 py-1.5 text-[11px] text-white transition-transform hover:scale-105">Beenden &amp; annehmen</button>
+    </div>
+  )
+}
+
+export function RingingIsland({ client, call, signal, onAccept, onDecline, busyWith, onLater }: { client?: Client; call: IncomingCall; signal?: Signal; onAccept: () => void; onDecline: () => void; busyWith?: string; onLater?: () => void }) {
+  const knock = busyWith && onLater ? <Knock busyWith={busyWith} onLater={onLater} onAccept={onAccept} /> : null
   if (!client) return (
     <Island width={420} radius={30}>
       <div className="flex items-center gap-3 p-4">
@@ -44,6 +57,7 @@ export function RingingIsland({ client, call, signal, onAccept, onDecline }: { c
         <button onClick={onDecline} aria-label="Ablehnen" className="flex h-10 w-10 items-center justify-center rounded-full bg-risk transition-transform hover:scale-110"><PhoneOff size={16} /></button>
         <button onClick={onAccept} aria-label="Annehmen" className="flex h-10 w-10 items-center justify-center rounded-full bg-ok transition-transform hover:scale-110"><Phone size={16} /></button>
       </div>
+      {knock}
     </Island>
   )
   const headline = client.briefing.find((c) => c.type === 'headline')
@@ -87,6 +101,7 @@ export function RingingIsland({ client, call, signal, onAccept, onDecline }: { c
           </ol>
         ) : <p className="mt-1.5 text-[11px] text-white/50">{signal ? `Vermuteter Anlass: ${signal.title}` : call.reason}</p>}
       </div>
+      {knock}
     </Island>
   )
 }

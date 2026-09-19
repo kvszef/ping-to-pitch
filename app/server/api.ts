@@ -82,6 +82,24 @@ Schema: {"supported": boolean, "text": string, "sources": string[], "module": {"
   ]
 }
 
+// A demo conversation for an outbound call, written on the spot from the client's data and today's
+// reasons to call (the ranking changes with the news, so no fixed script can fit). Figures only from
+// the context; the client's side is realistic but invented and marked as a demo in the UI.
+function demoScriptPrompt(p: { context: unknown; reasons: unknown }): Message[] {
+  return [
+    { role: 'system', content: `${RULES}
+Schreibe ein realistisches, kurzes Telefongespräch (8 bis 10 Beiträge, abwechselnd) zwischen einem Kundenberater einer Schweizer Bank und seinem Kunden. Der Berater ruft an. Sein ERSTER Beitrag begrüsst in einem Satz und nennt dann ausdrücklich GRUND 1 aus GRÜNDE (die Nachricht oder den Befund mit der Position und ihrem Anteil) als Anlass des Anrufs. Übernimm keine vorformulierten Einstiegssätze aus dem Kontext. Der Kunde reagiert natürlich, stellt Rückfragen, zum Schluss wird ein konkreter nächster Schritt vereinbart.
+- Hochdeutsch in Schweizer Schreibweise, Sie-Form, kurze gesprochene Sätze (höchstens 30 Wörter pro Beitrag).
+- Jede Zahl muss wörtlich in KUNDENKONTEXT oder GRÜNDE stehen. Keine Namen von Personen.
+Schema: {"script": [{"speaker": "Berater" | "Kunde", "text": string}]}` },
+    { role: 'user', content: `KUNDENKONTEXT:
+${JSON.stringify(p.context)}
+
+GRÜNDE:
+${JSON.stringify(p.reasons)}` },
+  ]
+}
+
 // The screen agent: picks from the catalogue of UI elements what the advisor sees right now.
 // Called when a client opens and on every new piece of transcript. Elements carry their own
 // numbers; the agent only chooses, orders and shortens, and writes three talking points.
@@ -206,6 +224,7 @@ export function api(env: Env): Plugin {
           const p = JSON.parse(raw.toString('utf8'))
           const provider: Provider = p.provider === 'apertus' ? 'apertus' : 'openai'
           if (req.url === '/api/chat') return send(res, 200, await complete(env, provider, false, chatPrompt(p)))
+          if (req.url === '/api/demo-script') return send(res, 200, await complete(env, provider, false, demoScriptPrompt(p)))
           if (req.url === '/api/agent') return send(res, 200, await complete(env, provider, true, agentPrompt(p)))
           if (req.url === '/api/analyse') return send(res, 200, await complete(env, provider, true, analysePrompt(p)))
           send(res, 404, { error: 'Unbekannter Pfad' })

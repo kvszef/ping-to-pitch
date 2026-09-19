@@ -12,6 +12,9 @@ export type ClientFacts = {
   }
   risk?: { volatility: number; expectedReturn: number; valueAtRisk: number }
   positions: { name: string; share: number; currency: string; riskShare?: number }[]
+  // Same shape, uncapped: `positions` above is top 5 for cards and charts, this is every position the
+  // client holds, so "how much of X does this client have" can be answered even below the top 5.
+  allPositions: { name: string; share: number; currency: string; riskShare?: number }[]
   positionCount: number
   currencies: { label: string; share: number }[]
   liquidityShare?: number
@@ -130,6 +133,7 @@ export function factsFromRaw(input: unknown): ClientFacts {
     performance: performance(portfolios),
     risk: main && num(main.Volatility) > 0 ? { volatility: pct(num(main.Volatility)), expectedReturn: pct(num(main.ExpectedReturn)), valueAtRisk: pct(num(main.ValueAtRisk)) } : undefined,
     positions: positions.slice(0, 5),
+    allPositions: positions,
     positionCount: positions.length,
     currencies: [...currencies.entries()].map(([label, share]) => ({ label, share: pct(share) })).filter((c) => c.share >= 0.5).sort((a, b) => b.share - a.share).slice(0, 6),
     liquidityShare: aum > 0 ? pct(num(raw.LiquidityInDefaultCurrency) / aum) : undefined,

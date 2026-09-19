@@ -13,7 +13,7 @@ import { useBriefing } from './data/useBriefing'
 import type { Card, Client, IncomingCall } from './types'
 import * as deskLine from './phone/deskLine'
 import { RingingIsland } from './workspace/CallIsland'
-import { Workspace } from './workspace/Workspace'
+import { Workspace, type Callback } from './workspace/Workspace'
 
 type Page = 'kunden' | 'signale'
 
@@ -66,13 +66,23 @@ export default function App() {
 
   const open = (r: string, asCall = false) => { setRef(r); setLive(asCall) }
   const home = (p: Page) => { setRef(null); setLive(false); setPage(p) }
+  // Calls that came in during another call wait here for a callback; the workspace reports whether a call is on.
+  const [callbacks, setCallbacks] = useState<Callback[]>([])
+  const [onCall, setOnCall] = useState<{ inCall: boolean; name: string } | null>(null)
+  const later = () => {
+    if (!call) return
+    const at = new Date().toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })
+    setCallbacks((list) => [{ id: `${call.demo ?? call.ref}-${Date.now()}`, ref: call.ref || undefined, demo: call.demo, label: caller?.name ?? 'Unbekannte Nummer', reason: call.reason || 'Anruf', at }, ...list])
+    if (deskLine.getLine().state === 'ringing') deskLine.decline()
+    setCall(null)
+  }
   const [session, setSession] = useState<{ n: number; ref?: string; call?: boolean; demo?: string }>({ n: 0, ref: demoCall ? hash[2] : undefined, call: demoCall })
   // Ein angenommener Anruf öffnet den Arbeitsplatz mit dem Kunden und laufendem Gespräch.
   const accept = () => { if (!call) return; setSession((s) => ({ n: s.n + 1, ref: call.ref || undefined, call: true, demo: call.demo })); setCall(null); home('signale') }
 
   const signalsItem: ToolItem = { label: 'Anrufe & Signale', icon: Radio, badge: call ? 1 : undefined, badgeTone: 'red', active: !client && page === 'signale', onClick: () => home('signale') }
   // An unknown number rings without client details; the name is picked up from the conversation.
-  const banner = call && (caller || !call.ref) && <RingingIsland client={caller} call={call} onAccept={() => { if (deskLine.getLine().state === 'ringing') void deskLine.accept(); accept() }} onDecline={() => { deskLine.decline(); setCall(null) }} />
+  const banner = call && (caller || !call.ref) && <RingingIsland client={caller} call={call} busyWith={onCall?.name} onLater={later} onAccept={() => { if (deskLine.getLine().state === 'ringing') void deskLine.accept(); accept() }} onDecline={() => { deskLine.decline(); setCall(null) }} />
 
   // Deep link to a client that only the engine knows: wait for the list before falling back to the dashboard.
   if (!client && ref && !listed) {
@@ -99,7 +109,8 @@ export default function App() {
         ]} />
         {page === 'kunden'
           ? <Dashboard clients={clients} onUploaded={refresh} />
-          : listed ? <Workspace key={session.n} clients={clients} signals={[]} initialRef={session.ref} initialCall={session.call} initialDemo={session.demo} onSimulateCall={ring} onOpenBriefing={open} />
+          : listed ? <Workspace key={session.n} clients={clients} signals={[]} initialRef={session.ref} initialCall={session.call} initialDemo={session.demo} onSimulateCall={ring} onOpenBriefing={open}
+            callbacks={callbacks} onCallbackDone={(id) => setCallbacks((list) => list.filter((c) => c.id !== id))} onCallState={setOnCall} />
           : <div className="p-3"><CardSkeleton label="Kunden werden geladen" /></div>}
         {banner}
       </div>
