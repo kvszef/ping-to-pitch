@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Plugin } from 'vite'
-import { appBriefing, briefing60, briefingClients, uploadClients } from './ai/briefing-route.ts'
+import { appBriefing, briefing60, briefingClients, uploadClients, uploadedClients } from './ai/briefing-route.ts'
 import { briefingNews, clientNews, newsFeed, newsStatus, outbound, pushNews, snapshotNews, startNewsWatcher } from './market/route.ts'
 import { callRoute } from './call.ts'
 import { newsAgentRoute } from './ai/news-agent.ts'
@@ -11,7 +11,6 @@ import { importRoute } from './import/route.ts'
 import { askData, chatWithData } from './ai/chat-route.ts'
 import { dataStatus, loadData } from './database.ts'
 import { langOf, type Lang } from '../engine/lang.ts'
-import { narrativePrompt } from './ai/narrative.ts'
 import { guardTranslation } from './ai/translate-guard.ts'
 import { narrativePrompt } from './ai/narrative.ts'
 
@@ -203,10 +202,12 @@ ${english('"customer.text", "customer.why", "customer.topic", "advisor.text", "a
   ]
 }
 
-// The clients as the database holds them, minus every account field that can hold an IBAN or an
-// account name: this goes to the browser, and the IBANs in the data are real.
+// The clients as the database holds them plus the files uploaded in this session (an upload replaces a case
+// client with the same ClientRef), minus every account field that can hold an IBAN or an account name:
+// this goes to the browser, and the IBANs in the data are real. The phone page picks its caller from this list.
 async function caseClients(): Promise<unknown[]> {
-  const { clients } = await loadData()
+  const extra = uploadedClients()
+  const clients = [...(await loadData()).clients.filter((c) => !extra.some((u) => u.ClientRef === (c as { ClientRef?: unknown }).ClientRef)), ...extra]
   const strip = (v: unknown): unknown => {
     if (Array.isArray(v)) return v.map(strip)
     if (typeof v !== 'object' || v === null) return v
@@ -318,7 +319,6 @@ export function api(env: Env): Plugin {
           if (req.url === '/api/chat') return send(res, 200, await chatWithData(p, provider, providerConfig(env, provider, false), chatPrompt(p), (m) => complete(env, provider, false, m)))
           if (req.url === '/api/chat/data') return send(res, 200, await askData(p))
           if (req.url === '/api/summary') return send(res, 200, await complete(env, provider, true, summaryPrompt(p)))
-          if (req.url === '/api/narrative') return send(res, 200, await complete(env, provider, true, narrativePrompt(p)))
           if (req.url === '/api/narrative') return send(res, 200, await complete(env, provider, true, narrativePrompt(p)))
           if (req.url === '/api/translate') {
             if (!Array.isArray(p.texts) || !p.texts.length) return send(res, 200, { texts: [] })

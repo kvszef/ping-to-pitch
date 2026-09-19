@@ -141,6 +141,9 @@ function peersOf(clients: Record<string, unknown>[], index: ReferenceIndex): Pee
   return peerCache
 }
 
+/** The client files uploaded in this server session, for every list that must show them (client list, phone). */
+export const uploadedClients = (): Record<string, unknown>[] => [...uploaded.values()]
+
 export function uploadClients(body: Buffer, lang?: Lang) {
   const data: unknown = JSON.parse(body.toString('utf8') || 'null')
   // The body is the client file itself; a wrapper object may name the language, else the caller passes it (?lang).

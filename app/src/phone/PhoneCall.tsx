@@ -105,14 +105,18 @@ export default function PhoneCall() {
 
   const go = (p: Phase) => { phaseRef.current = p; setPhase(p) }
 
-  // Load clients and server capabilities once.
+  // Load clients and server capabilities. The client list is re-read while the phone is idle, so client
+  // files uploaded at the desk during the demo show up here without reloading the page.
   useEffect(() => {
-    fetch('/api/clients').then((r) => r.json()).then((data: unknown) => {
+    const loadClients = (first: boolean) => fetch('/api/clients', { cache: 'no-store' }).then((r) => r.json()).then((data: unknown) => {
       const list = (Array.isArray(data) ? data : []).map((c) => labelOf(c as Record<string, unknown>)).filter((x): x is ClientOption => !!x)
-      setClients(list)
+      setClients((cur) => (cur.length === list.length && cur.every((c, i) => c.ref === list[i].ref) ? cur : list))
       setRef((cur) => (cur && list.some((c) => c.ref === cur)) ? cur : (list.find((c) => c.ref === DEFAULT_REF)?.ref ?? list[0]?.ref ?? cur))
-    }).catch(() => setError('errClients'))
+    }).catch(() => { if (first) setError('errClients') })
+    void loadClients(true)
+    const again = window.setInterval(() => { if (phaseRef.current === 'idle') void loadClients(false) }, 8000)
     fetch('/api/status').then((r) => r.json()).then((s: { transcribe?: boolean; callLanguage?: string }) => { setTranscribe(s.transcribe !== false); setLanguage(s.callLanguage === 'de' ? 'de' : 'en'); log(`status transcribe=${s.transcribe}`) }).catch((e) => { setTranscribe(null); log(`status failed ${e}`) })
+    return () => window.clearInterval(again)
   }, [])
 
   useEffect(() => {

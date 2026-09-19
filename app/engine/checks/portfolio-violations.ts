@@ -12,7 +12,8 @@ const TOPIC = 'violations'
 // Path fields that carry a portfolio share or a volatility (seen in clients.json: "...PortfolioValueRuleField", "SimulationVolatilityRuleField").
 const VALUE_FIELD = /PortfolioValue|Volatility/
 // Title for violations whose PortfolioId is not among the client's portfolios (27 in clients.json).
-const UNKNOWN_PORTFOLIO = 'Portfolio unbekannt', UNKNOWN_PORTFOLIO_EN = 'Portfolio unknown'
+// The bank's violation list also names portfolios that are not part of the client file (27 cases in the data).
+const UNKNOWN_PORTFOLIO = 'Portfolio nicht in der Datei', UNKNOWN_PORTFOLIO_EN = 'Portfolio not in this file'
 const NO_PATH = 'Details der Regelprüfung fehlen in den Daten.', NO_PATH_EN = 'The details of the rule run are missing from the data.'
 
 // Override rule codes are not in ruleText; the two seen in clients.json are translated here.

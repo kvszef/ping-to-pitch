@@ -39,7 +39,7 @@ describe('portfolio.violations', () => {
   })
 
   it('still reports violations on portfolios the client file does not list', () => {
-    const f = violations(client('CASE-038'), ctx).filter((x) => x.title.startsWith('Portfolio unbekannt'))
+    const f = violations(client('CASE-038'), ctx).filter((x) => x.title.startsWith('Portfolio nicht in der Datei'))
     expect(f.length).toBeGreaterThan(0)
   })
 
@@ -66,6 +66,6 @@ describe('portfolio.violations', () => {
     // A rule name the German side does not know either stays a quote from the data.
     const c12 = violations(client('CASE-012'), en)
     expect(c12.find((x) => x.title.includes('«Anlagevorschlag ohne Auftraggeber»'))!.detail).toBe('The details of the rule run are missing from the data.')
-    expect(violations(client('CASE-038'), en).some((x) => x.title.startsWith('Portfolio unknown: '))).toBe(true)
+    expect(violations(client('CASE-038'), en).some((x) => x.title.startsWith('Portfolio not in this file: '))).toBe(true)
   })
 })
