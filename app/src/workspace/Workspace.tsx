@@ -382,6 +382,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
             }
             chat={chat} busy={busy} detail={settings.detail} chatSuggestions={chatSuggestions} onAsk={ask}
             graphsOpen={settings.graphsOpen} onGraphs={(open) => update({ graphsOpen: open })}
+            graphWidth={settings.graphWidth} onGraphWidth={(width) => update({ graphWidth: width })}
             onShowChart={(id) => setChat((c) => c.map((e) => (e.id === id && e.role === 'ki' && e.offered ? { ...e, module: e.offered.spec, offered: undefined } : e)))} />
           )}
         </section>

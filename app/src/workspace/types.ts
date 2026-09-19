@@ -13,6 +13,7 @@ export type Settings = {
   chatOpen: boolean // chat pane expanded or folded into a slim strip
   clientsOpen: boolean // client list expanded or folded into a slim strip
   graphsOpen: boolean // graph column shown, or folded so the text side gets the full width
+  graphWidth?: number // custom width of the open graph column in px; unset = the default 40% of the row
 }
 
 export type Bar = { label: string; value: number; min?: number; max?: number }

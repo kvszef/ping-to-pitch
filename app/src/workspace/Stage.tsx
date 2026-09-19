@@ -1,5 +1,5 @@
 import { BarChart3, Ear, PanelRightClose, PanelRightOpen, Pin, Sparkles, Timer } from 'lucide-react'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { SeverityIcon } from '../cards/ui'
 import type { Client } from '../types'
 import type { Screen } from './brain'
@@ -99,12 +99,12 @@ function Profile({ client, compact = false }: { client: Client; compact?: boolea
   )
 }
 
-export function Stage({ client, screen, plan, thinking, inCall, recording, lines, pending, note, hints, freshNews, lead, actions, chat, busy, detail, chatSuggestions, onAsk, onShowChart, graphsOpen, onGraphs }: {
+export function Stage({ client, screen, plan, thinking, inCall, recording, lines, pending, note, hints, freshNews, lead, actions, chat, busy, detail, chatSuggestions, onAsk, onShowChart, graphsOpen, onGraphs, graphWidth, onGraphWidth }: {
   client: Client; screen: Screen; plan: Plan; thinking: boolean
   inCall: boolean; recording: boolean; lines: TranscriptLine[]; pending: string[]; note: string | null; hints: Hint[]; freshNews: Set<string>
   lead: ReactNode; actions: ReactNode
   chat: ChatEntry[]; busy: boolean; detail: Detail; chatSuggestions: string[]; onAsk: (text: string) => void; onShowChart: (id: string) => void
-  graphsOpen: boolean; onGraphs: (open: boolean) => void
+  graphsOpen: boolean; onGraphs: (open: boolean) => void; graphWidth?: number; onGraphWidth: (width: number) => void
 }) {
   const byId = useMemo(() => new Map(screen.tiles.map((t) => [t.id, t])), [screen.tiles])
   const chartById = useMemo(() => new Map(screen.charts.map((c) => [c.id, c])), [screen.charts])
@@ -173,9 +173,18 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
   }, [pins, byId, chartById, client.ref, plan.texts])
   useEffect(() => {
     const next = wanted.map(toWidget).filter((w): w is Widget => !!w)
+    const nextById = new Map(next.map((w) => [w.id, w]))
     setShown((prev) => {
-      const gone = prev.filter((p) => !p.leaving && !next.some((n) => n.id === p.id)).map((p) => ({ ...p, leaving: true }))
-      return [...next, ...gone]
+      // A removed widget stays in its current slot (marked leaving) instead of jumping to the end
+      // of the grid first: that jump used to fight the FLIP glide on the same transform, which is
+      // what made un-pinning look glitchy. Only a genuinely new widget is appended at the end.
+      const kept = prev.flatMap((p) => {
+        const fresh = nextById.get(p.id)
+        if (fresh) return [fresh]
+        return p.leaving ? [p] : [{ ...p, leaving: true }]
+      })
+      const seen = new Set(kept.map((w) => w.id))
+      return [...kept, ...next.filter((w) => !seen.has(w.id))]
     })
     const t = setTimeout(() => setShown((s) => s.filter((w) => !w.leaving)), 320)
     return () => clearTimeout(t)
@@ -185,7 +194,8 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
   const removeWidget = (key: string) => { setPins((p) => p.filter((x) => x !== key)); setDismissed((d) => (d.includes(key) ? d : [...d, key])) }
 
   const dock = usePresence(inCall, 450)
-  // Open graph column: 2/5 of the row (the text side gets 3/5), measured so the width can animate.
+  // Open graph column: 2/5 of the row by default (the text side gets 3/5), measured so the width can
+  // animate; the advisor can drag it wider or narrower (the handle below), clamped and remembered.
   const row = useRef<HTMLDivElement>(null)
   const [rowWidth, setRowWidth] = useState(1200)
   useLayoutEffect(() => {
@@ -196,7 +206,25 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
     setRowWidth(el.clientWidth)
     return () => watch.disconnect()
   }, [])
-  const openWidth = Math.round((rowWidth - 12) * 0.4)
+  const MIN_GRAPH_WIDTH = 260
+  const maxGraphWidth = Math.max(MIN_GRAPH_WIDTH, Math.round(rowWidth * 0.7))
+  const defaultWidth = Math.round((rowWidth - 12) * 0.4)
+  const openWidth = Math.min(maxGraphWidth, Math.max(MIN_GRAPH_WIDTH, graphWidth ?? defaultWidth))
+  const [dragging, setDragging] = useState(false)
+  const startResize = (e: ReactPointerEvent) => {
+    e.preventDefault()
+    setDragging(true)
+    const startX = e.clientX
+    const startWidth = openWidth
+    const onMove = (ev: PointerEvent) => {
+      // The panel is anchored to the right edge, so dragging left (negative dx) widens it.
+      const next = Math.min(maxGraphWidth, Math.max(MIN_GRAPH_WIDTH, startWidth + (startX - ev.clientX)))
+      onGraphWidth(next)
+    }
+    const onUp = () => { setDragging(false); window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp) }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
   const graphs = usePresence(graphsOpen, 450)
   const total = tiles.reduce((n, t) => n + t.seconds, 0)
   const done = tiles.slice(0, focusIdx + 1).reduce((n, t) => n + t.seconds, 0)
@@ -247,9 +275,16 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
           </Smooth>
         </div>
 
+        {/* Drag to resize the graph column; only while it is open (the folded 44px strip is fixed). */}
+        {graphsOpen && (
+          <button onPointerDown={startResize} aria-label="Breite der Grafikspalte ziehen" title="Ziehen zum Grössern/Verkleinern"
+            className={`group my-1 w-1.5 shrink-0 cursor-col-resize touch-none rounded-full bg-transparent transition-colors ${dragging ? 'bg-brand/40' : 'hover:bg-brand/25'}`}>
+            <span className="sr-only">Grafikspalte grösser oder kleiner ziehen</span>
+          </button>
+        )}
         {/* Width in pixels, so it can animate (fr to px cannot); the panel keeps its open width while the
             column narrows, so the graphs do not reflow mid-animation. */}
-        <div className="relative min-h-0 shrink-0 overflow-hidden transition-[width] duration-500 ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none" style={{ width: graphsOpen ? openWidth : 44 }}>
+        <div className={`relative min-h-0 shrink-0 overflow-hidden ${dragging ? '' : 'transition-[width] duration-500 ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none'}`} style={{ width: graphsOpen ? openWidth : 44 }}>
           {graphs.mounted && (
             <div style={{ width: openWidth }} className={`absolute inset-y-0 right-0 origin-right transition-[opacity,transform] duration-[450ms] ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none ${graphs.visible ? 'scale-100 opacity-100' : 'pointer-events-none scale-[0.97] opacity-0'}`}>
               <div className={`absolute inset-0 overflow-y-auto p-3 pb-16 [scrollbar-width:none] ${GLASS}`}>
