@@ -41,8 +41,8 @@ function parseJson(text: string) {
   return JSON.parse(text.slice(start, end + 1))
 }
 
-async function complete(env: Env, provider: Provider, fast: boolean, messages: Message[]) {
-  const c = providerConfig(env, provider, fast)
+async function complete(env: Env, provider: Provider, fast: boolean, messages: Message[], model?: string) {
+  const c = { ...providerConfig(env, provider, fast), ...(model && provider === 'openai' ? { model } : {}) }
   if (!c.url || !c.key || !c.model) throw new Error(`Anbieter «${provider}» ist nicht konfiguriert`)
   const r = await fetch(`${c.url.replace(/\/$/, '')}/chat/completions`, {
     method: 'POST',
@@ -125,16 +125,19 @@ ${JSON.stringify(p.reasons)}` },
 // numbers; the agent only chooses, orders and shortens, and writes three talking points.
 function agentPrompt(p: { context: unknown; catalogue: unknown; tiles: unknown; charts: unknown; transcript: unknown[]; segments?: unknown[]; said: unknown[]; event: string }): Message[] {
   const live = Array.isArray(p.segments) && p.segments.length > 0
+  // An internet call knows who speaks, so the model need not return the segments with roles (less output, faster).
+  const roles = live && !(p.segments as { speaker?: string }[]).every((x) => x?.speaker === 'Kunde' || x?.speaker === 'Berater')
   return [
     { role: 'system', content: `${RULES}
 Du steuerst den Bildschirm eines Kundenberaters${live ? ' während eines laufenden Telefongesprächs' : ' vor dem Gespräch'}. Du wählst aus dem KATALOG, was er jetzt sieht, damit er in 60 Sekunden das Wichtigste weiss und im Gespräch immer das Passende vor Augen hat.
 KATALOG: ${JSON.stringify(p.catalogue)}
-Schema: {"tiles": [{"id": string, "text"?: string}], "focus": string | null, "widgets": [string], "suggestions": [{"label": string, "text": string, "tile": string}], "answer": {"heard": string, "text": string} | null${live ? ', "segments": [{"speaker": "Kunde" | "Berater", "text": string}], "covered": [string], "cardOrder": [string]' : ''}}
+Schema: {"tiles": [{"id": string, "text"?: string}], "focus": string | null, "widgets": [string], "suggestions": [{"label": string, "text": string, "tile": string}], "answer": {"heard": string, "text": string} | null${roles ? ', "segments": [{"speaker": "Kunde" | "Berater", "text": string}]' : ''}${live ? ', "covered": [string]' : ''}}
 - Verwende nur ids aus KACHELN und GRAFIKEN. "focus" ist eine id, kein Text.
 - ${live ? 'Richte "focus", "widgets" und "suggestions" nach dem, was zuletzt gesagt wurde. Greife das Anliegen des Kunden auf; wiederhole nichts aus GESAGT.' : 'Vor dem Gespräch: "focus" ist die wichtigste Kachel, "suggestions" sind die drei besten Einstiege.'}
-${live ? `- "segments": die NEUEN ABSCHNITTE in Reihenfolge mit Rolle. Der Berater erklärt und schlägt vor; der Kunde fragt und schildert. Nichts hinzufügen.
-- "covered": Texte AUS KUNDENKONTEXT.briefing, Karte vom Typ "talktrack" (Felder open/mention/ask), wörtlich übernommen, die im bisherigen und neuen Gespräch bereits angesprochen wurden. Sonst leer.
-- "cardOrder": Kartentypen aus KUNDENKONTEXT.briefing (z. B. "flags", "contradiction", "stalenote", "profile", "todos"), die jetzt im Gespräch am wichtigsten sind, wichtigste zuerst. Nur Typen, die tatsächlich in KUNDENKONTEXT.briefing vorkommen.
+${live ? `- Das Gespräch kann auf Englisch oder Deutsch geführt werden; verstehe es sinngemäss, deine Texte bleiben Deutsch.
+- Äussert der KUNDE in den NEUEN ABSCHNITTEN eine Frage, einen Wunsch oder einen Auftrag (auch allgemein wie «Wie läuft mein Portfolio?» oder «Reduzieren Sie meine Positionen»), dann gilt zwingend: "focus" = die am besten passende Kachel, "widgets" = ein bis drei passende Einträge ("chart:<id>" aus GRAFIKEN oder "tile:<id>" aus KACHELN, das Passendste zuerst, nie leer), "answer" = {"heard": die Aussage des Kunden, "text": Stichpunkt für die Antwort des Beraters mit den passenden Zahlen aus dem Kontext, höchstens 20 Wörter}. Allgemeine Fragen zum Stand des Portfolios beantwortet die Wertentwicklung. Nur bei Begrüssung und Belanglosem bleiben "focus" und "widgets" unverändert und "answer" null.
+${roles ? `- "segments": die NEUEN ABSCHNITTE in Reihenfolge mit Rolle. Der Berater erklärt und schlägt vor; der Kunde fragt und schildert. Nichts hinzufügen.
+` : ''}- "covered": Texte AUS KUNDENKONTEXT.briefing, Karte vom Typ "talktrack" (Felder open/mention/ask), wörtlich übernommen, die im bisherigen und neuen Gespräch bereits angesprochen wurden. Sonst leer.
 ` : ''}- Jede Zahl, die du schreibst, muss wörtlich in KUNDENKONTEXT, KACHELN oder GRAFIKEN stehen.` },
     { role: 'user', content: `KUNDENKONTEXT:\n${JSON.stringify(p.context)}\n\nKACHELN:\n${JSON.stringify(p.tiles)}\n\nGRAFIKEN:\n${JSON.stringify(p.charts)}\n\nBISHERIGES GESPRÄCH:\n${JSON.stringify(p.transcript ?? [])}\n\nNEUE ABSCHNITTE:\n${JSON.stringify(p.segments ?? [])}\n\nGESAGT:\n${JSON.stringify(p.said ?? [])}\n\nEREIGNIS: ${p.event}` },
   ]
@@ -264,7 +267,8 @@ export function api(env: Env): Plugin {
           if (req.url === '/api/chat/data') return send(res, 200, await askData(p))
           if (req.url === '/api/summary') return send(res, 200, await complete(env, provider, true, summaryPrompt(p)))
           if (req.url === '/api/demo-script') return send(res, 200, await complete(env, provider, false, demoScriptPrompt(p)))
-          if (req.url === '/api/agent') return send(res, 200, await complete(env, provider, true, agentPrompt(p)))
+          // The screen agent decides what the advisor sees mid-call: it may run on a stronger model than the other fast calls.
+          if (req.url === '/api/agent') return send(res, 200, await complete(env, provider, true, agentPrompt(p), env.OPENAI_MODEL_AGENT))
           if (req.url === '/api/analyse') return send(res, 200, await complete(env, provider, true, analysePrompt(p)))
           send(res, 404, { error: 'Unbekannter Pfad' })
         } catch (e) {
