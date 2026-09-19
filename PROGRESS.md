@@ -25,13 +25,13 @@ Shared "what is done, what is open" board for the 60-second client briefing. Pla
 | A1 Briefing writer | Arash | done (AI wording untested with a real key) | 455cfba composer on `run()` + reading page `/briefing.html` (`/api/briefing60`); 7433c23 main app wired: `GET /api/briefing/:ref?tier=` answers in the UI card format (talktrack, metrics, context, engine flags, contradiction with fix, stalenote, profile, todos, questions, actions), `POST /api/clients/upload` keeps uploaded files server-side so demo files get the engine briefing too; 21 tests in `app/server/ai/*.test.ts` | Try with an OpenAI/Apertus key in `app/.env.local` (phrased talk track arrives as tier `fast`, number-checked). Delete `provisional-findings.ts` once E2/E3/E4 land. `briefing.html` is dev-only (not in `npm run build`). |
 | A2 Live call copilot | Ahmet | in progress | cf59e72, f78af13, 22e98db, 2e2d6a4, 70f2792, cbdb5b0, 10b3233, 418bf2a, 9511ffb, 2033021: `phone/` with Vapi number, live transcript, copilot event bus, SQLite loader, cXML bridge (SignalWire/Twilio) | Lives in `phone/`, not `app/server/ai/call*` as PLAN.md says; call to-dos and "show the data being talked about" in the app: unknown – owner to confirm. |
 | A3 Memory | Ahmet | not started | – (no `server/memory*`, no call-note table in `phone/toolbox/schema.sql`) | Post-call draft → confirm → SQLite → `ctx.memory`. unknown – owner to confirm. |
-| A4 Ask-the-data chat | Kaushik | in progress | 9dd6731 chat as slide-in panel (`ChatDock.tsx`); 1dd3e32 concrete sentences with figures | Tools over the engine's data index with source per answer: unknown – owner to confirm. |
+| A4 Ask-the-data chat | Kaushik | in progress | 9dd6731, be9906f, 53df718: chat under the graph column, answers through OpenAI from the client's data and the engine's findings, number-checked, with sources | Tools over the engine's data index (a transaction, a fee, one position's history) not built yet. |
 | N1 News + CIO view | Arash | not started | – | Sample news file, embedding match to holdings incl. fund contents → `Signal[]`. |
 | N2 Outbound mode | free hands | not started | – | Rank clients by findings into "who to call today". |
 | N3 Ex-custody PDF | free hands | not started | – (sample PDFs sit in `side-challenge/`) | PDF → virtual portfolio → same engine path. |
-| U1 Real data in the UI | Kaushik | in progress | b85ab39, 6239647, 57cacc9, 8023ac6, efa6d98, 937944b, 9f92d36, fa31746, e573e5e: raw files → briefing, data source with engine API + local fallback, tier skeletons, upload, search/pager | Engine endpoint now answers (7433c23); `main` typecheck fails in `src/workspace/Workspace.tsx` (`Settings.focus`, `dragSplit` missing) since 25ae675, probably an uncommitted `settings.ts`: owner to confirm. |
-| U2 New cards | Kaushik | in progress | af7f990, dfddd55, a1f6f2d: contradiction, look-through, stale note, profile, peers, to-do, call-note cards (sample data) | Feed them from real findings once E2–E4 land; click-to-source. |
-| U3 60-second format | Kaushik | in progress | 57c3d3d, 773f7bc: talk track with reading-time budget and rehearsal | "Why is the client calling" on inbound: unknown – owner to confirm. |
+| U1 Real data in the UI | Kaushik | done | b85ab39 … 9f92d36, 53df718: real client list only (samples are the offline fallback), engine briefing in the Briefing page and the workspace, tier skeletons, upload | Rehearse from a fresh clone. |
+| U2 New cards | Kaushik | in progress | af7f990, dfddd55, a1f6f2d: contradiction, look-through, stale note, profile, peers, to-do, call-note cards; engine sends real ones via /api/briefing | Click-to-source on every card. |
+| U3 60-second format | Kaushik | done | 57c3d3d, be9906f, 53df718: talk track with reading-time budget; workspace stage: tiles in speaking order, screen agent (/api/agent) picks tiles, focus, graphs and three talking points from a UI-element catalogue and follows the transcript; call reasons on the ringing banner | Tune agent wording with real calls. |
 
 ## Known data limits
 
@@ -57,6 +57,7 @@ Shared "what is done, what is open" board for the 60-second client briefing. Pla
 
 ## Log
 
+- 2026-09-19 · Kaushik · U3/A4: screen agent picks what the advisor sees, workspace on real data only (53df718)
 - 2026-09-19 · Arash (engine session) · A1: the model now writes the whole briefing from the findings (lines must cite finding ids, numbers checked); template stays as no-key fallback (67bb00a)
 - 2026-09-19 · Arash · A1: main app shows the engine briefing via /api/briefing/:ref, server-side upload for demo files (7433c23)
 - 2026-09-19 · Claude (engine session) · PROGRESS.md board added

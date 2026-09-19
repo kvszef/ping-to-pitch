@@ -60,7 +60,7 @@ function TileBody({ tile, text, clientRef, chart }: { tile: Tile; text?: string;
   return null
 }
 
-// The first thing in the scroll: who the client is, in a few facts, instead of empty space.
+// Who the client is, in a few facts: stays above the scrolling tiles, so the advisor always sees the person.
 function Profile({ client }: { client: Client }) {
   const context = client.briefing.find((c) => c.type === 'context')
   const persona = client.briefing.find((c) => c.type === 'profile')
@@ -71,7 +71,7 @@ function Profile({ client }: { client: Client }) {
   ].filter((f): f is [string, string] => !!f[1] && f[1] !== '–')
   const notes = context?.type === 'context' ? context.notes.slice(0, 2) : []
   return (
-    <section className="mb-4 mt-1 rounded-xl bg-white/70 p-4 ring-1 ring-white/80">
+    <section className={`shrink-0 px-4 py-3 ${GLASS}`}>
       <dl className="grid grid-cols-2 gap-x-5 gap-y-2 sm:grid-cols-4">
         {facts.map(([label, value]) => (
           <div key={label} className="min-w-0"><dt className="text-[10px] uppercase tracking-wide text-muted">{label}</dt><dd className="truncate text-[13px]" title={value}>{value}</dd></div>
@@ -182,9 +182,9 @@ export function Stage({ client, screen, plan, thinking, said, onUse, inCall, rec
             </div>
             {actions}
           </div>
+          <Profile client={client} />
           <div ref={box} onScroll={onScroll} className={`relative min-h-0 flex-1 snap-y snap-proximity overflow-y-auto px-3 [scrollbar-width:none] ${GLASS}`}>
             <div className="h-2" aria-hidden />
-            <Profile client={client} />
             {tiles.map((t) => (
               <article key={t.id} data-tile={t.id} data-flip={t.id} onClick={() => focus(t.id)}
                 className={`group relative mb-3 snap-center rounded-xl bg-white/85 p-4 shadow-card ring-1 transition-[box-shadow] duration-500 ${flash === t.id ? 'ring-2 ring-brand' : 'ring-black/5'}`}>
@@ -262,17 +262,17 @@ function Dock({ plan, said, onUse, inCall, recording, lines, note, onEnd, name }
         </div>
       )}
 
-      <div className="grid gap-2.5 px-3 pb-3 pt-5 md:grid-cols-3">
+      <div className="grid gap-3 px-3 pb-4 pt-6 md:grid-cols-3">
         {plan.suggestions.map((s, n) => {
           const done = said.includes(s.id)
           return (
             <button key={s.id} onClick={() => onUse(s)}
-              className={`island-swap group relative rounded-xl border bg-white/60 px-3.5 pb-2.5 pt-3 text-left transition-[background-color,border-color,opacity] duration-300 ${done ? 'border-line opacity-45' : 'border-line hover:border-brand/60 hover:bg-white'}`}>
+              className={`island-swap group relative min-h-[96px] rounded-xl border bg-white/60 px-4 pb-3.5 pt-4 text-left transition-[background-color,border-color,opacity] duration-300 ${done ? 'border-line opacity-45' : 'border-line hover:border-brand/60 hover:bg-white'}`}>
               <span className="absolute left-3 top-0 flex max-w-[calc(100%-1.5rem)] -translate-y-1/2 items-center gap-1.5 rounded-full bg-white px-1.5 text-[10px] uppercase tracking-wide text-brand-dark">
                 <span className="tabular-nums text-muted">{done ? '✓' : n + 1}</span>
                 <span className="truncate">{s.label}</span>
               </span>
-              <span className="block text-[14px] leading-snug">{s.text}</span>
+              <span className="block text-[15px] leading-snug">{s.text}</span>
             </button>
           )
         })}

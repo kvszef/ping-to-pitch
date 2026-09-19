@@ -33,6 +33,8 @@ function Fact({ label, value }: { label: string; value: string }) {
 
 export function RingingIsland({ client, call, signal, onAccept, onDecline }: { client: Client; call: IncomingCall; signal?: Signal; onAccept: () => void; onDecline: () => void }) {
   const headline = client.briefing.find((c) => c.type === 'headline')
+  const track = client.briefing.find((c) => c.type === 'talktrack')
+  const reasons = track?.type === 'talktrack' ? (track.reasons ?? []).slice(0, 3) : []
   return (
     <Island width={470} radius={30}>
       <div className="flex items-center gap-3 px-4 pt-4">
@@ -54,7 +56,13 @@ export function RingingIsland({ client, call, signal, onAccept, onDecline }: { c
       </div>
       <div className="island-stagger m-3 rounded-[18px] bg-white/[0.07] p-3">
         {headline && <p className="text-xs leading-snug">{headline.text}</p>}
-        <p className="mt-1.5 text-[11px] text-white/50">{signal ? `Vermuteter Anlass: ${signal.title}` : call.reason}</p>
+        {/* Why the client is probably calling, ranked from the data (talk track), else the call's own reason. */}
+        {reasons.length > 0 ? (
+          <ol className="space-y-1 text-xs leading-snug">
+            <li className="text-[10px] uppercase tracking-wide text-white/45">Vermutlicher Anlass</li>
+            {reasons.map((r, i) => <li key={r.text} className="flex gap-1.5"><span className="tabular-nums text-white/40">{i + 1}.</span>{r.text}</li>)}
+          </ol>
+        ) : <p className="mt-1.5 text-[11px] text-white/50">{signal ? `Vermuteter Anlass: ${signal.title}` : call.reason}</p>}
       </div>
     </Island>
   )
