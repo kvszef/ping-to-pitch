@@ -109,27 +109,48 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
   const byId = useMemo(() => new Map(screen.tiles.map((t) => [t.id, t])), [screen.tiles])
   const chartById = useMemo(() => new Map(screen.charts.map((c) => [c.id, c])), [screen.charts])
   const ordered = plan.order.map((id) => byId.get(id)).filter((t): t is Tile => !!t)
-  // The feed only grows, before and during a call: a card already shown keeps its place, and whatever
-  // the agent or a later engine tier adds goes to the bottom — unless it repeats a card already there.
-  // Only switching to another client starts a fresh feed.
+  const [focusIdx, setFocusIdx] = useState(0)
+  // The feed is a 60-second brief that only grows at the bottom: a card already shown keeps its
+  // place, a repeat of one already there is skipped. Before the call the agent's order is the
+  // priority, so the brief fills up to ~60 s and stops. During the call a new card (always the one
+  // the conversation is about) goes to the bottom, and cards the advisor has already passed drop
+  // off the top to keep it at ~60 s. Only switching to another client starts a fresh feed.
   const source = ordered.length ? ordered : screen.tiles
   const feed = useRef<{ ref: string; ids: string[] }>({ ref: '', ids: [] })
   if (feed.current.ref !== client.ref) feed.current = { ref: client.ref, ids: [] }
-  const inFeed = feed.current.ids.map((id) => byId.get(id)).filter((t): t is Tile => !!t)
-  const fresh = source.filter((t) => !inFeed.some((s) => s.id === t.id || sameTile(s, t)))
-  if (fresh.length) feed.current = { ref: client.ref, ids: [...feed.current.ids, ...fresh.map((t) => t.id)] }
+  {
+    let ids = feed.current.ids.filter((id) => byId.has(id))
+    const cardsOf = () => ids.map((id) => byId.get(id)!)
+    const secondsOf = () => cardsOf().reduce((n, t) => n + t.seconds, 0)
+    const read = ids[focusIdx] // cards above this one are already passed
+    for (const t of source) {
+      if (cardsOf().some((s) => s.id === t.id || sameTile(s, t))) continue
+      if (!ids.length || secondsOf() + t.seconds <= BUDGET) { ids = [...ids, t.id]; continue }
+      if (!inCall) continue
+      const passed = read ? ids.indexOf(read) : -1
+      let drop = 0
+      while (drop < passed && secondsOf() - cardsOf().slice(0, drop).reduce((n, c) => n + c.seconds, 0) + t.seconds > BUDGET) drop++
+      const fits = secondsOf() - cardsOf().slice(0, drop).reduce((n, c) => n + c.seconds, 0) + t.seconds <= BUDGET
+      if (fits || t.id === plan.focus) ids = [...ids.slice(drop), t.id]
+    }
+    if (ids.join('|') !== feed.current.ids.join('|')) feed.current = { ref: client.ref, ids }
+  }
   const grown = feed.current.ids.map((id) => byId.get(id)).filter((t): t is Tile => !!t)
-  const tiles = grown.length ? grown : source
+  const tiles = grown.length ? grown : source.slice(0, 1)
 
   // ---- tiles: focus by scrolling, dimming away from the middle, gliding when the order changes ----
   const box = useRef<HTMLDivElement>(null)
   const frame = useRef(0)
-  const [focusIdx, setFocusIdx] = useState(0)
   const [flash, setFlash] = useState<string | null>(null)
-  useFlip(box, tiles.map((t) => t.id).join('|'))
+  // How far the advisor has scrolled through the brief, 0–1: drives the reading bar in the header.
+  const [readShare, setReadShare] = useState(0)
+  const feedKey = tiles.map((t) => t.id).join('|')
+  useFlip(box, feedKey)
   const paint = useCallback(() => {
     const el = box.current
     if (!el) return
+    const max = el.scrollHeight - el.clientHeight
+    setReadShare(max > 1 ? Math.min(1, el.scrollTop / max) : 1)
     const mid = el.scrollTop + el.clientHeight / 2
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     let best = 0, bestD = Infinity
@@ -141,7 +162,7 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
     setFocusIdx(best)
   }, [])
   const onScroll = () => { cancelAnimationFrame(frame.current); frame.current = requestAnimationFrame(paint) }
-  useLayoutEffect(paint, [paint, tiles.length])
+  useLayoutEffect(paint, [paint, feedKey])
   const focus = useCallback((id: string, glow = false) => {
     box.current?.querySelector<HTMLElement>(`[data-tile="${id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     if (glow) { setFlash(id); setTimeout(() => setFlash((f) => (f === id ? null : f)), 2400) }
@@ -236,8 +257,9 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
     window.addEventListener('pointerup', onUp)
   }
   const graphs = usePresence(graphsOpen, 450)
+  // Reading time of the brief as it stands (kept at ~60 s above) and how much of it is scrolled past.
   const total = tiles.reduce((n, t) => n + t.seconds, 0)
-  const done = tiles.slice(0, focusIdx + 1).reduce((n, t) => n + t.seconds, 0)
+  const done = readShare * total
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -246,12 +268,12 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
           <div className={`flex shrink-0 items-center gap-3 px-4 py-2 ${GLASS}`}>
             {lead}
-            <div className="flex min-w-0 flex-1 items-center gap-2 text-[11px] tabular-nums text-muted" title="Lesezeit des Briefings">
+            <div className="flex min-w-0 flex-1 items-center gap-2 text-[11px] tabular-nums text-muted" title={`Gelesen: ${Math.round(done)} von ${Math.round(total)} s Lesezeit (Ziel: höchstens ${BUDGET} s)`}>
               <Timer size={12} className="shrink-0" />
               <div className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-track">
-                <div className={`h-full rounded-full transition-[width] duration-500 ${total > BUDGET ? 'bg-warn' : 'bg-brand-dark'}`} style={{ width: `${Math.min(100, (done / BUDGET) * 100)}%` }} />
+                <div className={`h-full rounded-full transition-[width] duration-300 ${total > BUDGET ? 'bg-warn' : 'bg-brand-dark'}`} style={{ width: `${total > 0 ? Math.min(100, (done / total) * 100) : 0}%` }} />
               </div>
-              <span className="shrink-0">{Math.round(done)}/{Math.round(total)} s</span>
+              <span className="shrink-0">{Math.round(done)} / {Math.round(total)} s gelesen</span>
               {thinking && <Sparkles size={12} aria-label="Agent arbeitet" className="shrink-0 animate-pulse text-brand" />}
             </div>
             {actions}
