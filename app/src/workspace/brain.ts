@@ -121,18 +121,32 @@ function localAnswer(client: Client, text: string, settings: Settings, origin: O
   }
 }
 
-type ChatResult = { supported: boolean; text: string; sources?: string[]; module?: { id: string; confidence: number } | null; hint?: { text: string; why: string } | null; next?: string | null }
+type ChatResult = { supported: boolean; text: string; sources?: string[]; module?: { id: string; confidence: number } | null; hint?: { text: string; why: string } | null; next?: string | null; tools?: unknown[] }
+
+// A4 without a model: the server looks the answer up in the client's data (holdings incl. funds, trades,
+// value history, accounts) and phrases it deterministically. Undefined when the lookup has nothing to say
+// or the server is unreachable; the topic-based example mode then answers.
+async function dataAnswer(client: Client, text: string): Promise<Reply | undefined> {
+  try {
+    const r = await post<ChatResult>('/api/chat/data', { ref: client.ref, question: text })
+    if (!r.supported || !r.text) return undefined
+    return { hints: [], entry: { id: nextId(), role: 'ki', origin: 'chat', sources: r.sources ?? [], text: r.text } }
+  } catch { return undefined }
+}
 
 export async function answer(client: Client, text: string, settings: Settings, status: Status, history: ChatEntry[]): Promise<Reply> {
   const provider = activeProvider(settings, status)
-  if (!provider) { await new Promise((r) => setTimeout(r, 400)); return localAnswer(client, text, settings, 'chat') }
+  if (!provider) { await new Promise((r) => setTimeout(r, 400)); return (await dataAnswer(client, text)) ?? localAnswer(client, text, settings, 'chat') }
   try {
     const news = await fetchNews(client.ref)
     const context = contextFor(client, news)
     const r = await post<ChatResult>('/api/chat', { provider, detail: settings.detail, context, modules: catalogue(client), question: text, history: history.slice(-6).map((e) => ({ rolle: e.role, text: e.text })) })
     // Grounding guard: a sentence with a number that is not in the data never reaches the screen.
-    const evidence = JSON.stringify(context) + text
+    // Tool results (A4, computed on the server from the client's data) count as data.
+    const evidence = JSON.stringify(context) + text + JSON.stringify(r.tools ?? [])
     if (!grounded(r.text, evidence)) {
+      const data = await dataAnswer(client, text)
+      if (data) return data
       const local = localAnswer(client, text, settings, 'chat')
       return local.hints.length ? local : { hints: [], entry: notice('Die Antwort des Modells enthielt eine Zahl, die nicht in den Kundendaten steht. Sie wurde verworfen.') }
     }
@@ -148,7 +162,8 @@ export async function answer(client: Client, text: string, settings: Settings, s
       next: r.supported && r.next ? { heard: text, text: r.next, topic: topicId } : undefined,
     }
   } catch (e) {
-    const fallback = localAnswer(client, text, settings, 'chat')
+    const data = await dataAnswer(client, text)
+    const fallback = data ?? localAnswer(client, text, settings, 'chat')
     return { ...fallback, entry: { ...fallback.entry, text: `[${provider} nicht erreichbar, Beispielmodus: ${e instanceof Error ? e.message : e}]\n\n${(fallback.entry as { text: string }).text}` } }
   }
 }

@@ -7,6 +7,7 @@ import { briefingNews, clientNews, newsFeed, newsStatus, outbound, pushNews, sna
 import { callRoute } from './call.ts'
 import { newsAgentRoute } from './ai/news-agent.ts'
 import { callsRoute } from './calls.ts'
+import { askData, chatWithData } from './ai/chat-route.ts'
 
 // Kleine API im Vite-Server. Die Schlüssel bleiben hier und erreichen den Browser nie.
 // Apertus wird über eine OpenAI-kompatible Schnittstelle angesprochen (Basis-URL in .env.local).
@@ -252,7 +253,9 @@ export function api(env: Env): Plugin {
           if (req.url === '/api/transcribe') { const segments = await transcribe(env, raw, req.headers['content-type'] || 'audio/webm'); console.info(`[transcribe] ${raw.length} bytes -> ${segments.length} segments`); return send(res, 200, { segments }) }
           const p = JSON.parse(raw.toString('utf8'))
           const provider: Provider = p.provider === 'apertus' ? 'apertus' : 'openai'
-          if (req.url === '/api/chat') return send(res, 200, await complete(env, provider, false, chatPrompt(p)))
+          // A4: tools over the client's data (function calling on OpenAI, keyword routing otherwise); /api/chat/data needs no model.
+          if (req.url === '/api/chat') return send(res, 200, await chatWithData(p, provider, providerConfig(env, provider, false), chatPrompt(p), (m) => complete(env, provider, false, m)))
+          if (req.url === '/api/chat/data') return send(res, 200, await askData(p))
           if (req.url === '/api/summary') return send(res, 200, await complete(env, provider, true, summaryPrompt(p)))
           if (req.url === '/api/demo-script') return send(res, 200, await complete(env, provider, false, demoScriptPrompt(p)))
           if (req.url === '/api/agent') return send(res, 200, await complete(env, provider, true, agentPrompt(p)))

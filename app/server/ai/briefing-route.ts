@@ -183,6 +183,12 @@ export async function appBriefing(url: string, llm: Llm) {
   return { status: 200, data: { cards: [talkTrackCard(written, findings)], findings: [], order: ranking.order, hidden: ranking.hidden } }
 }
 
+/** One raw client (uploads first, then the case file) and the reference index, for the ask-the-data chat (A4). */
+export async function rawClientFor(ref: string): Promise<{ raw?: Record<string, unknown>; index: ReferenceIndex }> {
+  const { clients, index } = await data()
+  return { raw: uploaded.get(ref) ?? clients.find((c) => c.ClientRef === ref), index }
+}
+
 /** Refs and names for the client picker. */
 export async function briefingClients() {
   const { clients } = await data()
