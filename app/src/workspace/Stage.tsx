@@ -1,4 +1,4 @@
-import { BarChart3, Ear, PanelRightClose, PanelRightOpen, Pin, Sparkles, Timer } from 'lucide-react'
+import { BarChart3, Ear, FileText, LayoutList, PanelRightClose, PanelRightOpen, Pin, Sparkles, Timer } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { SeverityIcon } from '../cards/ui'
 import type { Client } from '../types'
@@ -6,6 +6,8 @@ import { useTranslated, type Language } from '../data/useTranslate'
 import type { Screen } from './brain'
 import { Wave } from './CallIsland'
 import { ChatPanel, FOLLOW_UPS } from './ChatPanel'
+import { TextView } from './TextView'
+import { digestFor } from './digest'
 import { Smooth, useFlip, usePresence } from './motion'
 import { bestTile, sameTile, widgetMain, type Brought, type Plan, type Tile } from './screen'
 import type { ChatEntry, Detail, Hint, TranscriptLine } from './types'
@@ -145,9 +147,12 @@ export function Stage({ client, screen, plan, brought, thinking, inCall, recordi
   }
   const grown = feed.current.ids.map((id) => byId.get(id)).filter((t): t is Tile => !!t)
   const tiles = grown.length ? grown : source.slice(0, 1)
+  // The same brief as one text with bullet points (TextView.tsx), for reading or saving as a PDF.
+  const [asText, setAsText] = useState(false)
+  const digest = useMemo(() => digestFor(client, tiles, screen.charts, plan.texts), [client, tiles.map((t) => t.id).join('|'), screen.charts, plan.texts]) // eslint-disable-line react-hooks/exhaustive-deps
   const groupLabels = useTranslated(tiles.map((t) => t.group), language)
   const sourceLabels = useTranslated(tiles.map((t) => t.item?.source ?? ''), language)
-  const graphsChrome = useTranslated(['Grafiken', 'Grafiken · Chat'], language)
+  const graphsChrome = useTranslated(['Grafiken', 'Grafiken · Chat', 'Als Text anzeigen (Kopieren, PDF)', 'Als Kacheln anzeigen'], language)
 
   // ---- tiles: focus by scrolling, dimming away from the middle, gliding when the order changes ----
   const box = useRef<HTMLDivElement>(null)
@@ -316,12 +321,15 @@ export function Stage({ client, screen, plan, brought, thinking, inCall, recordi
               <span className="shrink-0">{Math.round(done)} / {Math.round(total)} s gelesen</span>
               {thinking && <Sparkles size={12} aria-label="Agent arbeitet" className="shrink-0 animate-pulse text-brand" />}
             </div>
+            <button onClick={() => setAsText((v) => !v)} aria-pressed={asText} aria-label={asText ? graphsChrome[3] : graphsChrome[2]} title={asText ? graphsChrome[3] : graphsChrome[2]}
+              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${asText ? 'bg-brand text-white' : 'bg-pill hover:bg-track'}`}>{asText ? <LayoutList size={13} /> : <FileText size={13} />}</button>
             {actions}
           </div>
           <div ref={box} onScroll={onScroll} className={`relative min-h-0 flex-1 overflow-y-auto px-3 [scrollbar-width:none] ${GLASS}`}>
             <div className="h-2" aria-hidden />
-            <Profile client={client} compact={inCall} language={language} />
-            {tiles.map((t, i) => (
+            {!asText && <Profile client={client} compact={inCall} language={language} />}
+            {asText && <TextView digest={digest} asOf={client.facts?.asOf} language={language} />}
+            {!asText && tiles.map((t, i) => (
               // Keyed per client, so opening a client mounts its tiles anew and they come in one after another.
               <article key={`${client.ref}:${t.id}`} data-tile={t.id} data-flip={t.id} onClick={() => focus(t.id)} style={{ animationDelay: `${Math.min(i, 10) * 130}ms` }}
                 className={`tile-in group relative mb-3 rounded-xl bg-white/85 p-4 shadow-card ring-1 transition-[box-shadow] duration-500 ${flash === t.id ? 'ring-2 ring-brand' : 'ring-black/5'}`}>

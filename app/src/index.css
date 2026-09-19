@@ -66,3 +66,12 @@ button { cursor: pointer; }
 @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 .skeleton { background: linear-gradient(90deg, var(--color-band) 25%, var(--color-stripe) 50%, var(--color-band) 75%); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
 @media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
+
+/* The text overview as a PDF (workspace/TextView.tsx): printing shows only its print sheet, one A4 page. */
+.print-sheet { display: none; }
+@media print {
+  @page { size: A4; margin: 14mm; }
+  html, body { height: auto; overflow: visible; background: #fff; }
+  body > *:not(.print-sheet) { display: none !important; }
+  .print-sheet { display: block; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+}
