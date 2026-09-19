@@ -1,4 +1,4 @@
-import { ArrowRight, BarChart3, ChevronDown, MessageSquare } from 'lucide-react'
+import { ArrowRight, BarChart3, ChevronDown, MessageSquare, Pin } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { ModuleView } from './modules'
 import { Smooth } from './motion'
@@ -6,9 +6,18 @@ import type { ChatEntry, Detail } from './types'
 
 // The chat under the graph column: collapsed to one input line, it grows upward over the graphs
 // when there is something to read and shrinks back when closed. "/" jumps into it.
+// Every answer can be pinned to the graph column and followed up with one click.
 
-export function ChatPanel({ name, chat, busy, detail, suggestions, onAsk, onShow }: {
-  name: string; chat: ChatEntry[]; busy: boolean; detail: Detail; suggestions: string[]; onAsk: (text: string) => void; onShow: (id: string) => void
+// Follow-ups name the original question, so the model knows what "more" refers to even for an older, pinned answer.
+export const FOLLOW_UPS: { label: string; ask: (q: string) => string }[] = [
+  { label: 'Genauer', ask: (q) => `Genauer, mit allen Zahlen dazu: ${q}` },
+  { label: 'Warum?', ask: (q) => `Warum ist das so? Zur Frage: ${q}` },
+  { label: 'Für den Kunden', ask: (q) => `Wie sage ich das dem Kunden in zwei Sätzen? Zur Frage: ${q}` },
+]
+
+export function ChatPanel({ name, chat, busy, detail, suggestions, pinned, onAsk, onShow, onPin }: {
+  name: string; chat: ChatEntry[]; busy: boolean; detail: Detail; suggestions: string[]; pinned: string[]
+  onAsk: (text: string) => void; onShow: (id: string) => void; onPin: (id: string) => void
 }) {
   const [open, setOpen] = useState(false)
   const input = useRef<HTMLInputElement>(null)
@@ -20,6 +29,8 @@ export function ChatPanel({ name, chat, busy, detail, suggestions, onAsk, onShow
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
+  // A question asked from elsewhere (a pinned answer's "Mehr") opens the panel too.
+  useEffect(() => { if (busy) setOpen(true) }, [busy])
 
   const lastQ = [...chat].reverse().find((e) => e.role === 'berater')
   const lastA = lastQ ? chat.slice(chat.indexOf(lastQ) + 1).find((e) => e.role === 'ki') : undefined
@@ -46,7 +57,16 @@ export function ChatPanel({ name, chat, busy, detail, suggestions, onAsk, onShow
                 <p className="leading-relaxed">{lastA.text}</p>
                 {lastA.sources.length > 0 && <p className="mt-1 text-[10px] text-muted">Quellen: {lastA.sources.join(' · ')}</p>}
                 {lastA.module && <ModuleView spec={lastA.module} detail={detail} />}
-                {lastA.offered && <button onClick={() => onShow(lastA.id)} className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-pill px-2 py-0.5 text-[10px] hover:bg-brand hover:text-white"><BarChart3 size={11} /> Grafik · {lastA.offered.confidence}%</button>}
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  {lastA.offered && <button onClick={() => onShow(lastA.id)} className="inline-flex items-center gap-1 rounded-full bg-pill px-2 py-0.5 text-[10px] hover:bg-brand hover:text-white"><BarChart3 size={11} /> Grafik · {lastA.offered.confidence}%</button>}
+                  <button onClick={() => onPin(lastA.id)} aria-pressed={pinned.includes(lastA.id)} title={pinned.includes(lastA.id) ? 'Lösen' : 'Rechts anheften'}
+                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] ${pinned.includes(lastA.id) ? 'bg-brand text-white' : 'bg-pill hover:bg-brand hover:text-white'}`}>
+                    <Pin size={11} className={pinned.includes(lastA.id) ? 'fill-current' : ''} /> {pinned.includes(lastA.id) ? 'Angeheftet' : 'Anheften'}
+                  </button>
+                  {lastQ && !busy && FOLLOW_UPS.map((f) => (
+                    <button key={f.label} onClick={() => send(f.ask(lastQ.text))} className="rounded-full bg-white/70 px-2 py-0.5 text-[10px] text-muted hover:bg-brand-soft/60 hover:text-ink">{f.label}</button>
+                  ))}
+                </div>
               </div>
             )}
           </div>

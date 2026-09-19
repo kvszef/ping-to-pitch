@@ -4,7 +4,7 @@ import { SeverityIcon } from '../cards/ui'
 import type { Client } from '../types'
 import type { Screen } from './brain'
 import { usePaced, Wave } from './CallIsland'
-import { ChatPanel } from './ChatPanel'
+import { ChatPanel, FOLLOW_UPS } from './ChatPanel'
 import { Smooth, useFlip, usePresence } from './motion'
 import { bestTile, sameTile, widgetMain, type Plan, type Tile } from './screen'
 import type { ChatEntry, Detail, Hint, TranscriptLine } from './types'
@@ -69,13 +69,14 @@ function TileBody({ tile, text, clientRef, chart, fresh }: { tile: Tile; text?: 
   return null
 }
 
-// Who the client is, in a few facts: stays above the scrolling tiles, so the advisor always sees the person.
+// Who the client is, in a few facts: the first card of the scrolling brief, set apart from the tiles (the assets
+// as a big figure, never dimmed), but not fixed, so the advisor can scroll past it to the brief.
 function Profile({ client, compact = false }: { client: Client; compact?: boolean }) {
   const context = client.briefing.find((c) => c.type === 'context')
   const persona = client.briefing.find((c) => c.type === 'profile')
   const fact = (label: string) => context?.type === 'context' ? context.facts.find((f) => f.label === label)?.value : undefined
   const facts = [
-    ['Vermögen', client.aum], ['Profil', client.profile], ['Strategie', client.strategy], ['Dienstleistung', client.service],
+    ['Profil', client.profile], ['Strategie', client.strategy], ['Dienstleistung', client.service],
     ['Alter', fact('Alter')], ['ESG', fact('ESG-Profil')], ['Letzte Beratung', client.lastConsultation], ['Regelverletzungen', client.errors + client.warnings ? `${client.errors} Fehler · ${client.warnings} Warnungen` : undefined],
   ].filter((f): f is [string, string] => !!f[1] && f[1] !== '–')
   const notes = context?.type === 'context' ? context.notes.slice(0, 2) : []
@@ -84,14 +85,22 @@ function Profile({ client, compact = false }: { client: Client; compact?: boolea
   // Only German ships today (see useSummary) — the language is already a parameter, ready for a picker later.
   const summary = useSummary(persona?.type === 'profile' ? persona.persona : undefined, reasons, notes, 'de')
   return (
-    <section className={`shrink-0 px-4 py-3 ${GLASS}`}>
-      <dl className={compact ? 'flex flex-wrap gap-x-4 gap-y-0.5' : 'grid grid-cols-2 gap-x-5 gap-y-2 sm:grid-cols-4'}>
-        {facts.map(([label, value]) => (
-          <div key={label} className={compact ? 'flex min-w-0 items-baseline gap-1' : 'min-w-0'}><dt className="text-[10px] uppercase tracking-wide text-muted">{label}</dt><dd className="truncate text-[13px]" title={value}>{value}</dd></div>
-        ))}
-      </dl>
+    <section className="mb-3 snap-start rounded-xl bg-gradient-to-br from-brand-soft/70 to-white/90 px-4 py-3.5 shadow-card ring-1 ring-brand/25">
+      <div className={`flex ${compact ? 'items-baseline gap-4' : 'flex-col gap-3'}`}>
+        {client.aum && client.aum !== '–' && (
+          <div className="shrink-0">
+            <div className="text-[10px] uppercase tracking-wide text-muted">Vermögen</div>
+            <div className={`${compact ? 'text-[20px]' : 'text-[28px]'} leading-tight tabular-nums text-brand-dark`}>{client.aum}</div>
+          </div>
+        )}
+        <dl className={`min-w-0 flex-1 ${compact ? 'flex flex-wrap gap-x-4 gap-y-0.5' : 'grid grid-cols-2 gap-x-5 gap-y-2 sm:grid-cols-4'}`}>
+          {facts.map(([label, value]) => (
+            <div key={label} className={compact ? 'flex min-w-0 items-baseline gap-1' : 'min-w-0'}><dt className="text-[10px] uppercase tracking-wide text-muted">{label}</dt><dd className="truncate text-[14px] text-ink" title={value}>{value}</dd></div>
+          ))}
+        </dl>
+      </div>
       {summary.text && (
-        <p className={`mt-3 border-t border-black/5 pt-2 text-[13px] leading-snug ${summary.loading ? 'animate-pulse' : ''}`} title={[persona?.type === 'profile' ? persona.persona : '', reasons.join(' · '), ...notes.map((n) => n.text)].filter(Boolean).join(' — ')}>
+        <p className={`mt-3 border-t border-brand/15 pt-2 text-[14px] leading-snug ${summary.loading ? 'animate-pulse' : ''}`} title={[persona?.type === 'profile' ? persona.persona : '', reasons.join(' · '), ...notes.map((n) => n.text)].filter(Boolean).join(' — ')}>
           {summary.text}
         </p>
       )}
@@ -164,7 +173,10 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
   const onScroll = () => { cancelAnimationFrame(frame.current); frame.current = requestAnimationFrame(paint) }
   useLayoutEffect(paint, [paint, feedKey])
   const focus = useCallback((id: string, glow = false) => {
-    box.current?.querySelector<HTMLElement>(`[data-tile="${id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    const el = box.current?.querySelector<HTMLElement>(`[data-tile="${id}"]`)
+    // The first tile scrolls to the very top, so the client card above it is in view again.
+    if (el && el === box.current?.querySelector('[data-tile]')) box.current?.scrollTo({ top: 0, behavior: 'smooth' })
+    else el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     if (glow) { setFlash(id); setTimeout(() => setFlash((f) => (f === id ? null : f)), 2400) }
   }, [])
   // The agent's focus, and a chat answer's topic, bring their tile to the middle.
@@ -196,12 +208,19 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
   const [shown, setShown] = useState<Widget[]>([])
   const toWidget = useCallback((key: string): Widget | null => {
     const pinned = pins.includes(key)
+    if (key.startsWith('chat:')) {
+      const i = chat.findIndex((e) => e.id === key.slice(5))
+      const a = chat[i]
+      if (a?.role !== 'ki') return null
+      const q = chat.slice(0, i).reverse().find((e) => e.role === 'berater')
+      return { id: key, group: 'Aus dem Chat', text: a.text, chart: a.module ?? a.offered?.spec, source: a.sources.join(' · ') || 'Chat', pinned, ask: q?.text ?? a.text.slice(0, 80) }
+    }
     if (key.startsWith('chart:')) { const c = chartById.get(key.slice(6)); return c ? { id: key, group: c.title, chart: c.spec, source: c.note, pinned } : null }
     const t = byId.get(key.slice(5))
     if (!t) return null
     const chart = t.chart ? chartById.get(t.chart)?.spec : undefined
     return { id: key, group: t.group, severity: t.severity, main: widgetMain(t, client.ref), chart, text: plan.texts[t.id] ?? t.item?.text ?? t.news?.[0].title ?? (t.card?.type === 'proposal' ? t.card.summary : undefined), source: t.item?.source ?? (t.news ? t.news[0].source : 'Anlagevorschlag'), pinned }
-  }, [pins, byId, chartById, client.ref, plan.texts])
+  }, [pins, byId, chartById, client.ref, plan.texts, chat])
   useEffect(() => {
     const next = wanted.map(toWidget).filter((w): w is Widget => !!w)
     const nextById = new Map(next.map((w) => [w.id, w]))
@@ -278,9 +297,9 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
             </div>
             {actions}
           </div>
-          <Profile client={client} compact={inCall} />
           <div ref={box} onScroll={onScroll} className={`relative min-h-0 flex-1 overflow-y-auto px-3 [scrollbar-width:none] ${GLASS}`}>
             <div className="h-2" aria-hidden />
+            <Profile client={client} compact={inCall} />
             {tiles.map((t) => (
               <article key={t.id} data-tile={t.id} data-flip={t.id} onClick={() => focus(t.id)}
                 className={`group relative mb-3 rounded-xl bg-white/85 p-4 shadow-card ring-1 transition-[box-shadow] duration-500 ${flash === t.id ? 'ring-2 ring-brand' : 'ring-black/5'}`}>
@@ -329,9 +348,10 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
                   <button onClick={() => onGraphs(false)} aria-label="Grafiken einklappen" title="Grafiken einklappen" className="flex h-6 w-6 items-center justify-center rounded-full normal-case hover:bg-pill hover:text-ink"><PanelRightClose size={14} /></button>
                 </div>
                 <WidgetRail widgets={shown} hot={plan.focus ? `tile:${plan.focus}` : null} onPin={(id) => togglePin(id)} onRemove={removeWidget}
-                  onFocus={(id) => { if (id.startsWith('tile:')) focus(id.slice(5)) }} />
+                  onFocus={(id) => { if (id.startsWith('tile:')) focus(id.slice(5)) }} onAsk={(w) => { if (w.ask) onAsk(FOLLOW_UPS[0].ask(w.ask)) }} />
               </div>
-              <ChatPanel name={client.name} chat={chat} busy={busy} detail={detail} suggestions={chatSuggestions} onAsk={onAsk} onShow={onShowChart} />
+              <ChatPanel name={client.name} chat={chat} busy={busy} detail={detail} suggestions={chatSuggestions} onAsk={onAsk} onShow={onShowChart}
+                pinned={pins.filter((p) => p.startsWith('chat:')).map((p) => p.slice(5))} onPin={(id) => togglePin(`chat:${id}`)} />
             </div>
           )}
             <button onClick={() => onGraphs(true)} aria-label="Grafiken und Chat öffnen" title="Grafiken und Chat öffnen"
