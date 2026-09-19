@@ -3,13 +3,26 @@ import type { Language } from './useTranslate'
 
 const KEY = 'uro.berater.einstellungen'
 
-function readLanguage(): Language {
+// English is the default (same as `defaults.language` in workspace/settings.ts); German only when chosen.
+// English became the default on 19.09.2026. A 'de' saved before that was never a choice (the settings
+// are written whole on first use), so it is flipped once; after that the toggle decides.
+export function migrateLanguage() {
   try {
-    if (typeof window === 'undefined') return 'de'
+    if (typeof window === 'undefined' || localStorage.getItem(`${KEY}.english-default`)) return
+    const stored = JSON.parse(localStorage.getItem(KEY) ?? '{}') as Record<string, unknown>
+    localStorage.setItem(KEY, JSON.stringify({ ...stored, language: 'en' }))
+    localStorage.setItem(`${KEY}.english-default`, '1')
+  } catch { /* storage not available */ }
+}
+
+function readLanguage(): Language {
+  migrateLanguage()
+  try {
+    if (typeof window === 'undefined') return 'en'
     const parsed = JSON.parse(localStorage.getItem(KEY) ?? '{}') as { language?: unknown }
-    return parsed.language === 'en' ? 'en' : 'de'
+    return parsed.language === 'de' ? 'de' : 'en'
   } catch {
-    return 'de'
+    return 'en'
   }
 }
 

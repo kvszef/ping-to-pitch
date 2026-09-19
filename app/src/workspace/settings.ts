@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
+import { migrateLanguage } from '../data/useLanguage'
 import type { Settings } from './types'
 
 const KEY = 'uro.berater.einstellungen'
 
-export const defaults: Settings = { provider: 'openai', language: 'de', record: true, detail: 'kurz', autoModules: true, confidence: 70, chatOpen: false, clientsOpen: true, graphsOpen: true }
+export const defaults: Settings = { provider: 'openai', language: 'en', record: true, detail: 'kurz', autoModules: true, confidence: 70, chatOpen: false, clientsOpen: true, graphsOpen: true }
 
 function load(): Settings {
+  migrateLanguage()
   try {
     return { ...defaults, ...JSON.parse(localStorage.getItem(KEY) ?? '{}') }
   } catch {

@@ -4,7 +4,7 @@ import { SeverityIcon } from '../cards/ui'
 import type { Client } from '../types'
 import { useTranslated, type Language } from '../data/useTranslate'
 import type { Screen } from './brain'
-import { usePaced, Wave } from './CallIsland'
+import { Wave } from './CallIsland'
 import { ChatPanel, FOLLOW_UPS } from './ChatPanel'
 import { Smooth, useFlip, usePresence } from './motion'
 import { bestTile, sameTile, widgetMain, type Plan, type Tile } from './screen'
@@ -204,16 +204,23 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
   // until the advisor pins it back. Without this, closing an unpinned widget was a no-op — the
   // agent's own picks (including the single fallback graph below) always re-filled the column.
   const [dismissed, setDismissed] = useState<string[]>([])
-  // Never an empty column: without the agent's picks, the graph (or figure) of the tile in focus.
-  const focusTile = plan.focus ? byId.get(plan.focus) : undefined
-  const picks = plan.widgets.length ? plan.widgets : focusTile ? [focusTile.chart ? `chart:${focusTile.chart}` : `tile:${focusTile.id}`] : []
-  // During a call what has come up stays where it is: a new pick is added below the others, nothing
-  // is swapped out or changes place until the advisor closes it. Outside a call the agent's picks
-  // replace each other as before.
-  const held = useRef<{ ref: string; ids: string[] }>({ ref: '', ids: [] })
-  if (!inCall || held.current.ref !== client.ref) held.current = { ref: client.ref, ids: [] }
-  if (inCall) { const fresh = picks.filter((w) => !held.current.ids.includes(w)); if (fresh.length) held.current = { ref: client.ref, ids: [...held.current.ids, ...fresh] } }
-  const stay = inCall ? held.current.ids : picks
+  // Nothing enters the column on its own. It holds the advisor's pins and, during a call, what a
+  // question of the client brought up (Workspace only passes widgets for those steps). What has come
+  // up stays where it is: a new pick is added below the others, nothing is swapped out, changes place
+  // or changes its text until the advisor closes it.
+  const picks = inCall ? plan.widgets : []
+  const held = useRef<{ ref: string; ids: string[]; texts: Record<string, string | undefined>; answers: Record<string, Plan['answer']> }>({ ref: '', ids: [], texts: {}, answers: {} })
+  if (!inCall || held.current.ref !== client.ref) held.current = { ref: client.ref, ids: [], texts: {}, answers: {} }
+  if (inCall) {
+    const fresh = picks.filter((w) => !held.current.ids.includes(w))
+    if (fresh.length) held.current = { ...held.current, ids: [...held.current.ids, ...fresh] }
+    // The answer that came with a pick is kept with it and only shown when the advisor asks for it ("Gespräch").
+    if (plan.answer) for (const w of picks) held.current.answers[w] = plan.answer
+  }
+  const stay = held.current.ids
+  // The widget whose answer the advisor asked for.
+  const [talk, setTalk] = useState<string | null>(null)
+  if (talk && !held.current.ids.includes(talk)) setTalk(null)
   const wanted = useMemo(() => [...pins, ...stay.filter((w) => !pins.includes(w) && !dismissed.includes(w))], [pins, dismissed, stay.join('|')]) // eslint-disable-line react-hooks/exhaustive-deps
   const [shown, setShown] = useState<Widget[]>([])
   const toWidget = useCallback((key: string): Widget | null => {
@@ -229,7 +236,9 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
     const t = byId.get(key.slice(5))
     if (!t) return null
     const chart = t.chart ? chartById.get(t.chart)?.spec : undefined
-    return { id: key, group: t.group, severity: t.severity, main: widgetMain(t, client.ref), chart, text: plan.texts[t.id] ?? t.item?.text ?? t.news?.[0].title ?? (t.card?.type === 'proposal' ? t.card.summary : undefined), source: t.item?.source ?? (t.news ? t.news[0].source : 'Anlagevorschlag'), pinned }
+    const isHeld = held.current.ids.includes(key)
+    if (isHeld && !(key in held.current.texts)) held.current.texts[key] = plan.texts[t.id]
+    return { id: key, group: t.group, severity: t.severity, main: widgetMain(t, client.ref), chart, text: (isHeld ? held.current.texts[key] : plan.texts[t.id]) ?? t.item?.text ?? t.news?.[0].title ?? (t.card?.type === 'proposal' ? t.card.summary : undefined), source: t.item?.source ?? (t.news ? t.news[0].source : 'Anlagevorschlag'), pinned }
   }, [pins, byId, chartById, client.ref, plan.texts, chat])
   useEffect(() => {
     const next = wanted.map(toWidget).filter((w): w is Widget => !!w)
@@ -339,7 +348,7 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
           </div>
           <Smooth className="shrink-0">
             <div className={`transition-[opacity,transform] duration-[450ms] ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none ${dock.visible ? 'translate-y-0 opacity-100' : 'translate-y-3 opacity-0'}`}>
-              <Dock plan={plan} inCall={dock.mounted} transcript recording={recording} lines={lines} pending={pending} note={note} name={client.name} />
+              <Dock answer={talk ? held.current.answers[talk] ?? null : null} language={language} inCall={dock.mounted} transcript recording={recording} lines={lines} pending={pending} note={note} name={client.name} />
             </div>
           </Smooth>
         </div>
@@ -365,11 +374,11 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
                   <span className="flex items-center gap-1.5"><BarChart3 size={12} /> {graphsChrome[0]}</span>
                   <button onClick={() => onGraphs(false)} aria-label="Grafiken einklappen" title="Grafiken einklappen" className="flex h-6 w-6 items-center justify-center rounded-full normal-case hover:bg-pill hover:text-ink"><PanelRightClose size={14} /></button>
                 </div>
-                {inCall && <div className="mb-3 mt-3"><Dock plan={plan} inCall transcript={false} recording={recording} lines={lines} pending={pending} note={note} name={client.name} /></div>}
-                <WidgetRail widgets={shown} hot={plan.focus ? `tile:${plan.focus}` : null} onPin={(id) => togglePin(id)} onRemove={removeWidget}
+                {inCall && <div className="mb-3 mt-3"><Dock answer={talk ? held.current.answers[talk] ?? null : null} language={language} inCall transcript={false} recording={recording} lines={lines} pending={pending} note={note} name={client.name} /></div>}
+                <WidgetRail widgets={shown} hot={talk} onTalk={inCall ? (w) => { setTalk(w.id); if (!held.current.answers[w.id]) onAsk(FOLLOW_UPS[2].ask(w.group)) } : undefined} onPin={(id) => togglePin(id)} onRemove={removeWidget}
                   onFocus={(id) => { if (id.startsWith('tile:')) focus(id.slice(5)) }} onAsk={(w) => { if (w.ask) onAsk(FOLLOW_UPS[0].ask(w.ask)) }} language={language} />
               </div>
-              <ChatPanel above={inCall ? <Transcript lines={lines} pending={pending} /> : null} name={client.name} chat={chat} busy={busy} detail={detail} suggestions={chatSuggestions} onAsk={onAsk} onShow={onShowChart}
+              <ChatPanel above={inCall ? <Transcript lines={lines} pending={pending} language={language} /> : null} name={client.name} chat={chat} busy={busy} detail={detail} suggestions={chatSuggestions} onAsk={onAsk} onShow={onShowChart}
                 pinned={pins.filter((p) => p.startsWith('chat:')).map((p) => p.slice(5))} onPin={(id) => togglePin(`chat:${id}`)} language={language} />
             </div>
           )}
@@ -389,8 +398,8 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
 // The call card, live calls only: who is on the line, the answer to the client's last concern and,
 // where asked for, the live transcript. It tops the graph column; under the brief it only appears
 // while that column is folded away.
-function Dock({ plan, inCall, transcript, recording, lines, pending, note, name }: {
-  plan: Plan; inCall: boolean; transcript: boolean; recording: boolean; lines: TranscriptLine[]; pending: string[]; note: string | null; name: string
+function Dock({ answer, language, inCall, transcript, recording, lines, pending, note, name }: {
+  answer: Plan['answer']; language: Language; inCall: boolean; transcript: boolean; recording: boolean; lines: TranscriptLine[]; pending: string[]; note: string | null; name: string
 }) {
   const [seconds, setSeconds] = useState(0)
   useEffect(() => {
@@ -398,7 +407,7 @@ function Dock({ plan, inCall, transcript, recording, lines, pending, note, name 
     const t = setInterval(() => setSeconds((s) => s + 1), 1000)
     return () => { clearInterval(t); setSeconds(0) }
   }, [inCall])
-  const answer = usePaced(plan.answer, 6000)
+  const [yourAnswer, hint, noRecording] = useTranslated(['Ihre Antwort', 'Fragt der Kunde nach etwas, erscheint darunter die passende Grafik. Ein Klick auf «Gespräch» bei einer Grafik zeigt hier den Antwortvorschlag dazu.', 'keine Aufzeichnung'], language)
   const clock = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
   // Before a call starts, the talk track's own "Einstieg" line already covers the opener; the three
   // talking-point chips only earn their place once there's a live conversation to react to.
@@ -407,37 +416,38 @@ function Dock({ plan, inCall, transcript, recording, lines, pending, note, name 
   return (
     <div data-dock className={`relative mt-2 ${GLASS}`}>
       <div className="absolute left-4 top-0 flex -translate-y-1/2 items-center gap-2 rounded-full bg-white px-2.5 py-0.5 text-[11px] text-muted shadow-sm ring-1 ring-black/5">
-        {inCall ? <><Wave /> <span className="text-ink">{name}</span> <span className="tabular-nums">{clock}</span>{!recording && <span>· keine Aufzeichnung</span>}</>
+        {inCall ? <><Wave /> <span className="text-ink">{name}</span> <span className="tabular-nums">{clock}</span>{!recording && <span>· {noRecording}</span>}</>
           : <span className="uppercase tracking-wide text-brand-dark">Einstieg</span>}
       </div>
       {note && <p className="px-4 pt-4 text-[11px] text-risk">{note}</p>}
 
       {inCall && answer && (
         <div key={answer.heard} className={`island-swap relative mx-3 mt-5 rounded-xl border border-brand/30 bg-brand-soft/20 px-4 pb-2.5 pt-3 ${transcript ? '' : 'mb-3'}`}>
-          <span className="absolute left-3 top-0 -translate-y-1/2 rounded-full bg-white px-1.5 text-[10px] uppercase tracking-wide text-brand-dark">Ihre Antwort</span>
+          <span className="absolute left-3 top-0 -translate-y-1/2 rounded-full bg-white px-1.5 text-[10px] uppercase tracking-wide text-brand-dark">{yourAnswer}</span>
           <p className="truncate text-[12px] italic text-muted"><Ear size={11} className="mr-1 inline" />«{answer.heard}»</p>
           <p className="mt-0.5 text-[15px] leading-snug">{answer.text}</p>
         </div>
       )}
 
-      {inCall && !answer && !transcript && <p className="px-4 pb-3 pt-5 text-[12px] leading-snug text-muted">Hört zu. Die Antwort auf das Anliegen des Kunden erscheint hier, die passenden Zahlen darunter.</p>}
-      {inCall && transcript && <Transcript lines={lines} pending={pending} />}
+      {inCall && !answer && !transcript && <p className="px-4 pb-3 pt-5 text-[12px] leading-snug text-muted">{hint}</p>}
+      {inCall && transcript && <Transcript lines={lines} pending={pending} language={language} />}
     </div>
   )
 }
 
 // The live transcript under the talking points: who said what, newest at the bottom, scrolls itself.
-export function Transcript({ lines, pending = [], tall = false }: { lines: TranscriptLine[]; pending?: string[]; tall?: boolean }) {
+export function Transcript({ lines, pending = [], tall = false, language = 'de' }: { lines: TranscriptLine[]; pending?: string[]; tall?: boolean; language?: Language }) {
+  const [title, waiting, clientLabel, advisorLabel] = useTranslated(['Transkript', 'Wartet auf das Gespräch …', 'Kunde', 'Berater'], language)
   const box = useRef<HTMLDivElement>(null)
   useEffect(() => { box.current?.scrollTo({ top: box.current.scrollHeight, behavior: 'smooth' }) }, [lines.length, pending.length])
   return (
     <div className="relative mx-3 mb-3 mt-2 rounded-xl border border-line bg-white/50">
-      <span className="absolute left-3 top-0 -translate-y-1/2 rounded-full bg-white px-1.5 text-[10px] uppercase tracking-wide text-muted">Transkript</span>
+      <span className="absolute left-3 top-0 -translate-y-1/2 rounded-full bg-white px-1.5 text-[10px] uppercase tracking-wide text-muted">{title}</span>
       <div ref={box} className={`${tall ? 'max-h-[50vh]' : 'max-h-36'} min-h-[3.5rem] space-y-1.5 overflow-y-auto px-3.5 pb-2.5 pt-3.5 text-[13px] leading-snug [scrollbar-width:thin]`}>
-        {lines.length + pending.length === 0 && <p className="text-[12px] text-muted">Wartet auf das Gespräch …</p>}
+        {lines.length + pending.length === 0 && <p className="text-[12px] text-muted">{waiting}</p>}
         {lines.map((l, i) => (
           <p key={i} className={`anim-rise flex gap-2 ${l.speaker === 'Berater' ? 'text-ink/65' : ''}`}>
-            <span className={`mt-px w-14 shrink-0 text-[10px] uppercase tracking-wide ${l.speaker === 'Kunde' ? 'text-brand-dark' : 'text-muted'}`}>{l.speaker}</span>
+            <span className={`mt-px w-14 shrink-0 text-[10px] uppercase tracking-wide ${l.speaker === 'Kunde' ? 'text-brand-dark' : 'text-muted'}`}>{l.speaker === 'Kunde' ? clientLabel : advisorLabel}</span>
             <span className="min-w-0 flex-1">{l.text}</span>
           </p>
         ))}

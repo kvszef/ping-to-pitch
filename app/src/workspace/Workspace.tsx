@@ -141,7 +141,12 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
       const spoken = r.lines.filter((l) => l.speaker === 'Berater').flatMap((l) => planRef.current.suggestions.filter((s) => sameSentence(s.text, l.text)))
       if (spoken.length) mark(spoken)
       const now = latest.current.screen
-      setPlan(now === on ? r.plan : rebasePlan(r.plan, now.tiles, now.charts))
+      // Graphs only come up when the CLIENT asked for something: a step without a client line (call
+      // start, the advisor speaking, a clicked talking point) brings no widgets and no answer, and one
+      // question brings exactly one (several at once only confuse).
+      const clientSpoke = job.segments.some((x) => x.speaker === 'Kunde') || r.lines.some((l) => l.speaker === 'Kunde')
+      const stepPlan = clientSpoke ? { ...r.plan, widgets: r.plan.widgets.slice(0, 1) } : { ...r.plan, widgets: [], answer: null }
+      setPlan(now === on ? stepPlan : rebasePlan(stepPlan, now.tiles, now.charts))
       if (r.covered?.length) setLiveCovered((prev) => new Set([...prev, ...r.covered!]))
       // The brief holds still during a call (what the conversation brings up shows in the graph column),
       // so the agent's live card re-ranking (r.cardOrder -> setLiveOrder) is not applied.

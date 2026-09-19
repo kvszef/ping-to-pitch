@@ -28,6 +28,36 @@ const BrowserRecognition = (w.SpeechRecognition ?? w.webkitSpeechRecognition) as
 
 const DEFAULT_REF = 'CASE-038'
 
+// This page has no settings: it speaks the call's language, which the server fixes for the
+// transcription (`callLanguage` in /api/status). English until the status has answered.
+type Language = 'de' | 'en'
+const TEXT = {
+  de: {
+    pageTitle: 'Anruf · Kundenberater', advisor: 'Ihr Kundenberater', advisorCalls: 'Ihr Kundenberater ruft an',
+    ready: 'Bereit zum Anrufen', incoming: 'Eingehender Anruf …', ringing: 'Klingelt …', connected: 'Verbunden', ended: 'Anruf beendet',
+    as: 'Als', keepOpen: 'Seite offen lassen, um Anrufe zu erhalten', screenOn: 'Bildschirm bleibt an. Diese Seite während des Gesprächs offen lassen.',
+    captions: 'Live-Untertitel vom Telefon', callAs: 'Anrufen als', loadingClients: 'Kunden werden geladen …', call: 'Anrufen',
+    decline: 'Ablehnen', accept: 'Annehmen', unmute: 'Stummschaltung aufheben', mute: 'Stummschalten', muted: 'Stumm', microphone: 'Mikrofon', hangUp: 'Auflegen',
+    errClients: 'Kundenliste konnte nicht geladen werden.', errConnect: 'Verbindung konnte nicht aufgebaut werden.', errHttps: 'Bitte über die https-Adresse öffnen.',
+    errPick: 'Bitte zuerst einen Kunden wählen.', errAudio: 'Keine direkte Tonverbindung (Netzwerk blockiert). Das Transkript läuft weiter.',
+    errMicDenied: 'Kein Zugriff auf das Mikrofon. Bitte in den Browser-Einstellungen erlauben und erneut versuchen.', errMicMissing: 'Kein Mikrofon gefunden.',
+    errCall: 'Der Anruf konnte nicht gestartet werden.',
+  },
+  en: {
+    pageTitle: 'Call · Client advisor', advisor: 'Your client advisor', advisorCalls: 'Your client advisor is calling',
+    ready: 'Ready to call', incoming: 'Incoming call …', ringing: 'Ringing …', connected: 'Connected', ended: 'Call ended',
+    as: 'As', keepOpen: 'Keep this page open to receive calls', screenOn: 'The screen stays on. Keep this page open during the call.',
+    captions: 'Live captions from the phone', callAs: 'Call as', loadingClients: 'Loading clients …', call: 'Call',
+    decline: 'Decline', accept: 'Accept', unmute: 'Unmute', mute: 'Mute', muted: 'Muted', microphone: 'Microphone', hangUp: 'Hang up',
+    errClients: 'The client list could not be loaded.', errConnect: 'The connection could not be established.', errHttps: 'Please open this page via its https address.',
+    errPick: 'Please choose a client first.', errAudio: 'No direct audio link (blocked by the network). The transcript keeps running.',
+    errMicDenied: 'No access to the microphone. Please allow it in the browser settings and try again.', errMicMissing: 'No microphone found.',
+    errCall: 'The call could not be started.',
+  },
+} as const
+// Errors are kept as keys, so a message follows the language even when it was set before the status answered.
+type ErrorKey = Extract<keyof typeof TEXT.de, `err${string}`>
+
 function labelOf(c: Record<string, unknown>): ClientOption | null {
   const ref = typeof c.ClientRef === 'string' ? c.ClientRef : null
   if (!ref) return null
@@ -51,7 +81,9 @@ export default function PhoneCall() {
   const [ref, setRef] = useState<string>(() => new URLSearchParams(location.search).get('ref') ?? '')
   const [phase, setPhase] = useState<Phase>('idle')
   const [incoming, setIncoming] = useState('') // the client the advisor is calling, while it rings here
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorKey | null>(null)
+  const [language, setLanguage] = useState<Language>('en')
+  const t = TEXT[language]
   const [muted, setMuted] = useState(false)
   const [startedAt, setStartedAt] = useState<number | null>(null)
   const [now, setNow] = useState(() => Date.now())
@@ -79,9 +111,14 @@ export default function PhoneCall() {
       const list = (Array.isArray(data) ? data : []).map((c) => labelOf(c as Record<string, unknown>)).filter((x): x is ClientOption => !!x)
       setClients(list)
       setRef((cur) => (cur && list.some((c) => c.ref === cur)) ? cur : (list.find((c) => c.ref === DEFAULT_REF)?.ref ?? list[0]?.ref ?? cur))
-    }).catch(() => setError('Kundenliste konnte nicht geladen werden.'))
-    fetch('/api/status').then((r) => r.json()).then((s: { transcribe?: boolean }) => { setTranscribe(s.transcribe !== false); log(`status transcribe=${s.transcribe}`) }).catch((e) => { setTranscribe(null); log(`status failed ${e}`) })
+    }).catch(() => setError('errClients'))
+    fetch('/api/status').then((r) => r.json()).then((s: { transcribe?: boolean; callLanguage?: string }) => { setTranscribe(s.transcribe !== false); setLanguage(s.callLanguage === 'de' ? 'de' : 'en'); log(`status transcribe=${s.transcribe}`) }).catch((e) => { setTranscribe(null); log(`status failed ${e}`) })
   }, [])
+
+  useEffect(() => {
+    document.documentElement.lang = language === 'en' ? 'en-GB' : 'de-CH'
+    document.title = TEXT[language].pageTitle
+  }, [language])
 
   const cleanup = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop())
@@ -119,7 +156,7 @@ export default function PhoneCall() {
       pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp }).then(() => {
         setStartedAt(Date.now())
         go('connected')
-      }).catch(() => { setError('Verbindung konnte nicht aufgebaut werden.'); finish(true) })
+      }).catch(() => { setError('errConnect'); finish(true) })
     } else if (msg.type === 'decline' || msg.type === 'hangup') {
       finish(false)
     }
@@ -194,7 +231,7 @@ export default function PhoneCall() {
     let rec: Recognition | null = null
     try {
       rec = new BrowserRecognition()
-      rec.lang = 'de-CH'
+      rec.lang = language === 'en' ? 'en-GB' : 'de-CH'
       rec.continuous = true
       rec.interimResults = false
       rec.onresult = (e) => {
@@ -221,7 +258,7 @@ export default function PhoneCall() {
       setCaptionsOn(false)
       try { rec?.stop() } catch { /* already stopped */ }
     }
-  }, [phase, transcribe])
+  }, [phase, transcribe, language])
 
   // Tells the desk that its call is not taken (the client declined or the call could not start).
   const refuse = () => {
@@ -236,11 +273,11 @@ export default function PhoneCall() {
     setError(null)
     unlockTones()
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
-      setError('Bitte über die https-Adresse öffnen.')
+      setError('errHttps')
       if (as) refuse()
       return
     }
-    if (!who) { setError('Bitte zuerst einen Kunden wählen.'); return }
+    if (!who) { setError('errPick'); return }
     go('ringing')
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
@@ -260,7 +297,7 @@ export default function PhoneCall() {
       pc.onconnectionstatechange = () => {
         log(`connection ${pc.connectionState}`)
         // The transcript travels through the server, so a blocked direct audio link does not end the call.
-        if (pc.connectionState === 'failed') setError('Keine direkte Tonverbindung (Netzwerk blockiert). Das Transkript läuft weiter.')
+        if (pc.connectionState === 'failed') setError('errAudio')
       }
       await pc.setLocalDescription(await pc.createOffer())
       await gathered(pc)
@@ -271,10 +308,10 @@ export default function PhoneCall() {
       log(`call failed ${e}`)
       const name = e instanceof DOMException ? e.name : ''
       setError(name === 'NotAllowedError' || name === 'SecurityError'
-        ? 'Kein Zugriff auf das Mikrofon. Bitte in den Browser-Einstellungen erlauben und erneut versuchen.'
+        ? 'errMicDenied'
         : name === 'NotFoundError'
-          ? 'Kein Mikrofon gefunden.'
-          : 'Der Anruf konnte nicht gestartet werden.')
+          ? 'errMicMissing'
+          : 'errCall')
       cleanup()
       if (as) refuse()
       else go('idle')
@@ -302,24 +339,24 @@ export default function PhoneCall() {
         <div className={`mb-6 flex h-28 w-28 items-center justify-center rounded-full bg-white/10 ${phase === 'ringing' || phase === 'incoming' ? 'animate-pulse' : ''}`}>
           <UserRound className="h-14 w-14 text-white/80" strokeWidth={1.5} />
         </div>
-        <h1 className="text-2xl font-semibold">{phase === 'incoming' ? 'Ihr Kundenberater ruft an' : 'Ihr Kundenberater'}</h1>
+        <h1 className="text-2xl font-semibold">{phase === 'incoming' ? t.advisorCalls : t.advisor}</h1>
         <p className="mt-2 text-base text-white/60">
-          {phase === 'idle' && 'Bereit zum Anrufen'}
-          {phase === 'incoming' && 'Eingehender Anruf …'}
-          {phase === 'ringing' && 'Klingelt …'}
-          {phase === 'connected' && <>Verbunden · <span className="tabular-nums">{mmss(elapsed)}</span></>}
-          {phase === 'ended' && 'Anruf beendet'}
+          {phase === 'idle' && t.ready}
+          {phase === 'incoming' && t.incoming}
+          {phase === 'ringing' && t.ringing}
+          {phase === 'connected' && <>{t.connected} · <span className="tabular-nums">{mmss(elapsed)}</span></>}
+          {phase === 'ended' && t.ended}
         </p>
-        {phase !== 'idle' && clientLabel && <p className="mt-1 text-sm text-white/40">Als {clientLabel}</p>}
-        {phase === 'idle' && <p className="mt-3 text-xs text-white/40">Seite offen lassen, um Anrufe zu erhalten</p>}
-        {phase === 'connected' && <p className="mt-3 text-xs text-white/50">Bildschirm bleibt an. Diese Seite während des Gesprächs offen lassen.</p>}
-        {phase === 'connected' && captionsOn &&<p className="mt-3 text-xs text-emerald-300/80">Live-Untertitel vom Telefon</p>}
+        {phase !== 'idle' && clientLabel && <p className="mt-1 text-sm text-white/40">{t.as} {clientLabel}</p>}
+        {phase === 'idle' && <p className="mt-3 text-xs text-white/40">{t.keepOpen}</p>}
+        {phase === 'connected' && <p className="mt-3 text-xs text-white/50">{t.screenOn}</p>}
+        {phase === 'connected' && captionsOn &&<p className="mt-3 text-xs text-emerald-300/80">{t.captions}</p>}
       </div>
 
       <div className="flex w-full max-w-sm flex-col items-center gap-6">
         {(error || insecure) && (
           <p role="alert" className="w-full rounded-xl bg-red-500/15 px-4 py-3 text-center text-sm text-red-200">
-            {error ?? 'Bitte über die https-Adresse öffnen.'}
+            {t[error ?? 'errHttps']}
           </p>
         )}
 
@@ -330,13 +367,13 @@ export default function PhoneCall() {
         {phase === 'idle' && (
           <>
             <label className="w-full text-left text-sm text-white/60">
-              Anrufen als
+              {t.callAs}
               <select
                 value={ref}
                 onChange={(e) => setRef(e.target.value)}
                 className="mt-2 w-full rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-base text-white"
               >
-                {clients.length === 0 && <option value={ref}>{ref || 'Kunden werden geladen …'}</option>}
+                {clients.length === 0 && <option value={ref}>{ref || t.loadingClients}</option>}
                 {clients.map((c) => <option key={c.ref} value={c.ref} className="text-black">{c.label}</option>)}
               </select>
             </label>
@@ -344,30 +381,30 @@ export default function PhoneCall() {
               type="button"
               onClick={() => void call()}
               disabled={!ref}
-              aria-label="Anrufen"
+              aria-label={t.call}
               className="flex flex-col items-center gap-2 disabled:opacity-40"
             >
               <span className="flex h-20 w-20 items-center justify-center rounded-full bg-emerald-500 shadow-lg shadow-emerald-500/30 active:scale-95">
                 <Phone className="h-9 w-9" />
               </span>
-              <span className="text-sm text-white/80">Anrufen</span>
+              <span className="text-sm text-white/80">{t.call}</span>
             </button>
           </>
         )}
 
         {phase === 'incoming' && (
           <div className="flex items-end justify-center gap-16">
-            <button type="button" onClick={refuse} aria-label="Ablehnen" className="flex flex-col items-center gap-2">
+            <button type="button" onClick={refuse} aria-label={t.decline} className="flex flex-col items-center gap-2">
               <span className="flex h-20 w-20 items-center justify-center rounded-full bg-red-500 shadow-lg shadow-red-500/30 active:scale-95">
                 <PhoneOff className="h-9 w-9" />
               </span>
-              <span className="text-sm text-white/80">Ablehnen</span>
+              <span className="text-sm text-white/80">{t.decline}</span>
             </button>
-            <button type="button" onClick={pickUp} aria-label="Annehmen" className="flex flex-col items-center gap-2">
+            <button type="button" onClick={pickUp} aria-label={t.accept} className="flex flex-col items-center gap-2">
               <span className="flex h-20 w-20 animate-pulse items-center justify-center rounded-full bg-emerald-500 shadow-lg shadow-emerald-500/30 active:scale-95">
                 <Phone className="h-9 w-9" />
               </span>
-              <span className="text-sm text-white/80">Annehmen</span>
+              <span className="text-sm text-white/80">{t.accept}</span>
             </button>
           </div>
         )}
@@ -375,18 +412,18 @@ export default function PhoneCall() {
         {(phase === 'ringing' || phase === 'connected') && (
           <div className="flex items-end justify-center gap-12">
             {phase === 'connected' && (
-              <button type="button" onClick={toggleMute} aria-label={muted ? 'Stummschaltung aufheben' : 'Stummschalten'} className="flex flex-col items-center gap-2">
+              <button type="button" onClick={toggleMute} aria-label={muted ? t.unmute : t.mute} className="flex flex-col items-center gap-2">
                 <span className={`flex h-16 w-16 items-center justify-center rounded-full ${muted ? 'bg-white text-black' : 'bg-white/15'} active:scale-95`}>
                   {muted ? <MicOff className="h-7 w-7" /> : <Mic className="h-7 w-7" />}
                 </span>
-                <span className="text-sm text-white/80">{muted ? 'Stumm' : 'Mikrofon'}</span>
+                <span className="text-sm text-white/80">{muted ? t.muted : t.microphone}</span>
               </button>
             )}
-            <button type="button" onClick={() => finish(true)} aria-label="Auflegen" className="flex flex-col items-center gap-2">
+            <button type="button" onClick={() => finish(true)} aria-label={t.hangUp} className="flex flex-col items-center gap-2">
               <span className="flex h-20 w-20 items-center justify-center rounded-full bg-red-500 shadow-lg shadow-red-500/30 active:scale-95">
                 <PhoneOff className="h-9 w-9" />
               </span>
-              <span className="text-sm text-white/80">Auflegen</span>
+              <span className="text-sm text-white/80">{t.hangUp}</span>
             </button>
           </div>
         )}

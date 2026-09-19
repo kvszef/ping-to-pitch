@@ -135,10 +135,16 @@ ${JSON.stringify(p.reasons)}` },
   ]
 }
 
+// The live agent writes in the display language directly: a display-time translation (/api/translate)
+// would add seconds to an answer the advisor needs mid-sentence. Appended as the last rule, so it wins
+// over the German-only rule in RULES. Ids, numbers and quoted data stay untouched (the grounding check
+// in src/workspace/brain.ts compares numbers literally).
+const AGENT_ENGLISH = `- LANGUAGE (this rule overrides every earlier rule about German): every text YOU write is in English (British spelling): "answer.text", every "label" and "text" in "suggestions", and every tile "text". Keep ids, numbers, amounts, percentages, dates, currency codes and names of positions exactly as they appear in the input (same digits and separators, e.g. CHF 67'000 stays CHF 67'000). Quoted input stays verbatim in its original language: "answer.heard", "segments" and "covered" are copied, never translated.`
+
 // The screen agent: picks from the catalogue of UI elements what the advisor sees right now.
 // Called when a client opens and on every new piece of transcript. Elements carry their own
 // numbers; the agent only chooses, orders and shortens, and writes three talking points.
-function agentPrompt(p: { context: unknown; catalogue: unknown; tiles: unknown; charts: unknown; transcript: unknown[]; segments?: unknown[]; said: unknown[]; event: string }): Message[] {
+function agentPrompt(p: { context: unknown; catalogue: unknown; tiles: unknown; charts: unknown; transcript: unknown[]; segments?: unknown[]; said: unknown[]; event: string; language?: string }): Message[] {
   const live = Array.isArray(p.segments) && p.segments.length > 0
   // An internet call knows who speaks, so the model need not return the segments with roles (less output, faster).
   const roles = live && !(p.segments as { speaker?: string }[]).every((x) => x?.speaker === 'Kunde' || x?.speaker === 'Berater')
@@ -150,10 +156,11 @@ Schema: {"tiles": [{"id": string, "text"?: string}], "focus": string | null, "wi
 - Verwende nur ids aus KACHELN und GRAFIKEN. "focus" ist eine id, kein Text.
 - ${live ? 'Richte "focus", "widgets" und "suggestions" nach dem, was zuletzt gesagt wurde. Greife das Anliegen des Kunden auf; wiederhole nichts aus GESAGT.' : 'Vor dem Gespräch: "focus" ist die wichtigste Kachel, "suggestions" sind die drei besten Einstiege.'}
 ${live ? `- Das Gespräch kann auf Englisch oder Deutsch geführt werden; verstehe es sinngemäss, deine Texte bleiben Deutsch.
-- Äussert der KUNDE in den NEUEN ABSCHNITTEN eine Frage, einen Wunsch oder einen Auftrag (auch allgemein wie «Wie läuft mein Portfolio?» oder «Reduzieren Sie meine Positionen»), dann gilt zwingend: "focus" = die am besten passende Kachel, "widgets" = ein bis drei passende Einträge ("chart:<id>" aus GRAFIKEN oder "tile:<id>" aus KACHELN, das Passendste zuerst, nie leer), "answer" = {"heard": die Aussage des Kunden, "text": Stichpunkt für die Antwort des Beraters mit den passenden Zahlen aus dem Kontext, höchstens 20 Wörter}. Allgemeine Fragen zum Stand des Portfolios beantwortet die Wertentwicklung. Nur bei Begrüssung und Belanglosem bleiben "focus" und "widgets" unverändert und "answer" null.
+- Äussert der KUNDE in den NEUEN ABSCHNITTEN eine Frage, einen Wunsch oder einen Auftrag (auch allgemein wie «Wie läuft mein Portfolio?» oder «Reduzieren Sie meine Positionen»), dann gilt zwingend: "focus" = die am besten passende Kachel, "widgets" = genau EIN Eintrag, der am besten zur Aussage passt ("chart:<id>" aus GRAFIKEN, wenn eine Grafik passt, sonst "tile:<id>" aus KACHELN; nie leer, nie mehrere), "answer" = {"heard": die Aussage des Kunden, "text": Stichpunkt für die Antwort des Beraters mit den passenden Zahlen aus dem Kontext, höchstens 20 Wörter}. Allgemeine Fragen zum Stand des Portfolios beantwortet die Wertentwicklung. Nur bei Begrüssung und Belanglosem bleiben "focus" und "widgets" unverändert und "answer" null.
 ${roles ? `- "segments": die NEUEN ABSCHNITTE in Reihenfolge mit Rolle. Der Berater erklärt und schlägt vor; der Kunde fragt und schildert. Nichts hinzufügen.
 ` : ''}- "covered": Texte AUS KUNDENKONTEXT.briefing, Karte vom Typ "talktrack" (Felder open/mention/ask), wörtlich übernommen, die im bisherigen und neuen Gespräch bereits angesprochen wurden. Sonst leer.
-` : ''}- Jede Zahl, die du schreibst, muss wörtlich in KUNDENKONTEXT, KACHELN oder GRAFIKEN stehen.` },
+` : ''}- Jede Zahl, die du schreibst, muss wörtlich in KUNDENKONTEXT, KACHELN oder GRAFIKEN stehen.${p.language === 'en' ? `
+${AGENT_ENGLISH}` : ''}` },
     { role: 'user', content: `KUNDENKONTEXT:\n${JSON.stringify(p.context)}\n\nKACHELN:\n${JSON.stringify(p.tiles)}\n\nGRAFIKEN:\n${JSON.stringify(p.charts)}\n\nBISHERIGES GESPRÄCH:\n${JSON.stringify(p.transcript ?? [])}\n\nNEUE ABSCHNITTE:\n${JSON.stringify(p.segments ?? [])}\n\nGESAGT:\n${JSON.stringify(p.said ?? [])}\n\nEREIGNIS: ${p.event}` },
   ]
 }
@@ -246,7 +253,7 @@ export function api(env: Env): Plugin {
         if (!req.url?.startsWith('/api/')) return next()
         try {
           if (req.url.startsWith('/api/call/') && await callRoute(req, res)) return
-          if (req.url === '/api/status') return send(res, 200, { openai: ready(env, 'openai'), apertus: ready(env, 'apertus'), elevenlabs: !!env.ELEVENLABS_API_KEY, transcribe: !!env.ELEVENLABS_API_KEY || !!env.OPENAI_API_KEY, daten: await dataStatus() })
+          if (req.url === '/api/status') return send(res, 200, { openai: ready(env, 'openai'), apertus: ready(env, 'apertus'), elevenlabs: !!env.ELEVENLABS_API_KEY, transcribe: !!env.ELEVENLABS_API_KEY || !!env.OPENAI_API_KEY, callLanguage: spoken(env), daten: await dataStatus() })
           if (req.url === '/api/house-view' && req.method === 'GET') return send(res, 200, houseView())
           if (req.url === '/api/clients' && req.method === 'GET') return send(res, 200, await caseClients())
           const llm = { complete: (p: Provider, m: Message[]) => complete(env, p, true, m), ready: (p: Provider) => ready(env, p) }

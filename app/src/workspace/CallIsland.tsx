@@ -1,5 +1,7 @@
 import { ChevronDown, Clock, Compass, Ear, Phone, PhoneOff } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useLanguage } from '../data/useLanguage'
+import { useTranslated } from '../data/useTranslate'
 import type { Client, IncomingCall, Signal } from '../types'
 import type { Slot } from './types'
 
@@ -34,72 +36,83 @@ function Fact({ label, value }: { label: string; value: string }) {
 // While the advisor is on another call: a knock ("Anklopfen") with the choice to note a callback
 // or to end the current call and take this one.
 function Knock({ busyWith, onLater, onAccept }: { busyWith: string; onLater: () => void; onAccept: () => void }) {
+  const [knocking, later, endAndAccept] = useTranslated(['Anklopfen: Sie sprechen gerade mit', 'Rückruf vormerken', 'Beenden & annehmen'], useLanguage())
   return (
     <div className="island-stagger mx-3 mb-3 flex flex-wrap items-center gap-2 rounded-[18px] bg-white/[0.07] p-2.5 text-xs">
-      <span className="w-full text-white/70">Anklopfen: Sie sprechen gerade mit <span className="text-white">{busyWith}</span>.</span>
-      <button onClick={onLater} className="ml-auto flex items-center gap-1 rounded-full bg-warn px-3 py-1.5 text-[11px] text-ink transition-transform hover:scale-105"><Clock size={12} /> Rückruf vormerken</button>
-      <button onClick={onAccept} className="rounded-full bg-ok px-3 py-1.5 text-[11px] text-white transition-transform hover:scale-105">Beenden &amp; annehmen</button>
+      <span className="w-full text-white/70">{knocking} <span className="text-white">{busyWith}</span>.</span>
+      <button onClick={onLater} className="ml-auto flex items-center gap-1 rounded-full bg-warn px-3 py-1.5 text-[11px] text-ink transition-transform hover:scale-105"><Clock size={12} /> {later}</button>
+      <button onClick={onAccept} className="rounded-full bg-ok px-3 py-1.5 text-[11px] text-white transition-transform hover:scale-105">{endAndAccept}</button>
     </div>
   )
 }
 
 export function RingingIsland({ client, call, signal, onAccept, onDecline, busyWith, onLater }: { client?: Client; call: IncomingCall; signal?: Signal; onAccept: () => void; onDecline: () => void; busyWith?: string; onLater?: () => void }) {
   const knock = busyWith && onLater ? <Knock busyWith={busyWith} onLater={onLater} onAccept={onAccept} /> : null
+  // Display-time translation (useTranslated): the German strings below stay the source text.
+  const language = useLanguage()
+  const [incomingT, unknownT, unknownHintT, declineT, acceptT, reasonT, reasonGuessT] = useTranslated(['Eingehender Anruf', 'Unbekannte Nummer', 'Der Kunde wird im Gespräch am Namen erkannt.', 'Ablehnen', 'Annehmen', 'Vermutlicher Anlass', 'Vermuteter Anlass:'], language)
+  const factLabels = useTranslated(['Kundenprofil', 'Strategie', 'Vermögen', 'Letzte Beratung', 'Regelverletzungen', 'Anlagedienstleistung'], language)
+  const headline = client?.briefing.find((c) => c.type === 'headline')
+  const track = client?.briefing.find((c) => c.type === 'talktrack')
+  const fromEngine = (client?.findings ?? []).filter((f) => (f.check === 'profile.call-reason' || (f.check === 'cio.house-view' && !!f.numbers?.changed))).map((f) => ({ text: f.title }))
+  const reasons = fromEngine.length ? fromEngine.slice(0, 3) : track?.type === 'talktrack' ? (track.reasons ?? []).slice(0, 3) : []
+  const persona = client?.findings?.find((f) => f.check === 'profile.persona')?.title
+  const tone = (client?.findings ?? []).filter((f) => f.check === 'profile.tone').map((f) => f.title.replace(/^Ton:\s*/, '')).slice(0, 3)
+  const [profileT, strategyT, lastT, violationsT, serviceT, personaT, headlineT, fallbackT] = useTranslated(client ? [
+    client.profile, client.strategy, client.lastConsultation, `${client.errors} Fehler · ${client.warnings} Warnungen`, client.service,
+    persona ?? '', headline?.type === 'headline' ? headline.text : '', signal ? signal.title : call.reason,
+  ] : [], language)
+  const toneT = useTranslated(tone, language)
+  const reasonsT = useTranslated(reasons.map((r) => r.text), language)
   if (!client) return (
     <Island width={420} radius={30}>
       <div className="flex items-center gap-3 p-4">
         <span className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-ok"><span className="absolute inset-0 animate-ping rounded-full bg-ok/60" /><Phone size={18} className="relative" /></span>
         <div className="min-w-0 flex-1">
-          <div className="text-[10px] uppercase tracking-wide text-white/50">Eingehender Anruf{call.number ? ` · ${call.number}` : ''}</div>
-          <div className="truncate text-[17px]">Unbekannte Nummer</div>
-          <div className="text-[11px] text-white/50">Der Kunde wird im Gespräch am Namen erkannt.</div>
+          <div className="text-[10px] uppercase tracking-wide text-white/50">{incomingT}{call.number ? ` · ${call.number}` : ''}</div>
+          <div className="truncate text-[17px]">{unknownT}</div>
+          <div className="text-[11px] text-white/50">{unknownHintT}</div>
         </div>
-        <button onClick={onDecline} aria-label="Ablehnen" className="flex h-10 w-10 items-center justify-center rounded-full bg-risk transition-transform hover:scale-110"><PhoneOff size={16} /></button>
-        <button onClick={onAccept} aria-label="Annehmen" className="flex h-10 w-10 items-center justify-center rounded-full bg-ok transition-transform hover:scale-110"><Phone size={16} /></button>
+        <button onClick={onDecline} aria-label={declineT} className="flex h-10 w-10 items-center justify-center rounded-full bg-risk transition-transform hover:scale-110"><PhoneOff size={16} /></button>
+        <button onClick={onAccept} aria-label={acceptT} className="flex h-10 w-10 items-center justify-center rounded-full bg-ok transition-transform hover:scale-110"><Phone size={16} /></button>
       </div>
       {knock}
     </Island>
   )
-  const headline = client.briefing.find((c) => c.type === 'headline')
-  const track = client.briefing.find((c) => c.type === 'talktrack')
-  const fromEngine = (client.findings ?? []).filter((f) => (f.check === 'profile.call-reason' || (f.check === 'cio.house-view' && !!f.numbers?.changed))).map((f) => ({ text: f.title }))
-  const reasons = fromEngine.length ? fromEngine.slice(0, 3) : track?.type === 'talktrack' ? (track.reasons ?? []).slice(0, 3) : []
-  const persona = client.findings?.find((f) => f.check === 'profile.persona')?.title
-  const tone = (client.findings ?? []).filter((f) => f.check === 'profile.tone').map((f) => f.title.replace(/^Ton:\s*/, ''))
   return (
     <Island width={470} radius={30}>
       <div className="flex items-center gap-3 px-4 pt-4">
         <span className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-ok"><span className="absolute inset-0 animate-ping rounded-full bg-ok/60" /><Phone size={18} className="relative" /></span>
         <div className="min-w-0 flex-1">
-          <div className="text-[10px] uppercase tracking-wide text-white/50">Eingehender Anruf{call.number ? ` · ${call.number}` : ''}</div>
+          <div className="text-[10px] uppercase tracking-wide text-white/50">{incomingT}{call.number ? ` · ${call.number}` : ''}</div>
           <div className="truncate text-[17px]">{client.name} <span className="text-xs text-white/50">{client.ref}</span></div>
         </div>
-        <button onClick={onDecline} aria-label="Ablehnen" className="flex h-10 w-10 items-center justify-center rounded-full bg-risk transition-transform hover:scale-110"><PhoneOff size={16} /></button>
-        <button onClick={onAccept} aria-label="Annehmen" className="flex h-10 w-10 items-center justify-center rounded-full bg-ok transition-transform hover:scale-110"><Phone size={16} /></button>
+        <button onClick={onDecline} aria-label={declineT} className="flex h-10 w-10 items-center justify-center rounded-full bg-risk transition-transform hover:scale-110"><PhoneOff size={16} /></button>
+        <button onClick={onAccept} aria-label={acceptT} className="flex h-10 w-10 items-center justify-center rounded-full bg-ok transition-transform hover:scale-110"><Phone size={16} /></button>
       </div>
       <div className="island-stagger grid grid-cols-3 gap-x-4 gap-y-2.5 px-4 pt-4">
-        <Fact label="Kundenprofil" value={client.profile} />
-        <Fact label="Strategie" value={client.strategy} />
-        <Fact label="Vermögen" value={client.aum} />
-        <Fact label="Letzte Beratung" value={client.lastConsultation} />
-        <Fact label="Regelverletzungen" value={`${client.errors} Fehler · ${client.warnings} Warnungen`} />
-        <Fact label="Anlagedienstleistung" value={client.service} />
+        <Fact label={factLabels[0]} value={profileT} />
+        <Fact label={factLabels[1]} value={strategyT} />
+        <Fact label={factLabels[2]} value={client.aum} />
+        <Fact label={factLabels[3]} value={lastT} />
+        <Fact label={factLabels[4]} value={violationsT} />
+        <Fact label={factLabels[5]} value={serviceT} />
       </div>
       {(persona || tone.length > 0) && (
         <div className="island-stagger px-4 pt-3 text-xs leading-snug">
-          {persona && <p className="text-white/80">{persona}</p>}
-          {tone.length > 0 && <p className="mt-1 flex flex-wrap gap-1">{tone.slice(0, 3).map((t) => <span key={t} className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/70">{t}</span>)}</p>}
+          {persona && <p className="text-white/80">{personaT}</p>}
+          {tone.length > 0 && <p className="mt-1 flex flex-wrap gap-1">{tone.map((t, i) => <span key={t} className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/70">{toneT[i] ?? t}</span>)}</p>}
         </div>
       )}
       <div className="island-stagger m-3 rounded-[18px] bg-white/[0.07] p-3">
-        {headline && <p className="text-xs leading-snug">{headline.text}</p>}
+        {headline && <p className="text-xs leading-snug">{headlineT}</p>}
         {/* Why the client is probably calling, ranked from the data (talk track), else the call's own reason. */}
         {reasons.length > 0 ? (
           <ol className="space-y-1 text-xs leading-snug">
-            <li className="text-[10px] uppercase tracking-wide text-white/45">Vermutlicher Anlass</li>
-            {reasons.map((r, i) => <li key={r.text} className="flex gap-1.5"><span className="tabular-nums text-white/40">{i + 1}.</span>{r.text}</li>)}
+            <li className="text-[10px] uppercase tracking-wide text-white/45">{reasonT}</li>
+            {reasons.map((r, i) => <li key={r.text} className="flex gap-1.5"><span className="tabular-nums text-white/40">{i + 1}.</span>{reasonsT[i] ?? r.text}</li>)}
           </ol>
-        ) : <p className="mt-1.5 text-[11px] text-white/50">{signal ? `Vermuteter Anlass: ${signal.title}` : call.reason}</p>}
+        ) : <p className="mt-1.5 text-[11px] text-white/50">{signal ? `${reasonGuessT} ${fallbackT}` : fallbackT}</p>}
       </div>
       {knock}
     </Island>

@@ -260,7 +260,7 @@ export async function agentStep(client: Client, screen: Screen, transcript: Tran
     const context = contextFor(client, news)
     const tiles = describeTiles(screen.tiles), charts = describeCharts(screen.charts)
     const r = await post<Record<string, unknown>>('/api/agent', {
-      provider, context, catalogue: CATALOGUE, tiles, charts, transcript: transcript.slice(-8), segments, said, event: event.type === 'said' ? `Berater sagte: ${event.text}` : event.type === 'start' && event.call ? `Eingehender Anruf, soeben angenommen. Vermutlicher Anlass: ${event.call}. Richte Kacheln, Fokus, Grafiken und Vorschläge auf diesen Anlass aus.` : event.type,
+      provider, language: settings.language, context, catalogue: CATALOGUE, tiles, charts, transcript: transcript.slice(-8), segments, said, event: event.type === 'said' ? `Berater sagte: ${event.text}` : event.type === 'start' && event.call ? `Eingehender Anruf, soeben angenommen. Vermutlicher Anlass: ${event.call}. Richte Kacheln, Fokus, Grafiken und Vorschläge auf diesen Anlass aus.` : event.type,
     })
     const evidence = JSON.stringify(context) + JSON.stringify(tiles) + JSON.stringify(charts) + segments.map((s) => s.text).join(' ') + transcript.map((l) => l.text).join(' ')
     const fallback = local()
