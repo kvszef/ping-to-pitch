@@ -72,12 +72,17 @@ type State = {
   timer: ReturnType<typeof setTimeout> | null
   /** Wurde schon versucht, den Kunden ueber einen genannten Namen zu finden? */
   namensucheLaeuft: boolean
+  /**
+   * Laeuft, solange das Briefing gebaut wird. Die erste Kundenaussage kommt oft frueher --
+   * ohne Warten antwortet das Modell dann ohne jeden Kontext und hat nichts zu sagen.
+   */
+  briefingLaeuft: Promise<void> | null
 }
 
 let state: State = leererZustand()
 
 function leererZustand(): State {
-  return { briefing: [], laufend: null, zuletzt: 0, wartend: null, timer: null, namensucheLaeuft: false }
+  return { briefing: [], laufend: null, zuletzt: 0, wartend: null, timer: null, namensucheLaeuft: false, briefingLaeuft: null }
 }
 
 // ------------------------------------------------------------------ Anruf beginnt
@@ -105,7 +110,9 @@ async function erkennen(rawFrom: string): Promise<void> {
   const erreichbar = await toolbox.health()
   bus.status('toolbox', erreichbar, erreichbar ? undefined : 'Toolbox nicht erreichbar, npm run toolbox starten')
   if (!identity.clientRef) return
-  await briefingHolen(identity.clientRef, identity.name, identity.confidence)
+  state.briefingLaeuft = briefingHolen(identity.clientRef, identity.name, identity.confidence)
+  await state.briefingLaeuft
+  state.briefingLaeuft = null
 }
 
 async function briefingHolen(clientRef: string, name: string | undefined, confidence: 'phone' | 'name' | 'manual' | 'unknown'): Promise<void> {
@@ -207,18 +214,27 @@ async function hinweiseHolen(trigger: string): Promise<void> {
   const call = bus.activeCall()
   if (!call?.clientRef || call.ended) return
 
+  // Erst warten, bis das Briefing steht: ohne Kontext hat das Modell nichts Belegtes zu sagen.
+  if (state.briefingLaeuft) {
+    bus.schritt('info', 'Hinweis wartet auf das Briefing')
+    await Promise.race([state.briefingLaeuft, new Promise((r) => setTimeout(r, 15000))])
+  }
+  if (bus.activeCall()?.ended) return
+
   state.laufend?.abort()
   const ac = new AbortController()
   state.laufend = ac
   state.zuletzt = Date.now()
 
   const t0 = Date.now()
+  const zeilen = bus.recentLines(LIMITS.transcriptWindow)
+  bus.schritt('info', `Hinweis mit ${state.briefing.length} Briefing-Karten und ${zeilen.length} Zeilen Kontext`)
   try {
     const vorschlaege = await brain.hints({
       callId: call.callId,
       clientRef: call.clientRef,
       briefing: state.briefing,
-      transcript: bus.recentLines(LIMITS.transcriptWindow),
+      transcript: zeilen,
       trigger,
     }, ac.signal)
     if (ac.signal.aborted) return

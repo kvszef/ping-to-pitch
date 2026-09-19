@@ -83,6 +83,7 @@ export const simPage = `<!doctype html>
   textarea:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
   .zeile { display:flex; gap:8px; align-items:center; }
   .zeile .hinweis { font-size:12px; color:var(--ink-3); margin-left:auto; }
+  .bausteintitel { font-size:10.5px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3); margin:4px 0 0; }
   .vorschlaege-kurz { display:flex; flex-wrap:wrap; gap:6px; }
   .vorschlaege-kurz button { font-size:12px; padding:5px 9px; color:var(--ink-2); }
 
@@ -187,11 +188,12 @@ export const simPage = `<!doctype html>
           <button data-rolle="caller" aria-pressed="true">Als Kunde</button>
           <button data-rolle="advisor" aria-pressed="false">Als Berater</button>
         </div>
-        <textarea id="text" placeholder="Was gesagt wird. Enter schickt ab, Umschalt+Enter macht eine neue Zeile." disabled></textarea>
+        <textarea id="text" placeholder="Hier schreiben. Enter schickt ab, Umschalt+Enter macht eine neue Zeile. Läuft noch kein Anruf, wird beim Abschicken einer gestartet."></textarea>
         <div class="zeile">
-          <button class="primary" id="senden" disabled>Abschicken</button>
+          <button class="primary" id="senden">Abschicken</button>
           <span class="hinweis" id="rollenhinweis">Nur Kundenaussagen lösen Vorschläge aus.</span>
         </div>
+        <p class="bausteintitel">Oder einen fertigen Satz nehmen</p>
         <div class="vorschlaege-kurz" id="bausteine"></div>
         <p class="fehler" id="fehler" hidden></p>
       </div>
@@ -410,8 +412,6 @@ function verbinden() {
     $("nummer").textContent = e.from || "unbekannt";
     $("starten").disabled = true;
     $("beenden").disabled = false;
-    $("text").disabled = false;
-    $("senden").disabled = false;
     if (uhrId) clearInterval(uhrId);
     uhrId = setInterval(() => { sekunden++; uhrStellen(); }, 1000);
     $("text").focus();
@@ -428,8 +428,6 @@ function verbinden() {
     $("zustand").textContent = "aufgelegt";
     $("starten").disabled = false;
     $("beenden").disabled = true;
-    $("text").disabled = true;
-    $("senden").disabled = true;
   });
   on("status", (e) => {
     if (e.component === "toolbox" && e.detail && e.detail.indexOf("Dossier") >= 0) dossierZeigen(e.detail);
@@ -488,10 +486,27 @@ $("text").addEventListener("keydown", (e) => {
 });
 async function senden() {
   const text = $("text").value.trim();
-  if (!text || !laeuft) return;
+  if (!text) return;
+  // Wer einfach lostippt, soll nicht erst einen Knopf suchen muessen.
+  if (!laeuft) {
+    zuruecksetzen();
+    if (!(await ruf("start", {}))) return;
+    await warteAufAnruf();
+  }
   $("text").value = "";
   const ok = await ruf("say", { text, speaker: rolle });
   if (!ok) $("text").value = text;
+}
+
+/** Wartet, bis call.started ueber den Ereignisstrom eingetroffen ist, hoechstens drei Sekunden. */
+function warteAufAnruf() {
+  return new Promise((fertig) => {
+    if (laeuft) return fertig();
+    const bis = Date.now() + 3000;
+    const t = setInterval(() => {
+      if (laeuft || Date.now() > bis) { clearInterval(t); fertig(); }
+    }, 60);
+  });
 }
 document.querySelectorAll(".rollenwahl button").forEach((b) => b.addEventListener("click", () => rolleSetzen(b.dataset.rolle)));
 
