@@ -6,6 +6,7 @@ import { subscribe as copilotSubscribe, unsubscribe as copilotUnsubscribe } from
 import { ask, callEnded, callStarted, pruefeDienste } from './copilot/session.ts'
 import { copilotPage } from './ui/copilot.ts'
 import { demoPage } from './ui/demo.ts'
+import { simPage } from './ui/sim.ts'
 
 // Die Routen:
 //   POST /vapi       Vapis Server-Webhook mit den Transkript-Ereignissen
@@ -14,8 +15,12 @@ import { demoPage } from './ui/demo.ts'
 //   GET  /events     Server-Sent Events: rohes Transkript und Copilot-Ereignisse in einem Strom
 //   GET  /           die Seite des Beraters
 //   GET  /pruefstand die schlichte Seite für die Telefonie allein
+//   GET  /sim        Sandkasten: Anruf ohne Telefon, beide Rollen von Hand
+//   POST /api/sim/*  start | say | end -- steuert den Sandkasten
 
 const PORT = Number(process.env.PORT || 3100)
+// Nummer, mit der der Sandkasten anruft. Zeigt ueber data/callers.json auf den Testkunden.
+const SIM_NUMMER = (process.env.SIM_FROM ?? '+41791234567').trim()
 
 const json = (res: ServerResponse, status: number, data: unknown) => {
   const body = JSON.stringify(data)
@@ -97,6 +102,11 @@ const server = createServer(async (req, res) => {
       return res.end(page)
     }
     // Vorführung ohne Telefon: ein aufgezeichneter Anruf im Lesetempo.
+    // Sandkasten: Anruf ohne Telefon, beide Rollen von Hand, alles andere echt.
+    if (req.method === 'GET' && url === '/sim') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+      return res.end(simPage)
+    }
     if (req.method === 'GET' && url === '/demo') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
       return res.end(demoPage)
@@ -111,6 +121,33 @@ const server = createServer(async (req, res) => {
       return
     }
     if (req.method === 'GET' && url === '/health') return json(res, 200, { ok: true })
+
+    // Der Sandkasten: ein Anruf ohne Telefon, aber mit allem anderen echt -- echte Werkzeuge,
+    // echtes Modell, echter Eintrag ins Dossier. Die Rolle kommt hier vom Absender, es wird
+    // also nichts geraten.
+    if (req.method === 'POST' && url.startsWith('/api/sim/')) {
+      const payload = JSON.parse((await body(req)) || '{}') as { text?: string; speaker?: string; from?: string; reason?: string }
+      const was = url.slice('/api/sim/'.length)
+      if (was === 'start') {
+        reset('Anruf läuft')
+        callStarted(payload.from?.trim() || SIM_NUMMER)
+        return json(res, 202, { gestartet: true })
+      }
+      if (was === 'say') {
+        const text = (payload.text ?? '').trim()
+        if (!text) return json(res, 400, { error: 'Feld text fehlt' })
+        const rolle = payload.speaker === 'advisor' ? 'Berater' : 'Kunde'
+        push(rolle, text, true)
+        console.log(`  ${rolle.padEnd(8)} │ ${text}`)
+        return json(res, 202, { angenommen: true, rolle })
+      }
+      if (was === 'end') {
+        status('Anruf beendet')
+        callEnded(payload.reason ?? 'im Sandkasten beendet')
+        return json(res, 202, { beendet: true })
+      }
+      return json(res, 404, { error: `Unbekannter Sandkasten-Pfad ${was}` })
+    }
 
     if (req.method === 'POST' && url === '/api/ask') {
       const payload = JSON.parse((await body(req)) || '{}') as { question?: string }

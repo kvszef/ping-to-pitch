@@ -106,6 +106,24 @@ export type CallEnded = {
   reason?: string
 }
 
+/**
+ * Ein Arbeitsschritt des Copiloten, für die Oberfläche sichtbar gemacht.
+ *
+ * Das ist reine Beobachtung: Wer zuschaut, soll sehen, welches Werkzeug gerade gezogen wurde
+ * und wie lange das Modell gebraucht hat. Nichts davon beeinflusst das Gespräch, und die
+ * Oberfläche darf jeden Schritt ignorieren, ohne etwas zu verpassen.
+ */
+export type AgentStep = {
+  type: 'agent.step'
+  callId: string
+  at: string
+  /** `tool` = Werkzeugaufruf, `model` = Modellaufruf, `result` = Ergebnis, `info` = alles andere. */
+  kind: 'tool' | 'model' | 'result' | 'info'
+  text: string
+  /** Dauer in Millisekunden, wo gemessen. */
+  ms?: number
+}
+
 /** Diagnose für die Oberfläche: Toolbox, Modell, Telefonie. Nie gesprächsrelevant. */
 export type StatusEvent = {
   type: 'status'
@@ -122,13 +140,14 @@ export type CallEvent =
   | Suggestion
   | Answer
   | CallEnded
+  | AgentStep
   | StatusEvent
 
 export type CallEventType = CallEvent['type']
 
 export const EVENT_TYPES: readonly CallEventType[] = [
   'call.started', 'client.identified', 'transcript.segment',
-  'suggestion', 'answer', 'call.ended', 'status',
+  'suggestion', 'answer', 'call.ended', 'agent.step', 'status',
 ] as const
 
 // ---------------------------------------------------------------------------

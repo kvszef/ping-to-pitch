@@ -25,7 +25,41 @@ import { LIMITS } from './types.ts'
 // schlimmer als gar keiner.
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
-const brain: Brain = createBrain(toolbox, { log: (zeile) => console.log(`  ${zeile}`) })
+
+/**
+ * Derselbe Toolbox-Zugang, nur meldet er jeden Aufruf an den Bus. Damit sieht die Oberfläche,
+ * welches Werkzeug gerade gezogen wurde und wie lange es gedauert hat -- ohne dass irgendein
+ * anderer Baustein davon wissen muss.
+ */
+const beobachteteToolbox: typeof toolbox = {
+  ...toolbox,
+  async invoke(name, args) {
+    const t0 = Date.now()
+    // Kundennummer, wo es eine gibt; sonst das erste Argument, Telefonnummern gekürzt.
+    const ref = typeof args.client_ref === 'string'
+      ? args.client_ref
+      : maskPhone(String(Object.values(args)[0] ?? ''))
+    try {
+      // Hier bewusst der echte Zugang, nicht der Wrapper: sonst ruft er sich selbst auf.
+      const rows = await toolbox.invoke(name, args)
+      bus.schritt('tool', `${name}(${ref}) · ${rows.length} ${rows.length === 1 ? 'Zeile' : 'Zeilen'}`, Date.now() - t0)
+      return rows
+    } catch (e) {
+      bus.schritt('info', `${name}(${ref}) fehlgeschlagen: ${e instanceof Error ? e.message : e}`, Date.now() - t0)
+      throw e
+    }
+  },
+}
+
+// Das Hirn protokolliert ohnehin jeden Modellaufruf mit Dauer; diese Zeilen gehen zusätzlich
+// an den Bus, statt nur in die Konsole.
+const brain: Brain = createBrain(beobachteteToolbox, {
+  log: (zeile) => {
+    console.log(`  ${zeile}`)
+    const ms = /(\d+) ms/.exec(zeile)
+    bus.schritt('model', zeile.replace(/^\[hirn\]\s*/, ''), ms ? Number(ms[1]) : undefined)
+  },
+})
 
 type State = {
   briefing: Briefing
@@ -56,14 +90,16 @@ export function callStarted(rawFrom: string): void {
   abbrechen()
   state = leererZustand()
   const call = bus.startCall(rawFrom)
+  bus.schritt('info', 'Anruf angenommen, Nummer wird nachgeschlagen')
   console.log(`\nAnruf von ${maskPhone(rawFrom)} · ${call.callId}`)
   void erkennen(rawFrom)
 }
 
 async function erkennen(rawFrom: string): Promise<void> {
   const t0 = Date.now()
-  const identity = await identifyByPhone(toolbox, rawFrom)
+  const identity = await identifyByPhone(beobachteteToolbox, rawFrom)
   bus.setClient(identity.clientRef, identity.name, identity.confidence)
+  bus.schritt('result', identity.clientRef ? 'Kunde erkannt: ' + identity.clientRef + (identity.name ? ' (' + identity.name + ')' : '') : 'Nummer unbekannt, kein Dossier', Date.now() - t0)
   console.log(`  Kunde: ${identity.clientRef ?? 'unbekannt'}${identity.name ? ` (${identity.name})` : ''} · ${identity.via} · ${Date.now() - t0} ms`)
 
   const erreichbar = await toolbox.health()
@@ -79,6 +115,7 @@ async function briefingHolen(clientRef: string, name: string | undefined, confid
     state.briefing = briefing
     bus.setClient(clientRef, name, confidence, briefing)
     bus.status('brain', true, `Briefing in ${Date.now() - t0} ms`)
+    bus.schritt('result', `Briefing steht: ${briefing.length} Karten`, Date.now() - t0)
     console.log(`  Briefing: ${briefing.length} Karten · ${Date.now() - t0} ms`)
   } catch (e) {
     const grund = e instanceof Error ? e.message : String(e)
@@ -143,7 +180,7 @@ async function zuordnenUndReagieren(line: Line, rolleSteht: boolean): Promise<vo
 }
 
 async function ueberNamenSuchen(text: string): Promise<void> {
-  const identity = await identifyByName(toolbox, text)
+  const identity = await identifyByName(beobachteteToolbox, text)
   if (!identity?.clientRef) return
   bus.setClient(identity.clientRef, identity.name, identity.confidence)
   console.log(`  Kunde im Gespraech erkannt: ${identity.clientRef} (${identity.name}) · ${identity.via}`)
@@ -255,7 +292,7 @@ async function zusammenfassungSchreiben(callId: string, clientRef: string | null
       console.log('  Keine Zusammenfassung: im Gespraech kam nichts Festhaltenswertes vor')
       return
     }
-    await toolbox.invoke('append_call_summary', {
+    await beobachteteToolbox.invoke('append_call_summary', {
       datum: new Date().toISOString().slice(0, 10),
       zusammenfassung: text.trim(),
       client_ref: clientRef,

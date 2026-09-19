@@ -469,9 +469,10 @@ export function createBrain(toolboxClient: ToolboxClient, opts: { log?: (zeile: 
             schema: SCHEMA_SUMMARY,
             maxTokens: 600,
             effort: CONF.effort,
-            // Eine Runde genügt: die Stammdaten stehen schon im Dossier, hier zählt nur,
-            // was im Gespräch gesagt wurde.
-            hops: 1,
+            // Drei Runden: das Modell schlägt gelegentlich doch noch etwas nach, bevor es
+            // schreibt. Mit nur einer Runde bleibt die Antwort nach dem Werkzeugaufruf leer
+            // und die Notiz fällt auf den Mock-Text zurück.
+            hops: 3,
             clientRef: input.clientRef,
             signal,
           })

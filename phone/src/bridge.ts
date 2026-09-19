@@ -11,6 +11,7 @@ import { subscribe as copilotSubscribe, unsubscribe as copilotUnsubscribe } from
 import { ask, callEnded, callStarted, pruefeDienste } from './copilot/session.ts'
 import { copilotPage } from './ui/copilot.ts'
 import { demoPage } from './ui/demo.ts'
+import { simPage } from './ui/sim.ts'
 
 // Die Brücke sitzt zwischen Kunde und Berater:
 //
@@ -23,6 +24,8 @@ import { demoPage } from './ui/demo.ts'
 // Ausgelegt auf ein Gespräch zur Zeit – für die Demo genug.
 
 const PORT = Number(process.env.BRIDGE_PORT || 3200)
+// Nummer, mit der der Sandkasten anruft. Zeigt ueber data/callers.json auf den Testkunden.
+const SIM_NUMMER = (process.env.SIM_FROM ?? '+41791234567').trim()
 const PUBLIC_URL = (process.env.BRIDGE_PUBLIC_URL ?? '').trim().replace(/\/+$/, '')
 const BERATER_NUMMER = (process.env.ADVISOR_NUMBER ?? '').trim()
 const ELEVENLABS_KEY = (process.env.ELEVENLABS_API_KEY ?? '').trim()
@@ -115,6 +118,11 @@ const server = createServer(async (req, res) => {
       return res.end(copilotPage)
     }
     // Vorfuehrung ohne Telefon: ein aufgezeichneter Anruf im Lesetempo.
+    // Sandkasten: Anruf ohne Telefon, beide Rollen von Hand, alles andere echt.
+    if (req.method === 'GET' && url === '/sim') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+      return res.end(simPage)
+    }
     if (req.method === 'GET' && url === '/demo') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
       return res.end(demoPage)
@@ -131,6 +139,25 @@ const server = createServer(async (req, res) => {
       res.on('close', () => copilotUnsubscribe(res))
       return
     }
+    // Sandkasten: ein Anruf ohne Telefon, aber mit allem anderen echt. Die Rolle kommt
+    // hier vom Absender, es wird also nichts geraten.
+    if (req.method === 'POST' && url.startsWith('/api/sim/')) {
+      const p = felder(await koerper(req), req.headers['content-type'] ?? '')
+      const was = url.slice('/api/sim/'.length)
+      res.writeHead(202, { 'Content-Type': 'application/json' })
+      if (was === 'start') { reset('Anruf laeuft'); callStarted((p.from ?? '').trim() || SIM_NUMMER); return res.end(JSON.stringify({ gestartet: true })) }
+      if (was === 'say') {
+        const text = (p.text ?? '').trim()
+        if (!text) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'Feld text fehlt' })) }
+        const rolle = p.speaker === 'advisor' ? 'Berater' : 'Kunde'
+        push(rolle, text, true)
+        console.log(`  ${rolle.padEnd(8)} | ${text}`)
+        return res.end(JSON.stringify({ angenommen: true, rolle }))
+      }
+      if (was === 'end') { status('Anruf beendet'); callEnded(p.reason ?? 'im Sandkasten beendet'); return res.end(JSON.stringify({ beendet: true })) }
+      return res.end(JSON.stringify({ error: 'Unbekannter Sandkasten-Pfad ' + was }))
+    }
+
     if (req.method === 'POST' && url === '/api/ask') {
       const payload = felder(await koerper(req), req.headers['content-type'] ?? '')
       const frage = (payload.question ?? '').trim()

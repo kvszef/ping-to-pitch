@@ -40,10 +40,19 @@ const write = (res: ServerResponse, event: string, data: unknown): void => {
 
 /** Ein Ereignis an alle offenen Browser schicken. Der Ereignisname ist `event.type`. */
 export function publish(event: CallEvent): void {
-  if (current && event.type !== 'status') {
-    if (event.type === 'suggestion' || event.type === 'answer') current.history.push(event)
+  if (current && (event.type === 'suggestion' || event.type === 'answer' || event.type === 'agent.step')) {
+    current.history.push(event)
   }
   for (const res of clients) write(res, event.type, event)
+}
+
+/**
+ * Ein Arbeitsschritt, den die Oberfläche mitlesen kann. Reine Beobachtung: geht das schief,
+ * darf es das Gespräch nicht stören, deshalb passiert hier nichts ausser Verteilen.
+ */
+export function schritt(kind: 'tool' | 'model' | 'result' | 'info', text: string, ms?: number): void {
+  if (!current) return
+  publish({ type: 'agent.step', callId: current.callId, at: now(), kind, text, ...(ms === undefined ? {} : { ms }) })
 }
 
 /** Eine SSE-Verbindung aufnehmen und ihr den bisherigen Stand nachreichen. */

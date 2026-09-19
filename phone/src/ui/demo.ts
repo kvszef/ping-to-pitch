@@ -261,9 +261,57 @@ export const demoPage = `<!doctype html>
   .glied p { margin: 0; font-size: 13px; color: var(--ink-2); }
   .glied .zeit { display: block; margin-top: 8px; font-family: var(--f-mono); font-size: 11.5px; color: var(--accent-ink); }
 
-  .notiz { font-size: 13.5px; color: var(--ink-2); max-width: 68ch; }
-  .notiz b { color: var(--ink); font-weight: 600; }
-  .notiz + .notiz { margin-top: 10px; }
+  /* ---------------------------------------------------------------- Dossier */
+  .fussnote { font-size: 12.5px; color: var(--ink-3); margin: 8px 0 0; max-width: 72ch; }
+  .fuss > .fussnote { margin-bottom: 22px; font-size: 13.5px; }
+  .fussnote code, .fuss code { font-family: var(--f-mono); font-size: .92em; }
+
+  .dossier-raster { display: grid; gap: 14px; grid-template-columns: 1fr; }
+  @media (min-width: 720px)  { .dossier-raster { grid-template-columns: repeat(2, 1fr); } }
+  @media (min-width: 1180px) { .dossier-raster { grid-template-columns: repeat(3, 1fr); } }
+  .karte { background: var(--surface); border: 1px solid var(--line-soft); border-radius: 10px; padding: 15px 16px; min-width: 0; }
+  .karte.weit { grid-column: 1 / -1; }
+  .karte h3 { font-family: var(--f-display); font-size: 17px; font-weight: 600; margin: 0 0 12px;
+              display: flex; align-items: baseline; gap: 9px; }
+  .karte h4 { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+              color: var(--ink-3); margin: 16px 0 9px; }
+  .anzahl { font-family: var(--f-mono); font-size: 12px; font-weight: 400; color: var(--ink-3); }
+
+  .paare { display: grid; gap: 1px; background: var(--line-soft); border-radius: 8px; overflow: hidden; margin: 0; }
+  .paare > div { background: var(--surface); display: flex; justify-content: space-between; gap: 14px; padding: 7px 11px; }
+  .paare dt { font-size: 12.5px; color: var(--ink-3); margin: 0; }
+  .paare dd { margin: 0; font-size: 13.5px; text-align: right; }
+  .mono { font-family: var(--f-mono); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .warnzeile { font-size: 13px; color: var(--risk); margin: 11px 0 0; }
+
+  .band { display: grid; gap: 4px; margin-bottom: 11px; font-size: 13px; }
+  .band .kopf { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .band .kopf b { font-weight: 500; }
+  .band .kopf span { font-family: var(--f-mono); font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink-3); }
+  .band .kopf span.raus { color: var(--risk); }
+  .spur { position: relative; height: 10px; background: var(--surface-2); border: 1px solid var(--line-soft); border-radius: 5px; }
+  .spur i { position: absolute; display: block; }
+  .spur .zone { top: 0; bottom: 0; background: color-mix(in srgb, var(--ok) 22%, transparent); }
+  .spur .ziel { top: -3px; bottom: -3px; width: 2px; background: var(--ink-3); }
+  .spur .ist { top: 1px; bottom: 1px; width: 3px; border-radius: 2px; background: var(--ok); }
+  .spur .ist.draussen { background: var(--risk); }
+
+  .tabelle-rahmen { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line-soft); white-space: nowrap; }
+  th { font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
+  td:first-child { white-space: normal; min-width: 200px; }
+  .r { text-align: right; }
+  tr.konto td { color: var(--ink-2); }
+  tbody tr:last-child td { border-bottom: 0; }
+
+  .notiz { padding: 9px 0; border-bottom: 1px solid var(--line-soft); font-size: 13.5px; }
+  .notiz:last-of-type { border-bottom: 0; }
+  .notiz time { display: block; font-size: 11.5px; color: var(--ink-3); margin-bottom: 3px; }
+  .notiz p { margin: 0; }
+  .notiz p + p { color: var(--ink-2); margin-top: 2px; }
+  .freitext { font-size: 14px; margin: 0; padding: 12px 14px; border-radius: 8px;
+              background: var(--surface-2); border-left: 3px solid var(--live); }
 
   @media (prefers-reduced-motion: reduce) {
     * { animation: none !important; transition: none !important; }
@@ -324,37 +372,155 @@ export const demoPage = `<!doctype html>
   </div>
 
   <footer class="fuss">
-    <h2>Was dabei wirklich passiert</h2>
-    <div class="kette">
-      <div class="glied">
-        <span class="nr">Schritt 1</span>
-        <b>Nummer erkennen</b>
-        <p>Die Anrufernummer wird auf E.164 gebracht und über das Werkzeug <code>find_client_by_phone</code> nachgeschlagen.</p>
-        <span class="zeit">gemessen: 41 ms</span>
-      </div>
-      <div class="glied">
-        <span class="nr">Schritt 2</span>
-        <b>Briefing bauen</b>
-        <p>Sieben Werkzeuge laufen parallel gegen die Kundendaten, das Modell verdichtet sie zu fünf Karten.</p>
-        <span class="zeit">gemessen: 9 277 ms</span>
-      </div>
-      <div class="glied">
-        <span class="nr">Schritt 3</span>
-        <b>Mithören</b>
-        <p>Jede abgeschlossene Aussage bekommt einen Sprecher. Nur Kundenaussagen lösen etwas aus.</p>
-        <span class="zeit">gemessen: unter 10 ms</span>
-      </div>
-      <div class="glied">
-        <span class="nr">Schritt 4</span>
-        <b>Vorschlagen</b>
-        <p>Das Modell ruft die passenden Werkzeuge nach und liefert Antwort, Fakt und nächsten Schritt.</p>
-        <span class="zeit">gemessen: 1,4 bis 2,5 s</span>
-      </div>
-    </div>
+    <h2>Das Dossier von Tester Muster</h2>
+    <p class="fussnote">Genau diese Daten liest der Copilot über MCP Toolbox. Sie stehen in
+    <code>data/unrisk.db</code>, gebaut aus <code>fixtures/tester.json</code>. Die Wertschriften und die
+    Anlagestrategie stammen aus den echten Stammdaten des Falls, die Beträge sind erfunden.</p>
 
-    <p class="notiz"><b>Alle Inhalte auf dieser Seite sind echt.</b> Briefing, Vorschläge, Werkzeugaufrufe, Laufzeiten und die Dossiernotiz am Ende stammen aus einem aufgezeichneten Durchlauf gegen den Testkunden TESTER-01 mit <span style="font-family:var(--f-mono);font-size:12.5px">gpt-5.6-luna</span>. Nichts davon ist für die Darstellung ausgedacht.</p>
-    <p class="notiz"><b>Die Wiedergabe ist absichtlich langsamer als das Gespräch.</b> In Wirklichkeit erscheint ein Vorschlag ein bis drei Sekunden nach der Aussage des Kunden, also noch während der Berater Luft holt. Hier läuft es im Lesetempo.</p>
-    <p class="notiz"><b>Die Zuordnung von Nummer zu Kunde ist der einzige erfundene Teil.</b> Die 47 Case-Kunden führen keine Telefonnummern, deshalb kommt sie aus einer eigenen kleinen Tabelle. Alles andere steht in den gelieferten Daten.</p>
+    <div class="dossier-raster">
+
+      <section class="karte">
+        <h3>Stammdaten</h3>
+        <dl class="paare">
+          <div><dt>Kundennummer</dt><dd class="mono">TESTER-01</dd></div>
+          <div><dt>Name</dt><dd>Tester Muster</dd></div>
+          <div><dt>Kundentyp</dt><dd>Private client</dd></div>
+          <div><dt>Referenzwährung</dt><dd>CHF</dd></div>
+          <div><dt>Geburtstag</dt><dd>12.04.1979</dd></div>
+          <div><dt>Profiliert am</dt><dd>18.03.2025</dd></div>
+          <div><dt>Vermögen</dt><dd class="mono">842’500 CHF</dd></div>
+          <div><dt>Liquidität</dt><dd class="mono">33’700 CHF</dd></div>
+          <div><dt>Interessen</dt><dd>Switzerland (Region), Sustainability (Theme)</dd></div>
+        </dl>
+      </section>
+
+      <section class="karte">
+        <h3>Anlageprofil und Grenzen</h3>
+        <dl class="paare">
+          <div><dt>Profil</dt><dd>Anlageprofil 5</dd></div>
+          <div><dt>ESG-Profil</dt><dd>Yes</dd></div>
+          <div><dt>Risikostufe</dt><dd class="mono">5</dd></div>
+          <div><dt>Max. Volatilität</dt><dd class="mono">12 %</dd></div>
+          <div><dt>Max. Produktrisiko</dt><dd class="mono">7</dd></div>
+          <div><dt>Max. Aktienquote</dt><dd class="mono">85 %</dd></div>
+        </dl>
+        <p class="warnzeile">Die gemessene Volatilität liegt bei 13,5 % und damit über den zulässigen 12 %.</p>
+      </section>
+
+      <section class="karte">
+        <h3>Portfolio TESTER-01-01</h3>
+        <dl class="paare">
+          <div><dt>Bezeichnung</dt><dd>Anlageberatung Test</dd></div>
+          <div><dt>Dienstleistung</dt><dd>Comprehensive Investment Advisory</dd></div>
+          <div><dt>Strategie</dt><dd>Investor profile 5</dd></div>
+          <div><dt>Vermögen</dt><dd class="mono">842’500 CHF</dd></div>
+          <div><dt>Volatilität</dt><dd class="mono">13,5 %</dd></div>
+          <div><dt>Erwartete Rendite</dt><dd class="mono">4,1 %</dd></div>
+          <div><dt>Value at Risk</dt><dd class="mono">14,6 %</dd></div>
+          <div><dt>Wertveränderung</dt><dd class="mono">–</dd></div>
+        </dl>
+        <p class="fussnote">Die Wertveränderung enthält Ein- und Auszahlungen und ist deshalb keine Rendite.</p>
+      </section>
+
+      <section class="karte weit">
+        <h3>Ist gegen Anlagestrategie</h3>
+        <div class="band">
+    <div class="kopf"><b>Shares</b><span class="raus">86,8 % · Band 20 % bis 85 %</span></div>
+    <div class="spur">
+      <i class="zone" style="left:20%;width:64.99999999999999%"></i>
+      <i class="ziel" style="left:50%"></i>
+      <i class="ist draussen" style="left:calc(86.81305637982196% - 1px)"></i>
+    </div>
+  </div>
+        <div class="band">
+    <div class="kopf"><b>Bonds</b><span class="raus">5,0 % · Band 10 % bis 70 %</span></div>
+    <div class="spur">
+      <i class="zone" style="left:10%;width:60%"></i>
+      <i class="ziel" style="left:42%"></i>
+      <i class="ist draussen" style="left:calc(4.985163204747774% - 1px)"></i>
+    </div>
+  </div>
+        <div class="band">
+    <div class="kopf"><b>Real estate</b><span class="">2,5 % · Band 0 % bis 15 %</span></div>
+    <div class="spur">
+      <i class="zone" style="left:0%;width:15%"></i>
+      <i class="ziel" style="left:5%"></i>
+      <i class="ist" style="left:calc(2.4807121661721068% - 1px)"></i>
+    </div>
+  </div>
+        <div class="band">
+    <div class="kopf"><b>Specialties andCommodities</b><span class="">1,7 % · Band 0 % bis 20 %</span></div>
+    <div class="spur">
+      <i class="zone" style="left:0%;width:20%"></i>
+      <i class="ziel" style="left:0%"></i>
+      <i class="ist" style="left:calc(1.7210682492581602% - 1px)"></i>
+    </div>
+  </div>
+        <div class="band">
+    <div class="kopf"><b>Liquidity</b><span class="">4,0 % · Band 0 % bis 60 %</span></div>
+    <div class="spur">
+      <i class="zone" style="left:0%;width:60%"></i>
+      <i class="ziel" style="left:3%"></i>
+      <i class="ist" style="left:calc(4% - 1px)"></i>
+    </div>
+  </div>
+        <p class="fussnote">Helles Feld ist das Mandatsband, der Strich das Ziel, der Balken der Ist-Wert. Rot heisst: ausserhalb des Bandes.</p>
+      </section>
+
+      <section class="karte weit">
+        <h3>Positionen</h3>
+        <div class="tabelle-rahmen">
+          <table>
+            <thead><tr><th>Titel</th><th>ISIN</th><th class="r">Stück</th><th class="r">Kurs</th><th class="r">Betrag</th><th class="r">Anteil</th><th>Klasse</th></tr></thead>
+            <tbody>
+              <tr><td>Namen-Aktie OC Oerlikon Corporation AG</td><td class="mono">CH0000816824</td><td class="r mono">9’800</td><td class="r mono">31.5</td><td class="r mono">308’700 CHF</td><td class="r mono">36,6 %</td><td>Shares</td></tr>
+              <tr><td>Anteile -P- UBS (CH) Equity Fund - Small Caps Switzerland</td><td class="mono">CH0004311335</td><td class="r mono">480</td><td class="r mono">640</td><td class="r mono">307’200 CHF</td><td class="r mono">36,5 %</td><td>Shares</td></tr>
+              <tr><td>Namen-Aktie Rieter Holding AG</td><td class="mono">CH0003671440</td><td class="r mono">1’250</td><td class="r mono">92.4</td><td class="r mono">115’500 CHF</td><td class="r mono">13,7 %</td><td>Shares</td></tr>
+              <tr><td>Anteile CHF (Hedged) PIMCO Funds Glob.Inv.Series</td><td class="mono">IE00B4YLF345</td><td class="r mono">2’100</td><td class="r mono">20</td><td class="r mono">42’000 CHF</td><td class="r mono">5,0 %</td><td>Bonds</td></tr>
+              <tr><td>Anteile -FA CHF- Swisscanto (CH) Real Estate Fund</td><td class="mono">CH0037430946</td><td class="r mono">190</td><td class="r mono">110</td><td class="r mono">20’900 CHF</td><td class="r mono">2,5 %</td><td>Real estate</td></tr>
+              <tr><td>Goldbarren 100 Gramm 999.9 fein</td><td class="mono">CH0002811245</td><td class="r mono">2</td><td class="r mono">7’250</td><td class="r mono">14’500 CHF</td><td class="r mono">1,7 %</td><td>Specialties andCommodities</td></tr>
+              <tr class="konto"><td>Privatkonto Test CHF</td><td class="mono">Konto</td><td class="r">–</td><td class="r">–</td><td class="r mono">33’700 CHF</td><td class="r mono">4,0 %</td><td>Liquidity</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="karte">
+        <h3>Offene Verstösse <span class="anzahl">4</span></h3>
+        <div class="flag" data-sev="risk"><i></i><div><p><b>Minimum limit fixed income</b></p><p>Der Obligationenanteil liegt unter der Untergrenze von 10 Prozent der Anlagestrategie.</p></div></div>
+        <div class="flag" data-sev="risk"><i></i><div><p><b>Cluster risk of a single financial instrument</b></p><p>Für Privatkunden mit umfassender Anlageberatung darf eine Einzelposition 20 Prozent nicht überschreiten.</p></div></div>
+        <div class="flag" data-sev="risk"><i></i><div><p><b>Compliance with maximum volatility</b></p><p>Die Volatilität des Portfolios überschreitet die für Anlageprofil 5 zulässigen 12 Prozent.</p></div></div>
+        <div class="flag" data-sev="warn"><i></i><div><p><b>Overweight in the equity sector "Industrials"</b></p><p>Übergewicht (+/- 5% zum SAA-Sollwert der Benchmark) im Aktiensektor "Industrie".</p></div></div>
+        <h4>Bewusst ausgesetzt</h4><div class="flag" data-sev="info"><i></i><div><p><b>Minimum limit liquidity</b></p><p>Mindestliquidität wurde auf Wunsch des Kunden bis Ende 2026 ausgesetzt.</p></div></div><p class="fussnote">Ausgesetzte Regeln stehen in derselben Tabelle wie Verstösse und müssen gefiltert werden, sonst zählt der Copilot sie mit.</p>
+      </section>
+
+      <section class="karte">
+        <h3>CRM-Notizen <span class="anzahl">3</span></h3>
+        <div class="notiz"><time class="mono">28.08.2026</time><p>Möchte beim nächsten Rebalancing einen nachhaltigen Schweizer Aktienfonds statt der Einzeltitel prüfen.</p></div>
+        <div class="notiz"><time class="mono">04.07.2026</time><p>Hat angekündigt, Anfang 2027 rund 80 Tausend Franken für einen Wohnungskauf zu entnehmen.</p></div>
+        <div class="notiz"><time class="mono">18.03.2026</time><p>Jahresgespräch geführt, Anlageprofil 5 bestätigt, keine Änderung der Strategie gewünscht.</p></div>
+        <p class="fussnote">Diese Notizen sind der Grund, warum der Copilot im Gespräch auf Nachhaltigkeit und auf die geplante Entnahme kommt.</p>
+      </section>
+
+      <section class="karte">
+        <h3>Anlagevorschläge <span class="anzahl">2</span></h3>
+        <div class="notiz"><time class="mono">02.09.2026 · Entwurf</time><p><b>Nachhaltigkeitswunsch aus dem letzten Gespräch</b></p><p>Prüfung eines nachhaltigen Schweizer Aktienfonds als Ersatz für die Einzeltitel.</p></div>
+        <div class="notiz"><time class="mono">12.08.2026 · Final</time><p><b>Rückführung der Aktienquote in die Bandbreite</b></p><p>Teilverkauf OC Oerlikon, Aufbau Obligationen CHF.</p></div>
+      </section>
+
+      <section class="karte">
+        <h3>Letzte Transaktionen</h3>
+        <div class="notiz"><p><b>Namen-Aktie OC Oerlikon Corporation AG</b></p><p class="mono">undefined Stück · –</p></div>
+        <div class="notiz"><p><b>Goldbarren 100 Gramm 999.9 fein</b></p><p class="mono">undefined Stück · –</p></div>
+      </section>
+
+      <section class="karte weit">
+        <h3>Freitext im Dossier</h3>
+        <p class="freitext">Testkunde für Entwicklung und Vorführung. Alle Zahlen sind erfunden, die Wertschriften und die Anlagestrategie stammen aber aus den echten Stammdaten, damit die Auswertungen greifen.</p>
+        <p class="fussnote">Hier hängt der Copilot nach jedem Gespräch seine Zusammenfassung an. Beim nächsten Anruf liest er sie wieder mit.</p>
+      </section>
+
+    </div>
   </footer>
 </div>
 
