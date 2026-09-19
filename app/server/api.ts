@@ -153,7 +153,7 @@ async function transcribeOpenAI(env: Env, audio: Buffer, contentType: string) {
   form.append('model', env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-transcribe')
   form.append('language', 'de')
   form.append('prompt', 'Telefongespräch zwischen einem Kundenberater einer Schweizer Bank und seinem Kunden über das Portfolio.')
-  form.append('file', new Blob([new Uint8Array(audio)], { type: contentType }), 'abschnitt.webm')
+  form.append('file', new Blob([new Uint8Array(audio)], { type: contentType }), `abschnitt.${/mp4|m4a|aac/.test(contentType) ? 'mp4' : /ogg/.test(contentType) ? 'ogg' : 'webm'}`)
   const r = await fetch(`${env.OPENAI_BASE_URL || 'https://api.openai.com/v1'}/audio/transcriptions`, { method: 'POST', headers: { Authorization: `Bearer ${env.OPENAI_API_KEY}` }, body: form })
   if (!r.ok) throw new Error(`OpenAI-Transkription ${r.status}: ${(await r.text()).slice(0, 300)}`)
   const text = ((await r.json()) as { text?: string }).text?.trim() ?? ''
@@ -169,7 +169,7 @@ async function transcribe(env: Env, audio: Buffer, contentType: string) {
   form.append('model_id', env.ELEVENLABS_STT_MODEL || 'scribe_v1')
   form.append('language_code', 'deu')
   form.append('diarize', 'true')
-  form.append('file', new Blob([new Uint8Array(audio)], { type: contentType }), 'abschnitt.webm')
+  form.append('file', new Blob([new Uint8Array(audio)], { type: contentType }), `abschnitt.${/mp4|m4a|aac/.test(contentType) ? 'mp4' : /ogg/.test(contentType) ? 'ogg' : 'webm'}`)
   const r = await fetch('https://api.elevenlabs.io/v1/speech-to-text', { method: 'POST', headers: { 'xi-api-key': env.ELEVENLABS_API_KEY }, body: form })
   if (!r.ok) throw new Error(`ElevenLabs ${r.status}: ${(await r.text()).slice(0, 300)}`)
   const data = await r.json() as { text: string; words?: Word[] }
@@ -220,7 +220,7 @@ export function api(env: Env): Plugin {
           if (req.url === '/api/clients/upload' && req.method === 'POST') { const out = uploadClients(await body(req)); return send(res, out.status, out.data) }
           if (req.method !== 'POST') return send(res, 405, { error: 'Nur POST' })
           const raw = await body(req)
-          if (req.url === '/api/transcribe') return send(res, 200, { segments: await transcribe(env, raw, req.headers['content-type'] || 'audio/webm') })
+          if (req.url === '/api/transcribe') { const segments = await transcribe(env, raw, req.headers['content-type'] || 'audio/webm'); console.info(`[transcribe] ${raw.length} bytes -> ${segments.length} segments`); return send(res, 200, { segments }) }
           const p = JSON.parse(raw.toString('utf8'))
           const provider: Provider = p.provider === 'apertus' ? 'apertus' : 'openai'
           if (req.url === '/api/chat') return send(res, 200, await complete(env, provider, false, chatPrompt(p)))

@@ -13,6 +13,10 @@ let line: Line = { state: 'idle' }
 let pc: RTCPeerConnection | null = null
 let player: HTMLAudioElement | null = null
 let listening = false
+// Chrome starts an AudioContext muted unless it is created inside a click, so the accept click
+// creates it and the recorder (usePhoneAudio) reuses it.
+let audio: AudioContext | null = null
+export const audioContext = () => audio
 const subscribers = new Set<() => void>()
 const captionSubscribers = new Set<(text: string) => void>()
 
@@ -46,6 +50,8 @@ export function startListening() {
 export async function accept(): Promise<boolean> {
   if (line.state !== 'ringing') return false
   const { ref, offer } = line
+  if (!audio || audio.state === 'closed') audio = new AudioContext()
+  void audio.resume()
   try {
     const local = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
     const conn = new RTCPeerConnection(ICE)

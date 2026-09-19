@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { Segment } from '../workspace/brain'
-import { onCaption } from './deskLine'
+import { audioContext, onCaption } from './deskLine'
 
 const CHUNK_MS = 7000
 
@@ -23,6 +23,7 @@ export function usePhoneAudio(
   handlers.current = { onSegments, onError }
 
   useEffect(() => {
+    console.info('[call] audio', { call: !!call, active, transcribe })
     if (!call || !active) return
     let stopped = false
     const emit = (speaker: Speaker, text: string) => { if (!stopped && text.trim()) handlers.current.onSegments([{ speaker, text: text.trim() }]) }
@@ -45,8 +46,9 @@ export function usePhoneAudio(
     const recorders: MediaRecorder[] = []
     // Chrome refuses to record a remote WebRTC stream directly (MediaRecorder.start throws), so both
     // sides are routed through Web Audio and the recorder takes the resulting local stream.
-    const audio = new AudioContext()
+    const audio = audioContext() ?? new AudioContext()
     void audio.resume()
+    console.info('[call] audio context', audio.state)
     const recordable = (stream: MediaStream) => {
       const out = audio.createMediaStreamDestination()
       audio.createMediaStreamSource(stream).connect(out)
@@ -63,12 +65,14 @@ export function usePhoneAudio(
         recorders.splice(recorders.indexOf(current), 1)
         record(stream, speaker)
         const blob = new Blob(parts, { type: current.mimeType })
+        console.info('[call] chunk', speaker, blob.size, blob.type)
         if (blob.size < 4000) return
         try {
           const r = await fetch('/api/transcribe', { method: 'POST', headers: { 'Content-Type': blob.type || 'audio/webm' }, body: blob })
           const data = await r.json()
           if (!r.ok) throw new Error(data.error)
           const text = ((data.segments ?? []) as Segment[]).map((s) => s.text.trim()).filter(Boolean).join(' ')
+          console.info('[call] text', speaker, text)
           emit(speaker, text)
         } catch (e) {
           if (!stopped) handlers.current.onError?.(e instanceof Error ? e.message : String(e))
@@ -81,14 +85,16 @@ export function usePhoneAudio(
       }
       timers.push(setTimeout(() => current.state === 'recording' && current.stop(), CHUNK_MS))
     }
-    record(recordable(call.remote), 'Kunde')
+    // The client's words come from the phone itself (it transcribes its own voice and sends captions),
+    // so they arrive even when the network blocks the direct audio link. The laptop records the advisor.
+    const off = onCaption((text) => emit('Kunde', text))
     record(recordable(call.local), 'Berater')
 
     return () => {
       stopped = true
+      off()
       timers.forEach(clearTimeout)
       recorders.forEach((r) => { if (r.state === 'recording') r.stop() })
-      void audio.close()
     }
   }, [call, active, transcribe])
 }

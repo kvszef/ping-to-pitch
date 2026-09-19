@@ -135,6 +135,38 @@ export default function PhoneCall() {
     return () => { active = false; document.removeEventListener('visibilitychange', take); void lock?.release().catch(() => {}) }
   }, [phase])
 
+  // The phone transcribes its own voice: 7 s chunks go through the tunnel to /api/transcribe and the
+  // text reaches the desk as a caption. This works even when the network blocks the direct audio link.
+  useEffect(() => {
+    if (phase !== 'connected' || transcribe !== true || !streamRef.current || typeof MediaRecorder === 'undefined') return
+    const stream = streamRef.current
+    let stopped = false
+    let timer = 0
+    let recorder: MediaRecorder | null = null
+    const record = () => {
+      if (stopped) return
+      const current = new MediaRecorder(stream)
+      recorder = current
+      const parts: Blob[] = []
+      current.ondataavailable = (e) => { if (e.data.size) parts.push(e.data) }
+      current.onstop = async () => {
+        record()
+        const blob = new Blob(parts, { type: current.mimeType })
+        if (blob.size < 4000) return
+        try {
+          const r = await fetch('/api/transcribe', { method: 'POST', headers: { 'Content-Type': blob.type || 'audio/webm' }, body: blob })
+          const data = (await r.json()) as { segments?: { text: string }[] }
+          const text = (data.segments ?? []).map((s) => s.text.trim()).filter(Boolean).join(' ')
+          if (text) void sendCall('desk', { type: 'caption', speaker: 'Kunde', text }).catch(() => {})
+        } catch { /* a lost chunk is fine, the next one follows */ }
+      }
+      try { current.start() } catch { return }
+      timer = window.setTimeout(() => current.state === 'recording' && current.stop(), 7000)
+    }
+    record()
+    return () => { stopped = true; clearTimeout(timer); if (recorder?.state === 'recording') recorder.stop() }
+  }, [phase, transcribe])
+
   // Fallback captions from the phone's own speech recognition when the server cannot transcribe.
   useEffect(() => {
     if (phase !== 'connected' || transcribe !== false || !BrowserRecognition) return
