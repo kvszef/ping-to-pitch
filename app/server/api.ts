@@ -69,6 +69,24 @@ const DETAIL: Record<string, string> = {
   detailliert: 'sechs bis acht Sätze: vollständige Herleitung mit allen relevanten Zahlen und Bandbreiten',
 }
 
+const LANGUAGE: Record<string, string> = {
+  de: 'Antworte auf Deutsch in Schweizer Schreibweise (ss statt ß).',
+  en: 'Antworte auf Englisch (British spelling).',
+}
+
+// Condenses the engine's profile tile (persona sentence, call reasons, raw notes) into a couple of
+// fluent sentences for the advisor. Summarising only: no fact may appear that isn't in the input.
+function summaryPrompt(p: { persona?: string; reasons: string[]; notes: { text: string; date: string }[]; language: string }): Message[] {
+  return [
+    { role: 'system', content: `Du fasst die Profil-Kachel eines Kundenberaters kurz zusammen, damit er auf einen Blick weiss, wer der Kunde ist und warum er sich meldet.
+${LANGUAGE[p.language] ?? LANGUAGE.de}
+Verwende NUR die gegebenen Fakten aus EINSCHÄTZUNG, ANLASS und NOTIZEN. Erfinde keine Zahlen, Ereignisse oder Eigenschaften; füge nichts hinzu, das dort nicht steht. Straffe nur die Sprache.
+Höchstens zwei kurze Sätze, keine Aufzählung, keine Floskeln wie «es ist wichtig» oder «wir sollten».
+Antworte als ein einziges JSON-Objekt ohne weiteren Text: {"text": string}` },
+    { role: 'user', content: `EINSCHÄTZUNG:\n${p.persona ?? '–'}\n\nANLASS:\n${p.reasons.join(' · ') || '–'}\n\nNOTIZEN:\n${p.notes.map((n) => `${n.date}: ${n.text}`).join('\n') || '–'}` },
+  ]
+}
+
 function chatPrompt(p: { context: unknown; modules: unknown; question: string; history: unknown; detail: string }): Message[] {
   return [
     { role: 'system', content: `${RULES}
@@ -235,6 +253,7 @@ export function api(env: Env): Plugin {
           const p = JSON.parse(raw.toString('utf8'))
           const provider: Provider = p.provider === 'apertus' ? 'apertus' : 'openai'
           if (req.url === '/api/chat') return send(res, 200, await complete(env, provider, false, chatPrompt(p)))
+          if (req.url === '/api/summary') return send(res, 200, await complete(env, provider, true, summaryPrompt(p)))
           if (req.url === '/api/demo-script') return send(res, 200, await complete(env, provider, false, demoScriptPrompt(p)))
           if (req.url === '/api/agent') return send(res, 200, await complete(env, provider, true, agentPrompt(p)))
           if (req.url === '/api/analyse') return send(res, 200, await complete(env, provider, true, analysePrompt(p)))

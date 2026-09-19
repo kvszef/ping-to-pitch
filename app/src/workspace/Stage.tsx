@@ -8,6 +8,7 @@ import { ChatPanel } from './ChatPanel'
 import { Smooth, useFlip } from './motion'
 import { bestTile, widgetMain, type Plan, type Suggestion, type Tile } from './screen'
 import type { ChatEntry, Detail, Hint, TranscriptLine } from './types'
+import { useSummary } from './useSummary'
 import { Bars, Spark, WidgetRail, type Widget } from './Widgets'
 
 // The conversation workspace as one window, 2:1.
@@ -79,6 +80,9 @@ function Profile({ client, compact = false }: { client: Client; compact?: boolea
   ].filter((f): f is [string, string] => !!f[1] && f[1] !== '–')
   const notes = context?.type === 'context' ? context.notes.slice(0, 2) : []
   const reasons = (client.findings ?? []).filter((f) => f.check === 'profile.call-reason').map((f) => f.title).slice(0, 2)
+  // The engine's facts are precise but wordy; the model condenses them to a glance, in the advisor's language.
+  // Only German ships today (see useSummary) — the language is already a parameter, ready for a picker later.
+  const summary = useSummary(persona?.type === 'profile' ? persona.persona : undefined, reasons, notes, 'de')
   return (
     <section className={`shrink-0 px-4 py-3 ${GLASS}`}>
       <dl className={compact ? 'flex flex-wrap gap-x-4 gap-y-0.5' : 'grid grid-cols-2 gap-x-5 gap-y-2 sm:grid-cols-4'}>
@@ -86,14 +90,10 @@ function Profile({ client, compact = false }: { client: Client; compact?: boolea
           <div key={label} className={compact ? 'flex min-w-0 items-baseline gap-1' : 'min-w-0'}><dt className="text-[10px] uppercase tracking-wide text-muted">{label}</dt><dd className="truncate text-[13px]" title={value}>{value}</dd></div>
         ))}
       </dl>
-      {persona?.type === 'profile' && <p className="mt-3 border-t border-black/5 pt-2 text-[13px] leading-snug"><span className="mr-1.5 text-[10px] uppercase tracking-wide text-brand-dark">Einschätzung</span>{persona.persona}</p>}
-      {reasons.length > 0 && (
-        <p className="mt-1.5 text-[13px] leading-snug"><span className="mr-1.5 text-[10px] uppercase tracking-wide text-brand-dark">Anlass</span>{reasons.join(' · ')}</p>
-      )}
-      {notes.length > 0 && !compact && (
-        <ul className="mt-2 space-y-0.5 text-[12px] leading-snug text-ink/80">
-          {notes.map((n) => <li key={n.text} className="truncate" title={n.text}><span className="mr-1.5 tabular-nums text-muted">{n.date}</span>{n.text}</li>)}
-        </ul>
+      {summary.text && (
+        <p className={`mt-3 border-t border-black/5 pt-2 text-[13px] leading-snug ${summary.loading ? 'animate-pulse' : ''}`} title={[persona?.type === 'profile' ? persona.persona : '', reasons.join(' · '), ...notes.map((n) => n.text)].filter(Boolean).join(' — ')}>
+          {summary.text}
+        </p>
       )}
     </section>
   )
