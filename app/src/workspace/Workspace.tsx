@@ -210,6 +210,10 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
     else if (wasConnected.current) { wasConnected.current = false; setInCall(false) } // the client hung up
   }, [phoneCall])
   usePhoneAudio(phoneCall, inCall && settings.record, !!status.transcribe, (segments) => hearRef.current(segments), (error) => setNote(error))
+  // During an internet call the mic button mutes the advisor's own microphone.
+  const [phoneMuted, setPhoneMuted] = useState(false)
+  useEffect(() => { setPhoneMuted(false) }, [phoneCall])
+  const togglePhoneMute = () => setPhoneMuted((m) => { deskLine.setMuted(!m); return !m })
   const endCall = () => { if (phone) deskLine.hangup(); setInCall(false) }
 
   // A demo call plays its script at speaking pace through the same path as live transcription.
@@ -382,7 +386,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
             }
             actions={
               <div className="flex shrink-0 gap-1.5">
-                {inCall && settings.record && canListen(!!status.transcribe) && <button onClick={() => setMic((m) => !m)} aria-label="Mikrofon" title="Mikrofon" className={`flex h-7 w-7 items-center justify-center rounded-full ${mic ? 'bg-risk text-white' : 'bg-pill hover:bg-track'}`}>{mic ? <Mic size={13} /> : <MicOff size={13} />}</button>}
+                {inCall && settings.record && canListen(!!status.transcribe) && <button onClick={() => (phone ? togglePhoneMute() : setMic((m) => !m))} aria-label="Mikrofon" title="Mikrofon" className={`flex h-7 w-7 items-center justify-center rounded-full ${(phone ? !phoneMuted : mic) ? 'bg-risk text-white' : 'bg-pill hover:bg-track'}`}>{(phone ? !phoneMuted : mic) ? <Mic size={13} /> : <MicOff size={13} />}</button>}
                 <button onClick={() => (inCall ? endCall() : setInCall(true))} className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs text-white transition-colors ${inCall ? 'bg-risk' : 'bg-brand hover:bg-brand-dark'}`}>{inCall ? <><PhoneOff size={12} /> Beenden</> : <><Phone size={12} /> Anrufen</>}</button>
               </div>
             }

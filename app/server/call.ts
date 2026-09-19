@@ -52,7 +52,7 @@ export async function callRoute(req: IncomingMessage, res: ServerResponse): Prom
   }
   // Debug lines from the phone, printed in the dev server log so the desk side can see what the phone does.
   if (url.pathname === '/api/call/log' && req.method === 'POST') {
-    console.info(`[phone] ${(await readBody(req)).slice(0, 300)}`)
+    console.info(`[trail] ${(await readBody(req)).slice(0, 300)}`)
     res.end('{}')
     return true
   }
