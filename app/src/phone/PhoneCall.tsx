@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Mic, MicOff, Phone, PhoneOff, UserRound } from 'lucide-react'
-import { ICE, gathered, listenCall, sendCall, type CallMessage } from './protocol.ts'
+import { gathered, iceConfig, listenCall, sendCall, type CallMessage } from './protocol.ts'
 import { startRingback, startRingtone, unlockTones } from './tones.ts'
 import { inOrder, recordUtterances } from './utterances.ts'
 
@@ -288,7 +288,7 @@ export default function PhoneCall() {
       if (phaseRef.current !== 'ringing') { stream.getTracks().forEach((t) => t.stop()); return }
       streamRef.current = stream
       log(`mic ok: ${stream.getAudioTracks().map((t) => `${t.label} enabled=${t.enabled} muted=${t.muted}`).join(', ')}`)
-      const pc = new RTCPeerConnection(ICE)
+      const pc = new RTCPeerConnection(await iceConfig())
       pcRef.current = pc
       stream.getTracks().forEach((t) => pc.addTrack(t, stream))
       pc.ontrack = (e) => {

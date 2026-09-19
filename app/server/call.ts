@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { turnServers } from './turn.ts'
 
 // Relay for the internet call between the client's phone (call.html) and the advisor's desk (the app).
 // It only passes small JSON messages (call setup, captions); the audio itself flows directly between
@@ -6,6 +7,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 //
 //   GET  /api/call/events?role=desk|phone   server-sent events, one JSON message per event
 //   POST /api/call/send  { to: 'desk' | 'phone', msg: CallMessage }
+//   GET  /api/call/ice     relay servers for the audio (turn.ts); { iceServers: null } without a relay
 //
 // A ring that arrives before the desk is listening is kept and delivered when the desk connects.
 
@@ -37,8 +39,16 @@ const readBody = (req: IncomingMessage) => new Promise<string>((resolve, reject)
   req.on('data', (c: Buffer) => { data += c.toString('utf8') }).on('end', () => resolve(data)).on('error', reject)
 })
 
-export async function callRoute(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
+export async function callRoute(req: IncomingMessage, res: ServerResponse, env: Record<string, string | undefined> = {}): Promise<boolean> {
   const url = new URL(req.url ?? '/', 'http://local')
+  if (url.pathname === '/api/call/ice' && req.method === 'GET') {
+    const iceServers = await turnServers(env)
+    console.info(`[call] ice: ${iceServers ? 'relay ready' : 'direct link only'}`)
+    res.setHeader('Content-Type', 'application/json; charset=utf-8')
+    res.setHeader('Cache-Control', 'no-store')
+    res.end(JSON.stringify({ iceServers }))
+    return true
+  }
   if (url.pathname === '/api/call/events' && req.method === 'GET') {
     const role: Role = url.searchParams.get('role') === 'phone' ? 'phone' : 'desk'
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' })

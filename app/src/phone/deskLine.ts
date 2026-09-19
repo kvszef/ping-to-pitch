@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { gathered, ICE, listenCall, sendCall, type CallMessage } from './protocol'
+import { gathered, iceConfig, listenCall, sendCall, type CallMessage } from './protocol'
 import { startRingback, startRingtone, unlockTones } from './tones'
 
 // The advisor's end of the internet call: one live call at a time, kept outside React so the
@@ -114,7 +114,7 @@ async function connect(ref: string, offer: string): Promise<boolean> {
     const local = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
     // Hung up or declined while the microphone prompt was open.
     if (line !== from) { local.getTracks().forEach((t) => t.stop()); return false }
-    const conn = new RTCPeerConnection(ICE)
+    const conn = new RTCPeerConnection(await iceConfig())
     pc = conn
     const remote = new MediaStream()
     conn.ontrack = (e) => {

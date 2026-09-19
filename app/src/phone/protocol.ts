@@ -44,6 +44,16 @@ export function listenCall(role: Role, on: (msg: CallMessage) => void): () => vo
 
 export const ICE: RTCConfiguration = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
 
+// The direct link plus, when the server has one, a relay for networks that block the direct link
+// (server/turn.ts). No relay, or no answer within 3 s: the direct link alone, as before.
+export async function iceConfig(): Promise<RTCConfiguration> {
+  try {
+    const r = await fetch('/api/call/ice', { cache: 'no-store', signal: AbortSignal.timeout(3000) })
+    const { iceServers } = (await r.json()) as { iceServers?: RTCIceServer[] | null }
+    return iceServers?.length ? { iceServers: [...(ICE.iceServers ?? []), ...iceServers] } : ICE
+  } catch { return ICE }
+}
+
 // Waits until all ICE candidates are in the local description (at most `ms`), so the SDP is complete.
 export function gathered(pc: RTCPeerConnection, ms = 2500): Promise<void> {
   if (pc.iceGatheringState === 'complete') return Promise.resolve()

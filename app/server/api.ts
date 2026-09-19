@@ -280,7 +280,7 @@ export function api(env: Env): Plugin {
         let lang: Lang = 'en' // for error texts: ?lang= on the URL, then the body's `language`; absent = English
         try {
           lang = langOf(langParam(req.url))
-          if (req.url.startsWith('/api/call/') && await callRoute(req, res)) return
+          if (req.url.startsWith('/api/call/') && await callRoute(req, res, env)) return
           if (req.url.split('?')[0] === '/api/status') return send(res, 200, { openai: ready(env, 'openai'), apertus: ready(env, 'apertus'), elevenlabs: !!env.ELEVENLABS_API_KEY, transcribe: !!env.ELEVENLABS_API_KEY || !!env.OPENAI_API_KEY, callLanguage: spoken(env, langParam(req.url)), daten: await dataStatus() })
           if (req.url.split('?')[0] === '/api/house-view' && req.method === 'GET') return send(res, 200, houseViewFor(lang))
           if (req.url === '/api/clients' && req.method === 'GET') return send(res, 200, await caseClients())
