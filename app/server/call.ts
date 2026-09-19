@@ -13,8 +13,12 @@ export type Role = 'desk' | 'phone'
 
 const listeners: Record<Role, Set<ServerResponse>> = { desk: new Set(), phone: new Set() }
 let pendingRing: unknown = null
+// Messages for the phone are also queued for polling (GET /api/call/poll): the cloudflared tunnel
+// buffers server-sent events, so the phone never saw the desk's answer over the event stream.
+let phoneQueue: unknown[] = []
 
 function push(to: Role, msg: unknown) {
+  if (to === 'phone') phoneQueue = [...phoneQueue.slice(-49), msg]
   const line = `data: ${JSON.stringify(msg)}\n\n`
   for (const res of listeners[to]) res.write(line)
 }
@@ -38,6 +42,14 @@ export async function callRoute(req: IncomingMessage, res: ServerResponse): Prom
     req.on('close', () => { clearInterval(ping); listeners[role].delete(res) })
     return true
   }
+  if (url.pathname === '/api/call/poll' && req.method === 'GET') {
+    const out = phoneQueue
+    phoneQueue = []
+    res.setHeader('Content-Type', 'application/json; charset=utf-8')
+    res.setHeader('Cache-Control', 'no-store')
+    res.end(JSON.stringify(out))
+    return true
+  }
   // Debug lines from the phone, printed in the dev server log so the desk side can see what the phone does.
   if (url.pathname === '/api/call/log' && req.method === 'POST') {
     console.info(`[phone] ${(await readBody(req)).slice(0, 300)}`)
@@ -48,7 +60,7 @@ export async function callRoute(req: IncomingMessage, res: ServerResponse): Prom
     const { to, msg } = JSON.parse(await readBody(req)) as { to: Role; msg: { type?: string; text?: string } }
     console.info(`[call] -> ${to}: ${msg?.type}${msg?.text ? ` "${msg.text.slice(0, 80)}"` : ''} (${listeners[to].size} listening)`)
     if (to !== 'desk' && to !== 'phone') { res.statusCode = 400; res.end('{"error":"to must be desk or phone"}'); return true }
-    if (msg?.type === 'ring') pendingRing = msg
+    if (msg?.type === 'ring') { pendingRing = msg; phoneQueue = [] }
     if (msg?.type === 'answer' || msg?.type === 'hangup' || msg?.type === 'decline') pendingRing = null
     push(to, msg)
     res.setHeader('Content-Type', 'application/json; charset=utf-8')

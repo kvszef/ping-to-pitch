@@ -16,6 +16,22 @@ export function sendCall(to: Role, msg: CallMessage) {
 }
 
 export function listenCall(role: Role, on: (msg: CallMessage) => void): () => void {
+  // The phone polls: it reaches the server through a tunnel that buffers event streams.
+  if (role === 'phone') {
+    let stopped = false
+    const poll = async () => {
+      while (!stopped) {
+        try {
+          const r = await fetch('/api/call/poll', { cache: 'no-store' })
+          const list = (await r.json()) as CallMessage[]
+          if (!stopped) list.forEach(on)
+        } catch { /* network hiccup: try again */ }
+        await new Promise((res) => setTimeout(res, 700))
+      }
+    }
+    void poll()
+    return () => { stopped = true }
+  }
   const es = new EventSource(`/api/call/events?role=${role}`)
   es.onmessage = (e) => { try { on(JSON.parse(e.data) as CallMessage) } catch { /* ignore malformed */ } }
   return () => es.close()
