@@ -1,68 +1,35 @@
 import { Ear, Pin, Sparkles, Timer } from 'lucide-react'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { SeverityIcon } from '../cards/ui'
-import { newsFeed } from '../data/mock'
-import type { Card, Client, NewsItem, Severity } from '../types'
-import { briefFor, readSeconds, type BriefItem } from './brief'
-import { topicsFor } from './brain'
-import { AUTO_MS, Bars, Spark, WidgetRail, type Widget } from './Widgets'
+import type { Client } from '../types'
+import type { Screen } from './brain'
 import { usePaced, Wave } from './CallIsland'
-import type { Hint, ModuleSpec, Slot, TranscriptLine } from './types'
+import { ChatPanel } from './ChatPanel'
+import { Smooth, useFlip } from './motion'
+import { bestTile, widgetMain, type Plan, type Suggestion, type Tile } from './screen'
+import type { ChatEntry, Detail, Hint, TranscriptLine } from './types'
+import { Bars, Spark, WidgetRail, type Widget } from './Widgets'
 
-// The one window of the conversation workspace. The 60-second brief as a column of tiles: the tile
-// in the middle is in focus, the others recede while scrolling. Tiles can be pinned to the top, open
-// their supporting card in place, and are pulled into focus when the conversation touches their
-// topic. The dark dock at the bottom says what to tell the client (live tracks during a call).
-
-type Tile = { id: string; group: string; topics: string[]; words: string; seconds: number; severity?: Severity; item?: BriefItem; news?: NewsItem[]; card?: Card; chart?: ModuleSpec }
+// The conversation workspace as one window, 2:1.
+//   left   the 60-second brief as tiles (scrolls; the tile in the middle is in focus), and under it
+//          the dock: three talking points and, during a call, the live answer and transcript
+//   right  the graphs the agent picked plus the advisor's pins, and under them the chat, collapsed
+//          to one line, growing upward over the graphs when needed
+// The agent's plan decides order, focus, graphs and talking points; this component only shows it,
+// and every change is animated (heights follow content, moved elements glide).
 
 const BUDGET = 60
-const tokens = (text: string) => text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 3).map((w) => w.slice(0, 6))
+// One frosted-glass look for the four parts of the page.
+export const GLASS = 'rounded-2xl bg-white/55 shadow-[0_8px_32px_rgba(31,56,88,0.10)] ring-1 ring-white/70 backdrop-blur-xl'
 
-function buildTiles(client: Client): Tile[] {
-  const items = briefFor(client)
-  const tiles: Tile[] = items.map((item) => ({ id: item.id, group: item.group, topics: item.topics ?? [], words: `${item.figure ?? ''} ${item.text}`, seconds: readSeconds(item), severity: item.severity, item }))
-
-  const news = newsFeed.filter((n) => n.affects[client.ref]).slice(0, 3)
-  if (news.length) {
-    const at = Math.max(0, tiles.findIndex((t) => t.group === 'Verlauf'))
-    const words = news.map((n) => `${n.title} ${n.affects[client.ref].meaning}`).join(' ')
-    tiles.splice(at === 0 ? tiles.length : at, 0, { id: 'news', group: 'Markt heute', topics: [], words, seconds: news.length * 3, severity: news[0].affects[client.ref].severity, news })
-  }
-  const proposal = client.briefing.find((c) => c.type === 'proposal')
-  if (proposal && proposal.type === 'proposal') tiles.push({ id: 'proposal', group: 'Anlagevorschlag', topics: [], words: `${proposal.summary} ${proposal.trades.map((t) => t.name).join(' ')}`, seconds: 6, card: proposal })
-  const charts = topicsFor(client).filter((t) => t.module)
-  for (const t of tiles) t.chart ??= charts.find((c) => t.topics.includes(c.id))?.module?.spec
-  return tiles
-}
-
-const firstNumber = (text: string) => /[−+-]?\d[\d'.,]*\s?%?/.exec(text)?.[0]
-
-function toWidget(t: Tile, clientRef: string, auto: boolean, now: number): Widget {
-  const news = t.news?.[0]
-  const proposal = t.card?.type === 'proposal' ? t.card : undefined
-  return {
-    id: t.id, group: t.group, severity: t.severity, chart: t.chart, auto, until: now + AUTO_MS, born: now, hot: now,
-    main: t.item?.figure ?? (t.item ? firstNumber(t.item.text) : news ? news.affects[clientRef].tag : proposal?.effects[0] ? `${proposal.effects[0].before} → ${proposal.effects[0].after}` : undefined),
-    text: t.item?.text ?? (news ? news.title : proposal ? proposal.summary : t.group),
-    source: t.item?.source ?? (news ? news.source : 'Anlagevorschlag'),
-  }
-}
-
-function score(tile: Tile, hint: Hint): number {
-  if (tile.topics.includes(hint.topicId)) return 10
-  const have = new Set(tokens(tile.words + ' ' + tile.group))
-  return tokens(`${hint.label} ${hint.text} ${hint.trigger}`).filter((w) => have.has(w)).length
-}
-
-function TileBody({ tile, clientRef }: { tile: Tile; clientRef: string }) {
+function TileBody({ tile, text, clientRef, chart }: { tile: Tile; text?: string; clientRef: string; chart?: Screen['charts'][number] }) {
   if (tile.item) return (
     <div className="flex items-center gap-4">
       <p className="min-w-0 flex-1 text-[16px] leading-snug">
         {tile.item.figure && <span className="mr-2 text-[24px] leading-none tabular-nums text-brand-dark">{tile.item.figure}</span>}
-        {tile.item.text}
+        {text && tile.item.figure && text.startsWith(tile.item.figure) ? text.slice(tile.item.figure.length).replace(/^[\s,:]+/, '') : text ?? tile.item.text}
       </p>
-      {tile.chart && <div className="w-32 shrink-0">{tile.chart.type === 'verlauf' ? <Spark spec={tile.chart} /> : <Bars spec={tile.chart} />}</div>}
+      {chart && <div className="w-32 shrink-0">{chart.spec.type === 'verlauf' ? <Spark spec={chart.spec} /> : <Bars spec={chart.spec} />}</div>}
     </div>
   )
   if (tile.news) return (
@@ -78,7 +45,7 @@ function TileBody({ tile, clientRef }: { tile: Tile; clientRef: string }) {
   )
   if (tile.card?.type === 'proposal') return (
     <div>
-      <p className="mb-2 text-[15px] leading-snug">{tile.card.summary}</p>
+      <p className="mb-2 text-[15px] leading-snug">{text ?? tile.card.summary}</p>
       <ul className="grid gap-x-6 gap-y-1 text-[13px] sm:grid-cols-2">
         {tile.card.effects.slice(0, 4).map((e) => (
           <li key={e.label} className="flex items-center gap-2">
@@ -93,46 +60,50 @@ function TileBody({ tile, clientRef }: { tile: Tile; clientRef: string }) {
   return null
 }
 
-export function Stage({ client, hints, ideas, said, thinking, onUse, inCall, recording, lines, note, customer, onEnd }: {
-  client: Client; hints: Hint[]; ideas: Hint[]; said: string[]; thinking: boolean; onUse: (idea: Hint) => void
-  inCall: boolean; recording: boolean; lines: TranscriptLine[]; note: string | null; customer: Slot | null; advisor: Slot | null; onEnd: () => void
-}) {
-  const base = useMemo(() => buildTiles(client), [client])
-  const [extra, setExtra] = useState<Tile[]>([])
-  const [widgets, setWidgets] = useState<Widget[]>([])
-  const [now, setNow] = useState(() => Date.now())
-  const hasAuto = widgets.some((w) => w.auto)
-  // Conversation widgets stay for a while; the clock only runs while one of them is on screen.
-  useEffect(() => {
-    if (!hasAuto) return
-    const t = setInterval(() => { const n = Date.now(); setNow(n); setWidgets((ws) => ws.map((w) => (w.auto && w.until <= n && !w.leaving ? { ...w, leaving: true } : w)).filter((w) => !w.leaving || w.until > n - 400)) }, 1000)
-    return () => clearInterval(t)
-  }, [hasAuto])
-  const MAX_WIDGETS = 4
-  const pin = (tile: Tile, auto: boolean) => setWidgets((ws) => {
-    const n = Date.now()
-    const had = ws.find((w) => w.id === tile.id)
-    const next = had ? { ...had, auto: had.auto && auto, until: n + AUTO_MS, hot: n, leaving: false } : toWidget(tile, client.ref, auto, n)
-    const rest = ws.filter((w) => w.id !== tile.id)
-    const list = [next, ...rest]
-    while (list.length > MAX_WIDGETS) { const i = list.map((w) => w.auto).lastIndexOf(true); list.splice(i >= 0 ? i : list.length - 1, 1) }
-    return list
-  })
-  // Removing plays the shrink animation first, then the widget goes.
-  const unpin = (id: string) => {
-    setWidgets((ws) => ws.map((w) => (w.id === id ? { ...w, leaving: true } : w)))
-    setTimeout(() => setWidgets((ws) => ws.filter((w) => !(w.id === id && w.leaving))), 320)
-  }
-  const pinnedIds = new Set(widgets.filter((w) => !w.leaving).map((w) => w.id))
-  const [flash, setFlash] = useState<string | null>(null)
-  const [focusIdx, setFocusIdx] = useState(0)
-  const tiles = useMemo(() => [...base, ...extra], [base, extra])
-  const flowing = tiles
+// The first thing in the scroll: who the client is, in a few facts, instead of empty space.
+function Profile({ client }: { client: Client }) {
+  const context = client.briefing.find((c) => c.type === 'context')
+  const persona = client.briefing.find((c) => c.type === 'profile')
+  const fact = (label: string) => context?.type === 'context' ? context.facts.find((f) => f.label === label)?.value : undefined
+  const facts = [
+    ['Vermögen', client.aum], ['Profil', client.profile], ['Strategie', client.strategy], ['Dienstleistung', client.service],
+    ['Alter', fact('Alter')], ['ESG', fact('ESG-Profil')], ['Letzte Beratung', client.lastConsultation], ['Regelverletzungen', client.errors + client.warnings ? `${client.errors} Fehler · ${client.warnings} Warnungen` : undefined],
+  ].filter((f): f is [string, string] => !!f[1] && f[1] !== '–')
+  const notes = context?.type === 'context' ? context.notes.slice(0, 2) : []
+  return (
+    <section className="mb-4 mt-1 rounded-xl bg-white/70 p-4 ring-1 ring-white/80">
+      <dl className="grid grid-cols-2 gap-x-5 gap-y-2 sm:grid-cols-4">
+        {facts.map(([label, value]) => (
+          <div key={label} className="min-w-0"><dt className="text-[10px] uppercase tracking-wide text-muted">{label}</dt><dd className="truncate text-[13px]" title={value}>{value}</dd></div>
+        ))}
+      </dl>
+      {persona?.type === 'profile' && <p className="mt-3 border-t border-black/5 pt-2 text-[13px] leading-snug"><span className="mr-1.5 text-[10px] uppercase tracking-wide text-brand-dark">Einschätzung</span>{persona.persona}</p>}
+      {notes.length > 0 && (
+        <ul className="mt-2 space-y-0.5 text-[12px] leading-snug text-ink/80">
+          {notes.map((n) => <li key={n.text} className="truncate" title={n.text}><span className="mr-1.5 tabular-nums text-muted">{n.date}</span>{n.text}</li>)}
+        </ul>
+      )}
+    </section>
+  )
+}
 
+export function Stage({ client, screen, plan, thinking, said, onUse, inCall, recording, lines, note, onEnd, hints, lead, actions, chat, busy, detail, chatSuggestions, onAsk, onShowChart }: {
+  client: Client; screen: Screen; plan: Plan; thinking: boolean; said: string[]; onUse: (s: Suggestion) => void
+  inCall: boolean; recording: boolean; lines: TranscriptLine[]; note: string | null; onEnd: () => void; hints: Hint[]
+  lead: ReactNode; actions: ReactNode
+  chat: ChatEntry[]; busy: boolean; detail: Detail; chatSuggestions: string[]; onAsk: (text: string) => void; onShowChart: (id: string) => void
+}) {
+  const byId = useMemo(() => new Map(screen.tiles.map((t) => [t.id, t])), [screen.tiles])
+  const chartById = useMemo(() => new Map(screen.charts.map((c) => [c.id, c])), [screen.charts])
+  const ordered = plan.order.map((id) => byId.get(id)).filter((t): t is Tile => !!t)
+  const tiles = ordered.length ? ordered : screen.tiles
+
+  // ---- tiles: focus by scrolling, dimming away from the middle, gliding when the order changes ----
   const box = useRef<HTMLDivElement>(null)
   const frame = useRef(0)
-
-  // Focus effect: tiles away from the middle of the window dim; nothing moves or changes size.
+  const [focusIdx, setFocusIdx] = useState(0)
+  const [flash, setFlash] = useState<string | null>(null)
+  useFlip(box, plan.order.join('|'))
   const paint = useCallback(() => {
     const el = box.current
     if (!el) return
@@ -142,102 +113,118 @@ export function Stage({ client, hints, ideas, said, thinking, onUse, inCall, rec
     el.querySelectorAll<HTMLElement>('[data-tile]').forEach((t, i) => {
       const d = Math.abs(t.offsetTop + t.offsetHeight / 2 - mid) / el.clientHeight
       if (d < bestD) { bestD = d; best = i }
-      const k = Math.min(1, d * 1.6)
-      t.style.opacity = reduce ? '' : String(1 - k * 0.55)
+      t.style.opacity = reduce ? '' : String(1 - Math.min(1, d * 1.6) * 0.55)
     })
     setFocusIdx(best)
   }, [])
   const onScroll = () => { cancelAnimationFrame(frame.current); frame.current = requestAnimationFrame(paint) }
-  useLayoutEffect(paint, [paint, flowing.length])
-
-  const focus = useCallback((id: string) => {
-    const t = box.current?.querySelector<HTMLElement>(`[data-tile="${id}"]`)
-    t?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  useLayoutEffect(paint, [paint, tiles.length])
+  const focus = useCallback((id: string, glow = false) => {
+    box.current?.querySelector<HTMLElement>(`[data-tile="${id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    if (glow) { setFlash(id); setTimeout(() => setFlash((f) => (f === id ? null : f)), 2400) }
   }, [])
-
-  // The conversation steers: a new hint from the call or the chat pulls its tile into focus.
-  const lead = hints[0]
-  useEffect(() => {
-    if (!lead || lead.origin === 'kundendaten') return
-    const ranked = tiles.map((t) => ({ t, s: score(t, lead) })).sort((a, b) => b.s - a.s)[0]
-    let tile = ranked && ranked.s >= 2 ? ranked.t : null
-    if (!tile) {
-      const id = `x-${lead.id}`
-      const text = lead.why || lead.text
-      tile = { id, group: 'Aus dem Gespräch', topics: [lead.topicId], words: `${lead.label} ${text}`, seconds: readSeconds({ id: '', group: 'Aus dem Chat', text, source: '' }), severity: lead.severity, item: { id, group: 'Aus dem Chat', text, source: lead.trigger } }
-      const added = tile
-      setExtra((x) => [...x, added])
-    }
-    const target = tile.id
-    pin(tile, true)
-    setFlash(target)
-    const t1 = setTimeout(() => focus(target), 60)
-    const t2 = setTimeout(() => setFlash(null), 2400)
-    return () => { clearTimeout(t1); clearTimeout(t2) }
-  }, [lead?.id]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Up and down walk through the tiles (ignored while typing).
+  // The agent's focus, and a chat answer's topic, bring their tile to the middle.
+  useEffect(() => { if (plan.focus) { const id = plan.focus; const t = setTimeout(() => focus(id, plan.by === 'agent' || inCall), 80); return () => clearTimeout(t) } }, [plan.focus, plan]) // eslint-disable-line react-hooks/exhaustive-deps
+  const chatHint = hints.find((h) => h.origin === 'chat')
+  useEffect(() => { if (chatHint) { const t = bestTile(screen.tiles, `${chatHint.label} ${chatHint.text}`, chatHint.topicId); if (t) focus(t.id, true) } }, [chatHint?.id]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLElement && e.target.closest('input, textarea')) return
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
       e.preventDefault()
-      const next = flowing[Math.max(0, Math.min(flowing.length - 1, focusIdx + (e.key === 'ArrowDown' ? 1 : -1)))]
+      const next = tiles[Math.max(0, Math.min(tiles.length - 1, focusIdx + (e.key === 'ArrowDown' ? 1 : -1)))]
       if (next) focus(next.id)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [flowing, focusIdx, focus])
+  }, [tiles, focusIdx, focus])
+
+  // ---- widgets: the agent's picks plus the advisor's pins; leaving ones shrink out first ----
+  const [pins, setPins] = useState<string[]>([])
+  const wanted = useMemo(() => [...pins, ...plan.widgets.filter((w) => !pins.includes(w))], [pins, plan.widgets])
+  const [shown, setShown] = useState<Widget[]>([])
+  const toWidget = useCallback((key: string): Widget | null => {
+    const pinned = pins.includes(key)
+    if (key.startsWith('chart:')) { const c = chartById.get(key.slice(6)); return c ? { id: key, group: c.title, chart: c.spec, source: c.note, pinned } : null }
+    const t = byId.get(key.slice(5))
+    if (!t) return null
+    const chart = t.chart ? chartById.get(t.chart)?.spec : undefined
+    return { id: key, group: t.group, severity: t.severity, main: widgetMain(t, client.ref), chart, text: plan.texts[t.id] ?? t.item?.text ?? t.news?.[0].title ?? (t.card?.type === 'proposal' ? t.card.summary : undefined), source: t.item?.source ?? (t.news ? t.news[0].source : 'Anlagevorschlag'), pinned }
+  }, [pins, byId, chartById, client.ref, plan.texts])
+  useEffect(() => {
+    const next = wanted.map(toWidget).filter((w): w is Widget => !!w)
+    setShown((prev) => {
+      const gone = prev.filter((p) => !p.leaving && !next.some((n) => n.id === p.id)).map((p) => ({ ...p, leaving: true }))
+      return [...next, ...gone]
+    })
+    const t = setTimeout(() => setShown((s) => s.filter((w) => !w.leaving)), 320)
+    return () => clearTimeout(t)
+  }, [wanted, toWidget])
+  const pinnedTile = (id: string) => pins.includes(`tile:${id}`)
+  const togglePin = (key: string) => setPins((p) => (p.includes(key) ? p.filter((x) => x !== key) : [key, ...p]))
 
   const total = tiles.reduce((n, t) => n + t.seconds, 0)
-  const done = flowing.slice(0, focusIdx + 1).reduce((n, t) => n + t.seconds, 0)
-  const togglePin = (t: Tile) => (pinnedIds.has(t.id) ? unpin(t.id) : pin(t, false))
+  const done = tiles.slice(0, focusIdx + 1).reduce((n, t) => n + t.seconds, 0)
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-center gap-2 px-6 pt-3 text-[11px] tabular-nums text-muted">
-        <Timer size={12} />
-        <div className="h-1 flex-1 overflow-hidden rounded-full bg-track">
-          <div className={`h-full rounded-full transition-[width] duration-500 ${total > BUDGET ? 'bg-warn' : 'bg-brand-dark'}`} style={{ width: `${Math.min(100, (done / BUDGET) * 100)}%` }} />
-        </div>
-        <span>{Math.round(done)} / {Math.round(total)} s</span>
-      </div>
-
-      <div className="flex min-h-0 flex-1">
-      <div ref={box} onScroll={onScroll} className="relative min-h-0 min-w-0 max-w-[720px] flex-[3] snap-y snap-proximity overflow-y-auto px-6 [scrollbar-width:none]">
-        <div className="h-[30%]" aria-hidden />
-        {flowing.map((t) => (
-          <article key={t.id} data-tile={t.id} onClick={() => focus(t.id)}
-            className={`group relative mb-3 snap-center rounded-xl bg-white p-4 shadow-card ring-1 transition-[box-shadow,ring-color] duration-500 ${flash === t.id ? 'ring-2 ring-brand' : 'ring-black/5'}`}>
-            <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-muted">
-              {t.severity && <SeverityIcon severity={t.severity} size={11} />}
-              <span>{t.group}</span>
-              {flash === t.id && <span className="flex items-center gap-1 text-brand"><Sparkles size={11} /> Im Gespräch</span>}
-              <span className="ml-auto flex items-center gap-1">
-                <button onClick={(e) => { e.stopPropagation(); togglePin(t) }} aria-label={pinnedIds.has(t.id) ? 'Lösen' : 'Anheften'} title={pinnedIds.has(t.id) ? 'Lösen' : 'Rechts anheften'} className={`flex h-6 w-6 items-center justify-center rounded-full transition-opacity hover:bg-pill hover:text-ink focus-visible:opacity-100 ${pinnedIds.has(t.id) ? 'text-brand opacity-100' : 'opacity-0 group-hover:opacity-100'}`}><Pin size={12} className={pinnedIds.has(t.id) ? 'fill-current' : ''} /></button>
-              </span>
+      <div className="grid min-h-0 flex-1 grid-cols-[3fr_2fr] gap-3">
+        <div className="flex min-h-0 min-w-0 flex-col gap-3">
+          <div className={`flex shrink-0 items-center gap-3 px-4 py-2 ${GLASS}`}>
+            {lead}
+            <div className="flex min-w-0 flex-1 items-center gap-2 text-[11px] tabular-nums text-muted" title="Lesezeit des Briefings">
+              <Timer size={12} className="shrink-0" />
+              <div className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-track">
+                <div className={`h-full rounded-full transition-[width] duration-500 ${total > BUDGET ? 'bg-warn' : 'bg-brand-dark'}`} style={{ width: `${Math.min(100, (done / BUDGET) * 100)}%` }} />
+              </div>
+              <span className="shrink-0">{Math.round(done)}/{Math.round(total)} s</span>
+              {thinking && <Sparkles size={12} aria-label="Agent arbeitet" className="shrink-0 animate-pulse text-brand" />}
             </div>
-            <TileBody tile={t} clientRef={client.ref} />
-            {t.item && <p className="mt-1.5 text-[10px] text-muted">{t.item.source}</p>}
-          </article>
-        ))}
-        <div className="h-[45%]" aria-hidden />
-      </div>
-      <WidgetRail widgets={widgets} now={now} onKeep={(id) => setWidgets((ws) => ws.map((w) => (w.id === id ? { ...w, auto: false } : w)))} onRemove={unpin}
-        onFocus={focus} onHold={(id) => setWidgets((ws) => ws.map((w) => (w.id === id ? { ...w, until: Date.now() + AUTO_MS } : w)))} />
-      </div>
+            {actions}
+          </div>
+          <div ref={box} onScroll={onScroll} className={`relative min-h-0 flex-1 snap-y snap-proximity overflow-y-auto px-3 [scrollbar-width:none] ${GLASS}`}>
+            <div className="h-2" aria-hidden />
+            <Profile client={client} />
+            {tiles.map((t) => (
+              <article key={t.id} data-tile={t.id} data-flip={t.id} onClick={() => focus(t.id)}
+                className={`group relative mb-3 snap-center rounded-xl bg-white/85 p-4 shadow-card ring-1 transition-[box-shadow] duration-500 ${flash === t.id ? 'ring-2 ring-brand' : 'ring-black/5'}`}>
+                <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-muted">
+                  {t.severity && <SeverityIcon severity={t.severity} size={11} />}
+                  <span>{t.group}</span>
+                  {flash === t.id && <span className="flex items-center gap-1 text-brand"><Sparkles size={11} /> Im Gespräch</span>}
+                  <button onClick={(e) => { e.stopPropagation(); togglePin(`tile:${t.id}`) }} aria-label={pinnedTile(t.id) ? 'Lösen' : 'Anheften'} title={pinnedTile(t.id) ? 'Lösen' : 'Rechts anheften'}
+                    className={`ml-auto flex h-6 w-6 items-center justify-center rounded-full transition-opacity hover:bg-pill hover:text-ink focus-visible:opacity-100 ${pinnedTile(t.id) ? 'text-brand opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                    <Pin size={12} className={pinnedTile(t.id) ? 'fill-current' : ''} />
+                  </button>
+                </div>
+                <TileBody tile={t} text={plan.texts[t.id]} clientRef={client.ref} chart={t.chart ? chartById.get(t.chart) : undefined} />
+                {t.item && <p className="mt-1.5 text-[10px] text-muted">{t.item.source}</p>}
+              </article>
+            ))}
+            <div className="h-[40%]" aria-hidden />
+          </div>
+          <Smooth className="shrink-0">
+            <Dock plan={plan} said={said} onUse={onUse} inCall={inCall} recording={recording} lines={lines} note={note} onEnd={onEnd} name={client.name} />
+          </Smooth>
+        </div>
 
-      <Dock ideas={ideas} said={said} thinking={thinking} onUse={onUse} inCall={inCall} recording={recording} lines={lines} note={note} customer={customer} onEnd={onEnd} name={client.name} />
+        <div className="relative min-h-0 min-w-0">
+          <div className={`absolute inset-0 overflow-y-auto p-3 pb-16 [scrollbar-width:none] ${GLASS}`}>
+            <WidgetRail widgets={shown} hot={plan.focus ? `tile:${plan.focus}` : null} onPin={(id) => togglePin(id)} onRemove={(id) => setPins((p) => p.filter((x) => x !== id))}
+              onFocus={(id) => { if (id.startsWith('tile:')) focus(id.slice(5)) }} />
+          </div>
+          <ChatPanel name={client.name} chat={chat} busy={busy} detail={detail} suggestions={chatSuggestions} onAsk={onAsk} onShow={onShowChart} />
+        </div>
+      </div>
     </div>
   )
 }
 
-// The black dock: the three best sentences to say next, side by side. Say one (or click it) and the
-// transcript marks it, brings its tile forward and the next three follow. During the call the live
-// answer to the client's last statement sits on top.
-function Dock({ ideas, said, thinking, onUse, inCall, recording, lines, note, customer, onEnd, name }: {
-  ideas: Hint[]; said: string[]; thinking: boolean; onUse: (idea: Hint) => void; inCall: boolean; recording: boolean; lines: TranscriptLine[]; note: string | null
-  customer: Slot | null; onEnd: () => void; name: string
+// The dark dock under the tiles: three talking points side by side. Saying one (the transcript
+// matches it) or clicking it marks it and asks the agent for the next step. During a call the answer
+// to the client's last concern and the latest transcript line sit with it. Labels live in the borders.
+function Dock({ plan, said, onUse, inCall, recording, lines, note, onEnd, name }: {
+  plan: Plan; said: string[]; onUse: (s: Suggestion) => void; inCall: boolean; recording: boolean; lines: TranscriptLine[]; note: string | null; onEnd: () => void; name: string
 }) {
   const [seconds, setSeconds] = useState(0)
   useEffect(() => {
@@ -245,55 +232,52 @@ function Dock({ ideas, said, thinking, onUse, inCall, recording, lines, note, cu
     const t = setInterval(() => setSeconds((s) => s + 1), 1000)
     return () => { clearInterval(t); setSeconds(0) }
   }, [inCall])
-  // 1, 2, 3 mark a suggestion as said (ignored while typing).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLElement && e.target.closest('input, textarea')) return
-      const idea = ideas[Number(e.key) - 1]
-      if (idea) onUse(idea)
+      const s = plan.suggestions[Number(e.key) - 1]
+      if (s) onUse(s)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [ideas, onUse])
-  const answer = usePaced(customer, 7000)
+  }, [plan.suggestions, onUse])
+  const answer = usePaced(plan.answer, 6000)
   const clock = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
   const last = lines[lines.length - 1]
 
   return (
-    // Labels sit in the border, like a fieldset legend, so the content keeps the full height.
-    <div className="relative m-3 mt-4 shrink-0 rounded-[26px] bg-[#0d0f12]/95 text-white shadow-[0_12px_40px_rgba(0,0,0,0.35)] ring-1 ring-white/10">
-      <div className="absolute left-5 top-0 flex -translate-y-1/2 items-center gap-2 rounded-full bg-[#0d0f12] px-3 py-1 text-[11px] text-white/50 ring-1 ring-white/15">
-        {inCall ? <><Wave /> <span className="text-white">{name}</span> <span className="tabular-nums">{clock}</span>{!recording && <span>· keine Aufzeichnung</span>}</>
-          : <span className="uppercase tracking-wide text-[#7db8ff]">Einstieg</span>}
-        {thinking && <Sparkles size={11} aria-label="Wird aktualisiert" className="animate-pulse" />}
+    <div data-dock className={`relative mt-2 ${GLASS}`}>
+      <div className="absolute left-4 top-0 flex -translate-y-1/2 items-center gap-2 rounded-full bg-white px-2.5 py-0.5 text-[11px] text-muted shadow-sm ring-1 ring-black/5">
+        {inCall ? <><Wave /> <span className="text-ink">{name}</span> <span className="tabular-nums">{clock}</span>{!recording && <span>· keine Aufzeichnung</span>}</>
+          : <span className="uppercase tracking-wide text-brand-dark">Einstieg</span>}
       </div>
-      {inCall && <button onClick={onEnd} className="absolute right-5 top-0 -translate-y-1/2 rounded-full bg-risk px-3 py-1 text-[11px] text-white ring-4 ring-[#0d0f12] hover:scale-105">Beenden</button>}
-      {note && <p className="px-5 pt-4 text-[11px] text-[#ff9b8f]">{note}</p>}
+      {inCall && <button onClick={onEnd} className="absolute right-4 top-0 -translate-y-1/2 rounded-full bg-risk px-3 py-0.5 text-[11px] text-white shadow-sm transition-transform hover:scale-105">Beenden</button>}
+      {note && <p className="px-4 pt-4 text-[11px] text-risk">{note}</p>}
 
       {inCall && answer && (
-        <div key={answer.topic + answer.heard} className="island-swap relative mx-3 mt-5 rounded-[16px] border border-white/15 px-4 pb-3 pt-3.5">
-          <span className="absolute left-3 top-0 -translate-y-1/2 bg-[#0d0f12] px-1.5 text-[10px] uppercase tracking-wide text-[#7db8ff]">Ihre Antwort</span>
-          <p className="truncate text-[12px] italic text-white/45"><Ear size={11} className="mr-1 inline" />«{answer.heard}»</p>
-          <p className="mt-0.5 text-[16px] leading-snug">{answer.text}</p>
+        <div key={answer.heard} className="island-swap relative mx-3 mt-5 rounded-xl border border-brand/30 bg-brand-soft/20 px-4 pb-2.5 pt-3">
+          <span className="absolute left-3 top-0 -translate-y-1/2 rounded-full bg-white px-1.5 text-[10px] uppercase tracking-wide text-brand-dark">Ihre Antwort</span>
+          <p className="truncate text-[12px] italic text-muted"><Ear size={11} className="mr-1 inline" />«{answer.heard}»</p>
+          <p className="mt-0.5 text-[15px] leading-snug">{answer.text}</p>
         </div>
       )}
 
       <div className="grid gap-2.5 px-3 pb-3 pt-5 md:grid-cols-3">
-        {ideas.map((idea, n) => {
-          const done = said.includes(idea.id)
+        {plan.suggestions.map((s, n) => {
+          const done = said.includes(s.id)
           return (
-            <button key={idea.id} onClick={() => onUse(idea)} title={idea.why}
-              className={`island-swap group relative rounded-[16px] border px-3.5 pb-3 pt-3.5 text-left transition-[background-color,border-color,opacity] duration-300 ${done ? 'border-white/10 opacity-45' : 'border-white/20 hover:border-[#69d4d6]/60 hover:bg-white/[0.06]'}`}>
-              <span className="absolute left-3 top-0 flex max-w-[calc(100%-1.5rem)] -translate-y-1/2 items-center gap-1.5 bg-[#0d0f12] px-1.5 text-[10px] uppercase tracking-wide text-[#69d4d6]">
-                <span className="tabular-nums text-white/60">{done ? '✓' : n + 1}</span>
-                <span className="truncate">{idea.label}</span>
+            <button key={s.id} onClick={() => onUse(s)}
+              className={`island-swap group relative rounded-xl border bg-white/60 px-3.5 pb-2.5 pt-3 text-left transition-[background-color,border-color,opacity] duration-300 ${done ? 'border-line opacity-45' : 'border-line hover:border-brand/60 hover:bg-white'}`}>
+              <span className="absolute left-3 top-0 flex max-w-[calc(100%-1.5rem)] -translate-y-1/2 items-center gap-1.5 rounded-full bg-white px-1.5 text-[10px] uppercase tracking-wide text-brand-dark">
+                <span className="tabular-nums text-muted">{done ? '✓' : n + 1}</span>
+                <span className="truncate">{s.label}</span>
               </span>
-              <span className="block text-[14px] leading-snug">{idea.text}</span>
+              <span className="block text-[14px] leading-snug">{s.text}</span>
             </button>
           )
         })}
       </div>
-      {inCall && last && <p key={lines.length} className="island-swap truncate px-5 pb-3 text-[12px] text-white/40"><span className="mr-1.5 text-white/60">{last.speaker}</span>{last.text}</p>}
+      {inCall && last && <p key={lines.length} className="island-swap truncate px-4 pb-3 text-[12px] text-muted"><span className="mr-1.5 text-ink/70">{last.speaker}</span>{last.text}</p>}
     </div>
   )
 }

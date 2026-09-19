@@ -79,16 +79,20 @@ Schema: {"supported": boolean, "text": string, "sources": string[], "module": {"
   ]
 }
 
-// The three best sentences for the advisor to say next: openers before the call, follow-ups during it.
-function openersPrompt(p: { context: unknown; transcript: unknown[] }): Message[] {
-  const started = Array.isArray(p.transcript) && p.transcript.length > 0
+// The screen agent: picks from the catalogue of UI elements what the advisor sees right now.
+// Called when a client opens and on every new piece of transcript. Elements carry their own
+// numbers; the agent only chooses, orders and shortens, and writes three talking points.
+function agentPrompt(p: { context: unknown; catalogue: unknown; tiles: unknown; charts: unknown; transcript: unknown[]; segments?: unknown[]; said: unknown[]; event: string }): Message[] {
+  const live = Array.isArray(p.segments) && p.segments.length > 0
   return [
     { role: 'system', content: `${RULES}
-Schema: {"openers": [{"label": string, "text": string, "why": string, "topic": string}]}
-- Genau drei Einträge, nach Wichtigkeit geordnet, jeder zu einem ANDEREN Thema.
-- ${started ? 'Das Gespräch läuft: die drei besten NÄCHSTEN Sätze, passend zum bisherigen Verlauf. Wiederhole nichts, was schon gesagt wurde, und greife auf, was der Kunde zuletzt gesagt hat.' : 'Vor dem Gespräch: die drei besten Sätze, um das Gespräch zu eröffnen.'}
-- "label": zwei bis drei Wörter, das Thema. "text": ein STICHPUNKT für den Berater, kein ganzer Satz: höchstens 10 Wörter, Nominalstil, ohne Artikel am Anfang, ohne Anrede, mit genau einer Kernzahl aus dem Kontext. Beispiel für die Form: «USD-Anteil 61%, 11 Pkt. über Band: Absicherung ansprechen». "why": die Zahl dahinter, ein kurzer Satz für den Berater. "topic": die "id" des passenden Eintrags aus "themen", sonst ein Stichwort.` },
-    { role: 'user', content: `KUNDENKONTEXT:\n${JSON.stringify(p.context)}\n\nBISHERIGES GESPRÄCH:\n${JSON.stringify(p.transcript ?? [])}` },
+Du steuerst den Bildschirm eines Kundenberaters${live ? ' während eines laufenden Telefongesprächs' : ' vor dem Gespräch'}. Du wählst aus dem KATALOG, was er jetzt sieht, damit er in 60 Sekunden das Wichtigste weiss und im Gespräch immer das Passende vor Augen hat.
+KATALOG: ${JSON.stringify(p.catalogue)}
+Schema: {"tiles": [{"id": string, "text"?: string}], "focus": string | null, "widgets": [string], "suggestions": [{"label": string, "text": string, "tile": string}], "answer": {"heard": string, "text": string} | null${live ? ', "segments": [{"speaker": "Kunde" | "Berater", "text": string}]' : ''}}
+- Verwende nur ids aus KACHELN und GRAFIKEN. "focus" ist eine id, kein Text.
+- ${live ? 'Richte "focus", "widgets" und "suggestions" nach dem, was zuletzt gesagt wurde. Greife das Anliegen des Kunden auf; wiederhole nichts aus GESAGT.' : 'Vor dem Gespräch: "focus" ist die wichtigste Kachel, "suggestions" sind die drei besten Einstiege.'}
+${live ? '- "segments": die NEUEN ABSCHNITTE in Reihenfolge mit Rolle. Der Berater erklärt und schlägt vor; der Kunde fragt und schildert. Nichts hinzufügen.\n' : ''}- Jede Zahl, die du schreibst, muss wörtlich in KUNDENKONTEXT, KACHELN oder GRAFIKEN stehen.` },
+    { role: 'user', content: `KUNDENKONTEXT:\n${JSON.stringify(p.context)}\n\nKACHELN:\n${JSON.stringify(p.tiles)}\n\nGRAFIKEN:\n${JSON.stringify(p.charts)}\n\nBISHERIGES GESPRÄCH:\n${JSON.stringify(p.transcript ?? [])}\n\nNEUE ABSCHNITTE:\n${JSON.stringify(p.segments ?? [])}\n\nGESAGT:\n${JSON.stringify(p.said ?? [])}\n\nEREIGNIS: ${p.event}` },
   ]
 }
 
@@ -165,7 +169,7 @@ export function api(env: Env): Plugin {
           const p = JSON.parse(raw.toString('utf8'))
           const provider: Provider = p.provider === 'apertus' ? 'apertus' : 'openai'
           if (req.url === '/api/chat') return send(res, 200, await complete(env, provider, false, chatPrompt(p)))
-          if (req.url === '/api/openers') return send(res, 200, await complete(env, provider, true, openersPrompt(p)))
+          if (req.url === '/api/agent') return send(res, 200, await complete(env, provider, true, agentPrompt(p)))
           if (req.url === '/api/analyse') return send(res, 200, await complete(env, provider, true, analysePrompt(p)))
           send(res, 404, { error: 'Unbekannter Pfad' })
         } catch (e) {

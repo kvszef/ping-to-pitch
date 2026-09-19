@@ -38,7 +38,7 @@ export function RingingIsland({ client, call, signal, onAccept, onDecline }: { c
       <div className="flex items-center gap-3 px-4 pt-4">
         <span className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-ok"><span className="absolute inset-0 animate-ping rounded-full bg-ok/60" /><Phone size={18} className="relative" /></span>
         <div className="min-w-0 flex-1">
-          <div className="text-[10px] uppercase tracking-wide text-white/50">Eingehender Anruf · {call.number}</div>
+          <div className="text-[10px] uppercase tracking-wide text-white/50">Eingehender Anruf{call.number ? ` · ${call.number}` : ''}</div>
           <div className="truncate text-[17px]">{client.name} <span className="text-xs text-white/50">{client.ref}</span></div>
         </div>
         <button onClick={onDecline} aria-label="Ablehnen" className="flex h-10 w-10 items-center justify-center rounded-full bg-risk transition-transform hover:scale-110"><PhoneOff size={16} /></button>

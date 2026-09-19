@@ -54,8 +54,9 @@ export function deriveTopics(client: Client): Topic[] {
     })
   }
 
+  // Currencies by position currency only; once the engine answered (look-through into funds) its figure wins.
   const foreign = f.currencies.filter((c) => c.label !== 'CHF')
-  if (f.currencies.length > 1 && foreign[0]) {
+  if (!client.findings?.length && f.currencies.length > 1 && foreign[0]) {
     const home = f.currencies.find((c) => c.label === 'CHF')
     out.push({
       id: 'waehrungen', label: 'Währungen', severity: foreign[0].share >= 30 ? 'warn' : 'info',

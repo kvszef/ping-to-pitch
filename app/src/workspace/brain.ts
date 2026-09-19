@@ -1,9 +1,9 @@
 import { topics } from '../data/workspace'
 import { signals } from '../data/mock'
 import type { Client } from '../types'
-import { briefFor } from './brief'
 import { deriveTopics } from './derive'
 import { grounded } from './grounding'
+import { CATALOGUE, chartsFor, checkPlan, describeCharts, describeTiles, localPlan, tilesFor, type Chart, type Plan, type Tile } from './screen'
 import type { ChatEntry, Hint, ModuleSpec, Origin, Settings, Slot, Topic, TranscriptLine } from './types'
 
 // Einzige Anschlussstelle für die KI. Gesprächsassistent und Berater-Chat fragen dieselbe Instanz mit
@@ -49,6 +49,7 @@ function contextFor(client: Client) {
   return {
     kunde: { kennung: client.ref, kundenprofil: client.profile, strategie: client.strategy, anlagedienstleistung: client.service, vermoegen: client.aum, anlass: client.context, letzteBeratung: client.lastConsultation },
     briefing: client.briefing,
+    befunde: client.findings?.map((f) => ({ titel: f.title, art: f.kind, schwere: f.severity, quelle: f.evidence.map((e) => [e.source, e.date].filter(Boolean).join(', ')).join('; ') })),
     kennzahlen: client.facts ? { ...client.facts, performance: client.facts.performance && { ...client.facts.performance, series: undefined } } : undefined,
     themen: topicsFor(client).map((t) => ({ thema: t.label, fakten: t.insight.detailliert, begruendung: t.why, quellen: t.sources })),
     marktsignale: signals.filter((s) => s.affected.some((a) => a.ref === client.ref)).map((s) => ({ titel: s.title, detail: s.detail, reichweite: s.reach, quelle: s.source, betroffenheit: s.affected.find((a) => a.ref === client.ref)?.exposure })),
@@ -151,31 +152,6 @@ type AnalyseResult = {
   insight?: { text: string; sources?: string[]; module?: { id: string; confidence: number } | null } | null
 }
 
-// The three best sentences to say next, phrased by the model from this client's data. Before the call
-// they open it; during the call they follow the transcript. Ungrounded ones are dropped, the rest is
-// filled from the computed topics, so there are always up to three.
-type OpenersResult = { openers?: { label: string; text: string; why?: string; topic?: string }[] }
-export async function suggest(client: Client, transcript: TranscriptLine[], settings: Settings, status: Status): Promise<Hint[]> {
-  // Offline: the computed brief items are already short talking points with their figure.
-  const spokenAlready = new Set(transcript.map((l) => l.text))
-  const fallback = briefFor(client).filter((b) => !spokenAlready.has(b.text)).slice(transcript.length ? 3 : 0).concat(briefFor(client)).slice(0, 3)
-    .map((b) => hint(b.topics?.[0] ?? b.id, b.group, `${b.figure ? `${b.figure} ` : ''}${b.text}`.replace(/\.$/, ''), b.source, b.severity ?? 'info', transcript.length ? 'gespraech' : 'kundendaten', 'Aus den Kundendaten'))
-  const provider = activeProvider(settings, status)
-  if (!provider) return fallback
-  try {
-    const context = contextFor(client)
-    const r = await post<OpenersResult>('/api/openers', { provider, context, transcript: transcript.slice(-8) })
-    const evidence = JSON.stringify(context) + transcript.map((l) => l.text).join(' ')
-    const origin: Origin = transcript.length ? 'gespraech' : 'kundendaten'
-    const trigger = transcript.length ? 'Nächster Schritt aus dem Gespräch' : 'Gesprächseinstieg'
-    const fromModel = (r.openers ?? []).filter((o) => o.text && grounded(o.text, evidence)).slice(0, 3)
-      .map((o) => hint(o.topic || words(o.label).join('-'), o.label, o.text, o.why ?? '', topicsFor(client).find((t) => t.id === o.topic)?.severity ?? 'info', origin, trigger))
-    return [...fromModel, ...fallback.filter((f) => !fromModel.some((m) => m.topicId === f.topicId))].slice(0, 3)
-  } catch {
-    return fallback
-  }
-}
-
 // Wertet neu Gesprochenes aus. Sprecher-Kennungen aus der Transkription ordnet das Modell den Rollen zu.
 export async function think(client: Client, transcript: TranscriptLine[], segments: Segment[], settings: Settings, status: Status): Promise<Thought> {
   const provider = activeProvider(settings, status)
@@ -201,5 +177,49 @@ export async function think(client: Client, transcript: TranscriptLine[], segmen
     }
   } catch {
     return localThink(client, segments, settings)
+  }
+}
+
+// ---- the screen agent ------------------------------------------------------------------------
+// One call decides what the advisor sees: which tiles in which order, the tile in focus, the graphs
+// on the right, three talking points and, during a call, the answer to the client's last concern.
+// It picks from the element catalogue in screen.ts; checkPlan drops anything it made up. Without a
+// model (or when the call fails) the local plan follows the transcript by keyword.
+
+export type Screen = { tiles: Tile[]; charts: Chart[] }
+export type AgentEvent = { type: 'start' } | { type: 'transcript'; segments: Segment[] } | { type: 'said'; text: string }
+export type Step = { plan: Plan; lines: TranscriptLine[] }
+
+export function screenFor(client: Client): Screen {
+  const charts = chartsFor(client, topicsFor(client).filter((t) => t.module).map((t) => ({ id: t.id, spec: t.module!.spec })))
+  return { charts, tiles: tilesFor(client, charts) }
+}
+
+export async function agentStep(client: Client, screen: Screen, transcript: TranscriptLine[], said: string[], event: AgentEvent, settings: Settings, status: Status): Promise<Step> {
+  const segments = event.type === 'transcript' ? event.segments : []
+  const known = segments.every((x) => x.speaker === 'Kunde' || x.speaker === 'Berater')
+  const asLines = (list: Segment[]): TranscriptLine[] => list.map((s) => ({ speaker: s.speaker === 'Berater' ? 'Berater' : 'Kunde', text: s.text }))
+  const local = (): Step => {
+    const lines = asLines(segments)
+    const heard = [...lines].reverse().find((l) => l.speaker === 'Kunde')
+    const last = event.type === 'said' ? event.text : lines[lines.length - 1]?.text
+    const reply = heard ? localThink(client, [heard], settings).customer : undefined
+    return { lines, plan: localPlan(screen.tiles, said, last, undefined, reply ? { heard: reply.heard, text: reply.text } : null) }
+  }
+  const provider = activeProvider(settings, status)
+  if (!provider) return local()
+  try {
+    const context = contextFor(client)
+    const tiles = describeTiles(screen.tiles), charts = describeCharts(screen.charts)
+    const r = await post<Record<string, unknown>>('/api/agent', {
+      provider, context, catalogue: CATALOGUE, tiles, charts, transcript: transcript.slice(-8), segments, said, event: event.type === 'said' ? `Berater sagte: ${event.text}` : event.type,
+    })
+    const evidence = JSON.stringify(context) + JSON.stringify(tiles) + JSON.stringify(charts) + segments.map((s) => s.text).join(' ') + transcript.map((l) => l.text).join(' ')
+    const fallback = local()
+    const modelLines = Array.isArray(r.segments) ? (r.segments as Segment[]).slice(-segments.length) : []
+    const lines = known || modelLines.length !== segments.length ? fallback.lines : asLines(modelLines)
+    return { lines, plan: checkPlan(r, screen.tiles, screen.charts, (t) => grounded(t, evidence), fallback.plan) }
+  } catch {
+    return local()
   }
 }

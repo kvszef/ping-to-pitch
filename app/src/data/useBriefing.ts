@@ -1,6 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { Card } from '../types'
 import { TIERS, loadBriefing, sortCards, type Finding, type Tier } from './source'
+
+const NONE: Partial<Record<Tier, Card[]>> = {}
+const NO_FINDINGS: Finding[] = []
 
 type State = { ref: string | null; cards: Partial<Record<Tier, Card[]>>; findings: Finding[] }
 
@@ -26,7 +29,9 @@ export function useBriefing(ref: string | null) {
   }, [ref])
 
   // A result for another client is ignored, so switching clients shows skeletons straight away.
-  const current = state.ref === ref ? state.cards : {}
-  const pending = TIERS.filter((t) => !current[t])
-  return { cards: sortCards(TIERS.flatMap((t) => current[t] ?? [])), findings: state.ref === ref ? state.findings : [], pending }
+  // Stable references while nothing new arrived, so consumers can memoise on them.
+  const current = state.ref === ref ? state.cards : NONE
+  const cards = useMemo(() => sortCards(TIERS.flatMap((t) => current[t] ?? [])), [current])
+  const pending = useMemo(() => TIERS.filter((t) => !current[t]), [current])
+  return { cards, findings: state.ref === ref ? state.findings : NO_FINDINGS, pending }
 }

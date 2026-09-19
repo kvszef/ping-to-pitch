@@ -121,8 +121,8 @@ export async function listClients(): Promise<Client[]> {
   const items = Array.isArray(data) ? data : isObj(data) && Array.isArray(data.clients) ? data.clients : null
   const fromEngine = (items ?? []).map(normalise).filter((c): c is Client => c !== null)
   listed = fromEngine
-  // Sample clients stay first: the demo script and the conversation workspace are built on them.
-  return mergeByRef(sampleClients, fromEngine, uploaded)
+  // Real data only. The sample clients are the offline fallback when the server has no list.
+  return fromEngine.length ? mergeByRef(fromEngine, uploaded) : mergeByRef(sampleClients, uploaded)
 }
 
 export async function loadBriefing(ref: string, tier: Tier): Promise<Briefing> {

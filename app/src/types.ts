@@ -42,6 +42,9 @@ export type Point = { text: string; kind: Kind; source?: string }
 // One spoken line of the 60-second talk track, always with the source it can be traced to.
 export type TalkLine = { text: string; source: string; date?: string; detail?: string; severity?: Severity }
 
+// A finding of the engine (contract v0 in PLAN.md), as far as the UI reads it.
+export type EngineFinding = { id: string; check: string; kind: Kind; severity: Severity; title: string; detail?: string; numbers?: Record<string, number>; evidence: { source: string; ref?: string; quote?: string; date?: string }[]; topic?: string }
+
 export type CardOf<T extends Card['type']> = Extract<Card, { type: T }>
 
 export type Client = {
@@ -60,6 +63,7 @@ export type Client = {
   errors: number
   warnings: number
   facts?: ClientFacts // key figures computed from a real client file; sample clients have none
+  findings?: EngineFinding[] // the engine's findings from /api/briefing, when the server answered
   briefing: Card[]
 }
 

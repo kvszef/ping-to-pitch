@@ -7,10 +7,9 @@ import { ClientUpload } from './components/ClientUpload'
 import { Dashboard } from './components/Dashboard'
 import { LiveOverlay } from './components/LiveOverlay'
 import { CardSkeleton, MetricsSkeleton } from './components/Skeleton'
-import { sampleCall, signals } from './data/mock'
-import { isSample, listClients, localClients, samples } from './data/source'
+import { listClients, localClients } from './data/source'
 import { useBriefing } from './data/useBriefing'
-import type { Card, IncomingCall } from './types'
+import type { Card, Client, IncomingCall } from './types'
 import { RingingIsland } from './workspace/CallIsland'
 import { Workspace } from './workspace/Workspace'
 
@@ -31,13 +30,19 @@ export default function App() {
   const [page, setPage] = useState<Page>(hash[0] === 'signale' ? 'signale' : 'kunden')
   const [ref, setRef] = useState<string | null>(hashRef)
   const [live, setLive] = useState(hash[1] === 'live')
-  const [call, setCall] = useState<IncomingCall | null>(hash.includes('anruf') ? sampleCall : null)
+  const [call, setCall] = useState<IncomingCall | null>(null)
   const demoCall = hash.includes('gespraech')
   // First paint from local data (samples + uploads of this session), then the engine's list if it answers.
   const [clients, setClients] = useState(localClients)
   const [listed, setListed] = useState(false)
   const refresh = useCallback(() => { void listClients().then(setClients).catch(() => setClients(localClients())).finally(() => setListed(true)) }, [])
   useEffect(refresh, [refresh])
+  // A simulated call rings the real client with the most open rule violations (no phone numbers in the data).
+  const ring = useCallback((list: Client[]) => {
+    const next = [...list].sort((a, b) => b.errors * 10 + b.warnings - (a.errors * 10 + a.warnings))[0]
+    if (next) setCall({ ref: next.ref, number: '', reason: next.errors ? `${next.errors} offene Regelverletzungen` : next.context })
+  }, [])
+  useEffect(() => { if (listed && hash.includes('anruf')) ring(clients) }, [listed]) // eslint-disable-line react-hooks/exhaustive-deps
   const client = clients.find((c) => c.ref === ref)
   const briefing = useBriefing(client?.ref ?? null)
   const caller = clients.find((c) => c.ref === call?.ref)
@@ -48,8 +53,8 @@ export default function App() {
   // Ein angenommener Anruf öffnet den Arbeitsplatz mit dem Kunden und laufendem Gespräch.
   const accept = () => { if (!call) return; setSession((s) => ({ n: s.n + 1, ref: call.ref, call: true })); setCall(null); home('signale') }
 
-  const signalsItem: ToolItem = { label: 'Anrufe & Signale', icon: Radio, badge: signals.length + (call ? 1 : 0), badgeTone: 'red', active: !client && page === 'signale', onClick: () => home('signale') }
-  const banner = call && caller && <RingingIsland client={caller} call={call} signal={signals.find((s) => s.affected.some((a) => a.ref === caller.ref))} onAccept={accept} onDecline={() => setCall(null)} />
+  const signalsItem: ToolItem = { label: 'Anrufe & Signale', icon: Radio, badge: call ? 1 : undefined, badgeTone: 'red', active: !client && page === 'signale', onClick: () => home('signale') }
+  const banner = call && caller && <RingingIsland client={caller} call={call} onAccept={accept} onDecline={() => setCall(null)} />
 
   // Deep link to a client that only the engine knows: wait for the list before falling back to the dashboard.
   if (!client && ref && !listed) {
@@ -76,7 +81,8 @@ export default function App() {
         ]} />
         {page === 'kunden'
           ? <Dashboard clients={clients} onUploaded={refresh} />
-          : <Workspace key={session.n} clients={clients} signals={signals} initialRef={session.ref} initialCall={session.call} onSimulateCall={() => setCall(sampleCall)} onOpenBriefing={open} />}
+          : listed ? <Workspace key={session.n} clients={clients} signals={[]} initialRef={session.ref} initialCall={session.call} onSimulateCall={() => ring(clients)} onOpenBriefing={open} />
+          : <div className="p-3"><CardSkeleton label="Kunden werden geladen" /></div>}
         {banner}
       </div>
     )
@@ -87,7 +93,7 @@ export default function App() {
   const loading = (tier: 'instant' | 'fast' | 'slow') => briefing.pending.includes(tier)
   const withBriefing = { ...client, briefing: briefing.cards }
   // The header pills are the demo shortcuts; an uploaded client gets its own pill while it is open.
-  const pills = isSample(client.ref) ? samples() : [...samples(), client]
+  const pills = [client]
 
   return (
     <div className="flex h-full flex-col">
