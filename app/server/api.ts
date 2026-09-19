@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { resolve } from 'node:path'
 import type { Plugin } from 'vite'
 import { appBriefing, briefing60, briefingClients, uploadClients } from './ai/briefing-route.ts'
+import { callRoute } from './call.ts'
 
 // Kleine API im Vite-Server. Die Schlüssel bleiben hier und erreichen den Browser nie.
 // Apertus wird über eine OpenAI-kompatible Schnittstelle angesprochen (Basis-URL in .env.local).
@@ -170,6 +171,7 @@ export function api(env: Env): Plugin {
       server.middlewares.use(async (req, res, next) => {
         if (!req.url?.startsWith('/api/')) return next()
         try {
+          if (req.url.startsWith('/api/call/') && await callRoute(req, res)) return
           if (req.url === '/api/status') return send(res, 200, { openai: ready(env, 'openai'), apertus: ready(env, 'apertus'), elevenlabs: !!env.ELEVENLABS_API_KEY, transcribe: !!env.ELEVENLABS_API_KEY || !!env.OPENAI_API_KEY })
           if (req.url === '/api/clients' && req.method === 'GET') return send(res, 200, await caseClients())
           const llm = { complete: (p: Provider, m: Message[]) => complete(env, p, true, m), ready: (p: Provider) => ready(env, p) }

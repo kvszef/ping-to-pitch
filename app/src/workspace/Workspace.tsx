@@ -1,6 +1,8 @@
 import { Mic, MicOff, PanelLeftClose, Phone, PhoneCall, PhoneOff, Settings as SettingsIcon, Users } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useBriefing } from '../data/useBriefing'
+import * as deskLine from '../phone/deskLine'
+import { usePhoneAudio } from '../phone/usePhoneAudio'
 import { transcripts } from '../data/workspace'
 import type { Client, Signal } from '../types'
 import { activeProvider, agentStep, answer, fetchStatus, question, screenFor, topicsFor, type AgentEvent, type Segment, type Status } from './brain'
@@ -89,6 +91,19 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
 
   useEffect(() => { fetchStatus().then(setStatus) }, [])
 
+  // An internet call from the client's phone: both sides are transcribed from their own streams,
+  // so neither the script nor the laptop-microphone recording runs alongside it.
+  const line = deskLine.useDeskLine()
+  const phone = line.state !== 'idle' && line.ref === client.ref
+  const phoneCall = line.state === 'connected' && line.ref === client.ref ? line : null
+  const wasConnected = useRef(false)
+  useEffect(() => {
+    if (phoneCall) wasConnected.current = true
+    else if (wasConnected.current) { wasConnected.current = false; setInCall(false) } // the client hung up
+  }, [phoneCall])
+  usePhoneAudio(phoneCall, inCall && settings.record, !!status.transcribe, (segments) => hear(segments), (error) => setNote(error))
+  const endCall = () => { deskLine.hangup(); setInCall(false) }
+
   // New client: clear the conversation and start with the local plan.
   useEffect(() => {
     linesRef.current = []; queue.current = Promise.resolve(); saidRef.current = { ids: [], texts: [] }
@@ -102,7 +117,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
 
   // Without a microphone a scripted conversation plays.
   useEffect(() => {
-    if (!inCall || !settings.record || mic) return
+    if (!inCall || !settings.record || mic || phone) return
     const script = transcripts[client.ref] ?? []
     let i = 0
     const timer = setInterval(() => {
@@ -110,12 +125,12 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
       hear([script[i++]])
     }, 5500)
     return () => clearInterval(timer)
-  }, [inCall, settings.record, mic, client.ref]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [inCall, settings.record, mic, client.ref, phone]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // A call listens to the microphone straight away when recording is on (real transcript, no script).
-  useEffect(() => { if (inCall && settings.record && canListen(!!status.transcribe) && !(transcripts[client.ref]?.length)) setMic(true) }, [inCall]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (inCall && !phone && settings.record && canListen(!!status.transcribe) && !(transcripts[client.ref]?.length)) setMic(true) }, [inCall]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useCallAudio(mic && inCall && settings.record, !!status.transcribe, (segments) => hear(segments), (error) => { setMic(false); if (error) setNote(error) })
+  useCallAudio(mic && inCall && settings.record && !phone, !!status.transcribe, (segments) => hear(segments), (error) => { setMic(false); if (error) setNote(error) })
 
   async function ask(text: string) {
     if (!text.trim() || busy) return
@@ -172,7 +187,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
 
         <section className="flex min-w-0 flex-1 flex-col">
           <Stage client={client} screen={screen} plan={plan} thinking={thinking} said={said} onUse={use} inCall={inCall} recording={settings.record}
-            lines={lines} note={note} onEnd={() => setInCall(false)} hints={hints}
+            lines={lines} note={note} onEnd={endCall} hints={hints}
             lead={
               <div className="flex min-w-0 shrink-0 items-baseline gap-2">
                 <span className="truncate text-[15px]">{client.name}</span>
@@ -181,8 +196,8 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
             }
             actions={
               <div className="flex shrink-0 gap-1.5">
-                {inCall && settings.record && canListen(!!status.transcribe) && <button onClick={() => setMic((m) => !m)} aria-label="Mikrofon" title="Mikrofon" className={`flex h-7 w-7 items-center justify-center rounded-full ${mic ? 'bg-risk text-white' : 'bg-pill hover:bg-track'}`}>{mic ? <Mic size={13} /> : <MicOff size={13} />}</button>}
-                <button onClick={() => setInCall((v) => !v)} className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs text-white transition-colors ${inCall ? 'bg-risk' : 'bg-brand hover:bg-brand-dark'}`}>{inCall ? <><PhoneOff size={12} /> Beenden</> : <><Phone size={12} /> Anrufen</>}</button>
+                {inCall && !phone && settings.record && canListen(!!status.transcribe) && <button onClick={() => setMic((m) => !m)} aria-label="Mikrofon" title="Mikrofon" className={`flex h-7 w-7 items-center justify-center rounded-full ${mic ? 'bg-risk text-white' : 'bg-pill hover:bg-track'}`}>{mic ? <Mic size={13} /> : <MicOff size={13} />}</button>}
+                <button onClick={() => (inCall ? endCall() : setInCall(true))} className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs text-white transition-colors ${inCall ? 'bg-risk' : 'bg-brand hover:bg-brand-dark'}`}>{inCall ? <><PhoneOff size={12} /> Beenden</> : <><Phone size={12} /> Anrufen</>}</button>
               </div>
             }
             chat={chat} busy={busy} detail={settings.detail} chatSuggestions={chatSuggestions} onAsk={ask}

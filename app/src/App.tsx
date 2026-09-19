@@ -10,6 +10,7 @@ import { CardSkeleton, MetricsSkeleton } from './components/Skeleton'
 import { listClients, localClients } from './data/source'
 import { useBriefing } from './data/useBriefing'
 import type { Card, Client, IncomingCall } from './types'
+import * as deskLine from './phone/deskLine'
 import { RingingIsland } from './workspace/CallIsland'
 import { Workspace } from './workspace/Workspace'
 
@@ -43,6 +44,16 @@ export default function App() {
     if (next) setCall({ ref: next.ref, number: '', reason: next.errors ? `${next.errors} offene Regelverletzungen` : next.context })
   }, [])
   useEffect(() => { if (listed && hash.includes('anruf')) ring(clients) }, [listed]) // eslint-disable-line react-hooks/exhaustive-deps
+  // An internet call from the client's phone (call.html) rings like a simulated one.
+  const line = deskLine.useDeskLine()
+  useEffect(() => deskLine.startListening(), [])
+  const ringingRef = line.state === 'ringing' ? line.ref : null
+  useEffect(() => {
+    if (ringingRef) {
+      const c = clients.find((x) => x.ref === ringingRef)
+      setCall({ ref: ringingRef, number: 'Internetanruf', reason: c ? (c.errors ? `${c.errors} offene Regelverletzungen` : c.context) : '' })
+    } else setCall((c) => (c?.number === 'Internetanruf' ? null : c))
+  }, [ringingRef]) // eslint-disable-line react-hooks/exhaustive-deps
   const client = clients.find((c) => c.ref === ref)
   const briefing = useBriefing(client?.ref ?? null)
   const caller = clients.find((c) => c.ref === call?.ref)
@@ -54,7 +65,7 @@ export default function App() {
   const accept = () => { if (!call) return; setSession((s) => ({ n: s.n + 1, ref: call.ref, call: true })); setCall(null); home('signale') }
 
   const signalsItem: ToolItem = { label: 'Anrufe & Signale', icon: Radio, badge: call ? 1 : undefined, badgeTone: 'red', active: !client && page === 'signale', onClick: () => home('signale') }
-  const banner = call && caller && <RingingIsland client={caller} call={call} onAccept={accept} onDecline={() => setCall(null)} />
+  const banner = call && caller && <RingingIsland client={caller} call={call} onAccept={() => { if (deskLine.getLine().state === 'ringing') void deskLine.accept(); accept() }} onDecline={() => { deskLine.decline(); setCall(null) }} />
 
   // Deep link to a client that only the engine knows: wait for the list before falling back to the dashboard.
   if (!client && ref && !listed) {
