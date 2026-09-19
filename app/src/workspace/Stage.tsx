@@ -275,10 +275,14 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
           </Smooth>
         </div>
 
-        {/* Drag to resize the graph column; only while it is open (the folded 44px strip is fixed). */}
+        {/* Drag to resize the graph column; only while it is open (the folded 44px strip is fixed).
+            A hairline by default, so it reads as a seam rather than a control; it only announces
+            itself as draggable on hover or while active. */}
         {graphsOpen && (
           <button onPointerDown={startResize} aria-label="Breite der Grafikspalte ziehen" title="Ziehen zum Grössern/Verkleinern"
-            className={`group my-1 w-1.5 shrink-0 cursor-col-resize touch-none rounded-full bg-transparent transition-colors ${dragging ? 'bg-brand/40' : 'hover:bg-brand/25'}`}>
+            className="group relative my-2 w-3 shrink-0 cursor-col-resize touch-none">
+            <span className={`absolute inset-y-0 left-1/2 w-px -translate-x-1/2 rounded-full transition-colors duration-150 ${dragging ? 'bg-brand' : 'bg-black/10 group-hover:bg-brand/50'}`} />
+            <span className={`absolute left-1/2 top-1/2 h-8 w-[3px] -translate-x-1/2 -translate-y-1/2 rounded-full transition-[opacity,background-color] duration-150 ${dragging ? 'bg-brand opacity-100' : 'bg-brand/60 opacity-0 group-hover:opacity-100'}`} />
             <span className="sr-only">Grafikspalte grösser oder kleiner ziehen</span>
           </button>
         )}
