@@ -1,18 +1,18 @@
-import { ArrowRight, BarChart3, MessageSquare, PanelLeftClose, PanelRightClose, Mic, MicOff, Phone, PhoneCall, PhoneOff, Settings as SettingsIcon, Users } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { SeverityIcon } from '../cards/ui'
-import { CardView } from '../cards/registry'
-import { newsFeed } from '../data/mock'
+import { PanelLeftClose, Mic, MicOff, Phone, PhoneCall, PhoneOff, Settings as SettingsIcon, Users } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { transcripts } from '../data/workspace'
 import type { Client, Signal } from '../types'
-import { activeProvider, answer, fetchStatus, openingHints, question, think, topicsFor, type Segment, type Status } from './brain'
-import { LiveIsland } from './CallIsland'
-import { ModuleView } from './modules'
-import { NewsFeed } from './NewsFeed'
+import { activeProvider, answer, fetchStatus, openingHints, question, suggest, think, topicsFor, type Segment, type Status } from './brain'
+import { QuickAsk } from './QuickAsk'
+import { Stage } from './Stage'
 import { SettingsPanel } from './SettingsPanel'
 import { useSettings } from './settings'
-import type { ChatEntry, Hint, Origin, Slot, TranscriptLine } from './types'
+import type { ChatEntry, Hint, Slot, TranscriptLine } from './types'
 import { canListen, useCallAudio } from './useCallAudio'
+
+const stem = (t: string) => new Set(t.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 3).map((w) => w.slice(0, 6)))
+// A spoken line counts as the suggestion when it shares at least half of its content words.
+const sameSentence = (idea: string, spoken: string) => { const a = stem(idea), b = stem(spoken); let n = 0; a.forEach((w) => { if (b.has(w)) n++ }); return a.size > 0 && n / a.size >= 0.5 }
 
 type Props = {
   clients: Client[]
@@ -23,12 +23,10 @@ type Props = {
   onOpenBriefing: (ref: string) => void
 }
 
-const originLabel: Record<Origin, string> = { gespraech: 'Aus dem Gespräch', chat: 'Aus dem Berater-Chat', kundendaten: 'Aus den Kundendaten' }
 const rank = { risk: 0, warn: 1, info: 2, ok: 3 }
-const MID_WIDTH = 340
 const providerLabel = { openai: 'OpenAI', apertus: 'Apertus', beispiel: 'Beispielmodus' }
 
-export function Workspace({ clients, signals, initialRef, initialCall, onSimulateCall, onOpenBriefing }: Props) {
+export function Workspace({ clients, signals, initialRef, initialCall, onSimulateCall }: Props) {
   const [settings, update] = useSettings()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [ref, setRef] = useState(initialRef ?? clients[0].ref)
@@ -39,12 +37,21 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
   const [lines, setLines] = useState<TranscriptLine[]>([])
   const [hints, setHints] = useState<Hint[]>([])
   const [activeHint, setActiveHint] = useState<string | null>(null)
+  // The three best sentences to say next (model-phrased), and which of them the advisor already said.
+  const [ideas, setIdeas] = useState<Hint[]>([])
+  const [said, setSaid] = useState<string[]>([])
+  const [thinking, setThinking] = useState(false)
   const [chat, setChat] = useState<ChatEntry[]>([])
   const [busy, setBusy] = useState(false)
-  // Answers that arrive while the chat is folded show as a dot on the strip.
-  const [seen, setSeen] = useState(0)
-  useEffect(() => { if (settings.chatOpen) setSeen(chat.length) }, [settings.chatOpen, chat.length])
-  const unseen = settings.chatOpen ? 0 : chat.slice(seen).filter((e) => e.role === 'ki').length
+  const [quick, setQuick] = useState(false)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== '/' || (e.target instanceof HTMLElement && e.target.closest('input, textarea'))) return
+      e.preventDefault(); setQuick(true)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
   const client = clients.find((c) => c.ref === ref) ?? clients[0]
   const [customerSlot, setCustomerSlot] = useState<Slot | null>(null)
   const [advisorSlot, setAdvisorSlot] = useState<Slot | null>(null)
@@ -59,9 +66,14 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
   // Auswertungen laufen nacheinander, damit das Transkript in der gesprochenen Reihenfolge bleibt.
   const linesRef = useRef<TranscriptLine[]>([])
   const queue = useRef(Promise.resolve())
+  // Results that come back after the advisor switched clients are dropped.
+  const current = useRef(client.ref)
+  current.current = client.ref
   const hear = (segments: Segment[]) => {
+    const at = client.ref
     queue.current = queue.current.then(async () => {
       const thought = await think(client, linesRef.current, segments, settings, status)
+      if (current.current !== at) return
       linesRef.current = [...linesRef.current, ...thought.lines]
       setLines(linesRef.current)
       // Zwei getrennte Spuren: Aussagen des Kunden führen zu einer Antwort, Aussagen des Beraters zum nächsten Schritt.
@@ -70,16 +82,37 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
       if (thought.hints.length) addHints(thought.hints)
       const insight = thought.insight
       if (insight) setChat((c) => (c.some((e) => e.role === 'ki' && e.text === (insight as { text: string }).text) ? c : [...c, insight]))
+      const spoken = thought.lines.filter((l) => l.speaker === 'Berater').map((l) => ideasRef.current.find((i) => sameSentence(i.text, l.text))).find(Boolean)
+      if (spoken) use(spoken)
+      else if (thought.lines.some((l) => l.speaker === 'Kunde')) refresh()
     })
+  }
+  const ideasRef = useRef<Hint[]>([])
+  ideasRef.current = ideas
+  const asked = useRef(0)
+  // Next three suggestions from the conversation so far; at most every few seconds, newest wins.
+  const refresh = () => {
+    const n = ++asked.current
+    const at = client.ref
+    setThinking(true)
+    suggest(client, linesRef.current, settings, status).then((next) => { if (n === asked.current && at === current.current) { setIdeas(next); setThinking(false) } })
+  }
+  // The advisor said (or picked) one: its tile comes forward, it is marked as said, the next three follow.
+  const use = (idea: Hint) => {
+    setSaid((s) => (s.includes(idea.id) ? s : [...s, idea.id]))
+    addHints([{ ...idea, id: `${idea.id}-said`, origin: 'gespraech', trigger: 'Von Ihnen gesagt' }])
+    refresh()
   }
   const hearRef = useRef(hear)
   hearRef.current = hear
 
   useEffect(() => { fetchStatus().then(setStatus) }, [])
+  // Once the model is reachable, the openers are rephrased by it.
+  useEffect(() => { if (status.openai || status.apertus) refresh() }, [status.openai, status.apertus]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     linesRef.current = []; queue.current = Promise.resolve()
-    setLines([]); setChat([]); setHints(openingHints(client)); setActiveHint(null); setMic(false); setNote(null); setCustomerSlot(null); setAdvisorSlot(null)
+    setLines([]); setChat([]); setHints(openingHints(client)); setActiveHint(null); setSaid([]); setIdeas(openingHints(client).slice(0, 3)); refresh(); setMic(false); setNote(null); setCustomerSlot(null); setAdvisorSlot(null)
   }, [client.ref]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ohne Mikrofon läuft ein Beispielgespräch ab.
@@ -111,8 +144,6 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
   const topSignal = (r: string) => signals.flatMap((s) => s.affected.filter((a) => a.ref === r).map((a) => ({ ...a, title: s.title }))).sort((a, b) => rank[a.severity] - rank[b.severity])[0]
   const open = useMemo(() => topicsFor(client).filter((t) => !chat.some((e) => e.role === 'ki' && e.text === t.insight[settings.detail])), [client, chat, settings.detail])
 
-  // Real client files have no proposal yet (engine track): their rule violations fill the panel instead.
-  const proposal = client.briefing.find((c) => c.type === 'proposal') ?? client.briefing.find((c) => c.type === 'flags')
   const shown = hints.find((h) => h.id === activeHint) ?? hints[0]
 
   // Flow: arrow keys walk through the points without reaching for the mouse (ignored while typing).
@@ -128,19 +159,6 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [hints, shown])
-
-  const base = { assistent: 1 + (100 - settings.focus) / 50, chat: 1 + settings.focus / 50 }
-
-  // Trennlinie von Hand ziehen: die Zeigerposition bestimmt den Anteil des Berater-Chats (25–75 %).
-  const split = useRef<HTMLDivElement>(null)
-  const [dragging, setDragging] = useState(false)
-  const dragTo = (x: number) => {
-    const box = split.current?.getBoundingClientRect()
-    if (!box) return
-    // Die mittlere Spalte ist fest breit; verteilt wird nur der Rest zwischen Gesprächsassistent und Berater-Chat.
-    const share = 1 - (x - box.left) / (box.width - MID_WIDTH - 20)
-    update({ focus: Math.round(Math.max(0, Math.min(100, (share * 4 - 1) * 50))) })
-  }
 
   return (
     <>
@@ -181,15 +199,14 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
           )}
         </aside>
 
-        <div ref={split} className={`flex min-w-0 flex-1 ${settings.dragSplit ? '' : 'gap-2.5'} ${dragging ? 'select-none' : ''}`}>
-        <section style={{ flexGrow: base.assistent }} className={`flex min-w-0 basis-0 flex-col overflow-hidden rounded-xl bg-white shadow-card motion-reduce:transition-none ${dragging ? '' : 'transition-[flex-grow] duration-[650ms] ease-[cubic-bezier(.22,1,.36,1)]'}`}>
-          <div className="flex shrink-0 items-center gap-2 px-6 pt-5">
+        <div className="flex min-w-0 flex-1 gap-2.5">
+        <section className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-white shadow-card">
+          <div className="flex shrink-0 items-center gap-2 px-6 pt-4">
             <div className="min-w-0">
               <div className="truncate text-[17px]">{client.name}</div>
               <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted">
                 <span className={`h-1.5 w-1.5 rounded-full ${inCall ? 'animate-pulse bg-risk' : 'bg-track'}`} />
                 {inCall ? 'Gespräch läuft' : 'Vorbereitung'}
-                <button onClick={() => onOpenBriefing(client.ref)} className="ml-1 inline-flex items-center gap-0.5 hover:text-brand">Briefing <ArrowRight size={10} /></button>
               </div>
             </div>
             <div className="ml-auto flex shrink-0 gap-1.5">
@@ -198,131 +215,17 @@ export function Workspace({ clients, signals, initialRef, initialCall, onSimulat
             </div>
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col justify-center px-6 py-4">
-            {shown && (
-              <div key={shown.id} title={`${shown.why}\n${originLabel[shown.origin]} · ${shown.trigger}`} className="anim-rise">
-                <div className="mb-2 flex items-center gap-1.5 text-[11px] text-muted"><SeverityIcon severity={shown.severity} size={11} /> {shown.label}</div>
-                <p className="text-[22px] leading-snug">{shown.text}</p>
-              </div>
-            )}
-          </div>
-
-          {hints.length > 1 && (
-            <nav aria-label="Gesprächspunkte" className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 px-6 pb-4 text-xs">
-              {hints.slice(0, 6).map((h, n) => (
-                <button key={h.id} onClick={() => setActiveHint(h.id)} aria-pressed={h.id === shown?.id} title={h.text}
-                  className={`border-b-2 pb-0.5 transition-colors ${h.id === shown?.id ? 'border-brand text-ink' : 'border-transparent text-muted hover:text-ink'}`}>
-                  <span className="mr-1 text-[10px] tabular-nums text-muted">{n + 1}</span>{h.label}
-                </button>
-              ))}
-              <span className="ml-auto hidden text-[10px] text-muted xl:inline">← → blättern</span>
-            </nav>
-          )}
-
-          {(note || (settings.record && lines.length > 0)) && (
-            <div className="shrink-0 border-t border-line/60 px-6 py-3">
-              {note && <p className="mb-2 flex items-start gap-1.5 text-[11px] leading-snug text-risk"><SeverityIcon severity="risk" size={11} /> {note}</p>}
-              <ul className="space-y-1 text-xs">{lines.slice(-2).map((l, i) => <li key={lines.length - i} title={l.text} className="anim-rise truncate text-muted"><span className={`mr-1.5 text-[10px] ${l.speaker === 'Kunde' ? 'text-brand-dark' : ''}`}>{l.speaker}</span>{l.text}</li>)}</ul>
-            </div>
-          )}
+          <Stage client={client} hints={hints} ideas={ideas} said={said} thinking={thinking} onUse={use} inCall={inCall} recording={settings.record}
+            lines={lines} note={note} customer={customerSlot} advisor={advisorSlot} onEnd={() => setInCall(false)} />
         </section>
 
-        {settings.dragSplit && settings.chatOpen && (
-          <div role="separator" aria-orientation="vertical" aria-label="Aufteilung zwischen Gesprächsassistent und Berater-Chat" aria-valuenow={settings.focus} tabIndex={0}
-            onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); setDragging(true) }}
-            onPointerMove={(e) => { if (dragging) dragTo(e.clientX) }}
-            onPointerUp={() => setDragging(false)} onPointerCancel={() => setDragging(false)}
-            onDoubleClick={() => update({ focus: 50 })}
-            onKeyDown={(e) => { if (e.key === 'ArrowLeft') update({ focus: Math.min(100, settings.focus + 5) }); if (e.key === 'ArrowRight') update({ focus: Math.max(0, settings.focus - 5) }) }}
-            className="group flex w-2.5 shrink-0 cursor-col-resize touch-none items-center justify-center outline-none">
-            <span className={`h-10 w-[3px] rounded-full transition-all duration-200 group-hover:h-16 group-hover:bg-brand group-focus-visible:h-16 group-focus-visible:bg-brand ${dragging ? 'h-16 bg-brand' : 'bg-track'}`} />
-          </div>
-        )}
-
-        <div className={`compact flex shrink-0 flex-col gap-2.5 transition-opacity duration-500 ${settings.dragSplit ? 'mr-2.5' : ''} ${inCall ? 'opacity-50 hover:opacity-100' : ''}`} style={{ width: MID_WIDTH }}>
-          <div className="flex max-h-[45%] min-h-0 shrink-0 flex-col overflow-hidden"><NewsFeed key={client.ref} feed={newsFeed} clientRef={client.ref} /></div>
-          <div className="min-h-0 flex-1 overflow-hidden rounded-xl bg-white/75 shadow-card ring-1 ring-black/5 backdrop-blur-md [&>section]:bg-transparent [&>section]:shadow-none">{proposal && <CardView card={proposal} />}</div>
-        </div>
-
-        {!settings.chatOpen ? (
-          <button onClick={() => update({ chatOpen: true })} aria-label="Chat öffnen" title="Chat öffnen"
-            className="anim-rise flex w-11 shrink-0 flex-col items-center gap-2.5 rounded-xl bg-white/75 py-4 text-muted shadow-card ring-1 ring-black/5 transition-colors hover:bg-white hover:text-ink">
-            <MessageSquare size={16} strokeWidth={1.5} />
-            {unseen > 0 && <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-[10px] tabular-nums text-white">{unseen}</span>}
-            <span className="text-[11px] [writing-mode:vertical-rl]">Chat</span>
-          </button>
-        ) : (
-        <Pane grow={base.chat} still={dragging} icon={MessageSquare} title="Chat"
-          actions={<button onClick={() => update({ chatOpen: false })} aria-label="Chat einklappen" title="Chat einklappen" className="flex h-7 w-7 items-center justify-center rounded-full text-muted hover:bg-pill hover:text-ink"><PanelRightClose size={15} /></button>}
-          footer={
-            <form onSubmit={(e) => { e.preventDefault(); const f = e.currentTarget.elements.namedItem('q') as HTMLInputElement; ask(f.value); f.value = '' }} className="flex items-center gap-2 border-t border-line/70 p-2 text-xs">
-              <input name="q" autoComplete="off" placeholder={`Frage zu ${client.name} …`} className="min-w-0 flex-1 rounded-full bg-stripe px-3.5 py-2 outline-none focus:ring-1 focus:ring-brand" />
-              <button aria-label="Senden" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand text-white hover:bg-brand-dark"><ArrowRight size={14} /></button>
-            </form>
-          }>
-          {open.length > 0 && (
-            <div className="mb-3 space-y-1">
-              {open.map((t) => <button key={t.id} onClick={() => ask(t.label)} className="block text-left text-[11px] text-muted transition-colors hover:text-brand">{t.label}</button>)}
-            </div>
-          )}
-          <ChatLog chat={chat} busy={busy} detail={settings.detail} onShow={(id) => setChat((c) => c.map((e) => (e.id === id && e.role === 'ki' && e.offered ? { ...e, module: e.offered.spec, offered: undefined } : e)))} />
-        </Pane>
-        )}
         </div>
       </div>
 
-      {inCall && <LiveIsland key={client.ref} client={client} recording={settings.record} customer={customerSlot} advisor={advisorSlot} onEnd={() => setInCall(false)} />}
+      <QuickAsk open={quick} onOpen={() => setQuick(true)} onClose={() => setQuick(false)} name={client.name} chat={chat} busy={busy} detail={settings.detail}
+        suggestions={open.map((t) => t.label)} onAsk={ask}
+        onShow={(id) => setChat((c) => c.map((e) => (e.id === id && e.role === 'ki' && e.offered ? { ...e, module: e.offered.spec, offered: undefined } : e)))} />
       <SettingsPanel open={settingsOpen} settings={settings} status={status} update={update} onClose={() => setSettingsOpen(false)} />
     </>
-  )
-}
-
-function PaneTitle({ icon: Icon, title, actions }: { icon: typeof Users; title: string; actions?: ReactNode }) {
-  return (
-    <div className="flex shrink-0 items-center justify-between gap-3 px-4 pb-2 pt-4">
-      <h3 className="flex min-w-0 items-baseline gap-2 text-[15px]"><Icon size={16} strokeWidth={1.5} className="shrink-0 self-center" /><span className="whitespace-nowrap">{title}</span></h3>
-      {actions && <div className="flex shrink-0 gap-1.5">{actions}</div>}
-    </div>
-  )
-}
-
-function Pane({ grow, still, icon, title, actions, footer, children }: { grow: number; still: boolean; icon: typeof Users; title: string; actions?: ReactNode; footer?: ReactNode; children: ReactNode }) {
-  return (
-    <section
-      style={{ flexGrow: grow }}
-      className={`flex min-w-0 basis-0 flex-col overflow-hidden rounded-xl bg-white/75 shadow-card ring-1 ring-black/5 backdrop-blur-md motion-reduce:transition-none ${still ? '' : 'transition-[flex-grow] duration-[650ms] ease-[cubic-bezier(.22,1,.36,1)]'}`}>
-      <PaneTitle icon={icon} title={title} actions={actions} />
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">{children}</div>
-      {footer}
-    </section>
-  )
-}
-
-function ChatLog({ chat, busy, detail, onShow }: { chat: ChatEntry[]; busy: boolean; detail: 'kurz' | 'standard' | 'detailliert'; onShow: (id: string) => void }) {
-  const end = useRef<HTMLDivElement>(null)
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  useEffect(() => { end.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }) }, [chat, busy])
-  return (
-    <div className="space-y-2.5 text-xs">
-      {chat.map((e) => {
-        if (e.role === 'berater') return <div key={e.id} className="anim-rise ml-auto w-fit max-w-[85%] bg-brand px-2.5 py-1.5 leading-snug text-white">{e.text}</div>
-        const cutAt = e.text.search(/[.!?](\s|$)/) + 1
-        const long = cutAt > 0 && cutAt < e.text.length - 1 && !expanded.has(e.id)
-        return (
-          <div key={e.id} className="anim-rise bg-stripe px-3 py-2.5">
-            <p className="leading-relaxed">
-              {e.origin === 'gespraech' && <span className="mr-1.5 text-[10px] uppercase tracking-wide text-brand-dark">Gespräch</span>}
-              {long ? e.text.slice(0, cutAt) : e.text}
-              {long && <button onClick={() => setExpanded((x) => new Set(x).add(e.id))} className="ml-1 text-brand hover:underline">mehr</button>}
-              {e.sources.length > 0 && <span title={e.sources.join(' · ')} className="ml-1.5 cursor-help whitespace-nowrap text-[11px] text-muted">· {e.sources.length} {e.sources.length === 1 ? 'Quelle' : 'Quellen'}</span>}
-            </p>
-            {e.module && <ModuleView spec={e.module} detail={detail} />}
-            {e.offered && <button onClick={() => onShow(e.id)} className="mt-2 inline-flex items-center gap-1.5 rounded-sm bg-pill px-2 py-1 text-[11px] hover:bg-brand hover:text-white"><BarChart3 size={12} /> Grafik · {e.offered.confidence}%</button>}
-          </div>
-        )
-      })}
-      {busy && <div className="text-muted">…</div>}
-      <div ref={end} />
-    </div>
   )
 }

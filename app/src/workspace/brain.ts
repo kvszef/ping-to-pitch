@@ -1,6 +1,7 @@
 import { topics } from '../data/workspace'
 import { signals } from '../data/mock'
 import type { Client } from '../types'
+import { briefFor } from './brief'
 import { deriveTopics } from './derive'
 import { grounded } from './grounding'
 import type { ChatEntry, Hint, ModuleSpec, Origin, Settings, Slot, Topic, TranscriptLine } from './types'
@@ -148,6 +149,31 @@ type AnalyseResult = {
   customer?: { heard: string; text: string; why?: string; topic: string } | null
   advisor?: { heard: string; text: string; topic: string } | null
   insight?: { text: string; sources?: string[]; module?: { id: string; confidence: number } | null } | null
+}
+
+// The three best sentences to say next, phrased by the model from this client's data. Before the call
+// they open it; during the call they follow the transcript. Ungrounded ones are dropped, the rest is
+// filled from the computed topics, so there are always up to three.
+type OpenersResult = { openers?: { label: string; text: string; why?: string; topic?: string }[] }
+export async function suggest(client: Client, transcript: TranscriptLine[], settings: Settings, status: Status): Promise<Hint[]> {
+  // Offline: the computed brief items are already short talking points with their figure.
+  const spokenAlready = new Set(transcript.map((l) => l.text))
+  const fallback = briefFor(client).filter((b) => !spokenAlready.has(b.text)).slice(transcript.length ? 3 : 0).concat(briefFor(client)).slice(0, 3)
+    .map((b) => hint(b.topics?.[0] ?? b.id, b.group, `${b.figure ? `${b.figure} ` : ''}${b.text}`.replace(/\.$/, ''), b.source, b.severity ?? 'info', transcript.length ? 'gespraech' : 'kundendaten', 'Aus den Kundendaten'))
+  const provider = activeProvider(settings, status)
+  if (!provider) return fallback
+  try {
+    const context = contextFor(client)
+    const r = await post<OpenersResult>('/api/openers', { provider, context, transcript: transcript.slice(-8) })
+    const evidence = JSON.stringify(context) + transcript.map((l) => l.text).join(' ')
+    const origin: Origin = transcript.length ? 'gespraech' : 'kundendaten'
+    const trigger = transcript.length ? 'Nächster Schritt aus dem Gespräch' : 'Gesprächseinstieg'
+    const fromModel = (r.openers ?? []).filter((o) => o.text && grounded(o.text, evidence)).slice(0, 3)
+      .map((o) => hint(o.topic || words(o.label).join('-'), o.label, o.text, o.why ?? '', topicsFor(client).find((t) => t.id === o.topic)?.severity ?? 'info', origin, trigger))
+    return [...fromModel, ...fallback.filter((f) => !fromModel.some((m) => m.topicId === f.topicId))].slice(0, 3)
+  } catch {
+    return fallback
+  }
 }
 
 // Wertet neu Gesprochenes aus. Sprecher-Kennungen aus der Transkription ordnet das Modell den Rollen zu.

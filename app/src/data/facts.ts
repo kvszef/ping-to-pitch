@@ -17,6 +17,10 @@ export type ClientFacts = {
   liquidityShare?: number
   proposals: { total: number; accepted: number; rejected: number; draft: number; last?: { date: string; status: string; reason: string } }
   tags: string[]
+  // Earlier drops of 3% or more in one month and what followed: the client's own precedent.
+  incidents: { label: string; change: number; after3?: number; recoveredMonths?: number }[]
+  // Latest proposals with their outcome and how many trades each one triggered.
+  history: { date: string; status: string; reason: string; trades: number }[]
 }
 
 type Raw = Record<string, unknown>
@@ -34,7 +38,7 @@ const dayLabel = (iso: string) => `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.
 
 // Security names in the file lead with the share class ("Namen-Aktie Swiss Life Holding AG").
 // Fund names repeat the issuer before a dash ("iShares IV PLC - iShares Edge MSCI World Value"): keep the part after it.
-const shortName = (name: string) => name.replace(/^[^-]{3,40}\s-\s(?=\S)/, '').replace(/^(Namen-Aktien?|Inhaber-Aktien?|Aktien?|Anteile|Partizipationsscheine?|Genussscheine?)\s+(-[^-]+-\s+)?/i, '').slice(0, 48).trim() || name
+const shortName = (name: string) => (name.includes(' - ') ? name.slice(name.lastIndexOf(' - ') + 3) : name).replace(/^(Namen-Aktien?|Inhaber-Aktien?|Aktien?|Anteile|Partizipationsscheine?|Genussscheine?)\s+(-[^-]+-\s+)?/i, '').slice(0, 48).trim() || name
 
 // Total value per month-end, summed over the portfolios. Only dates every portfolio reports.
 function navSeries(portfolios: Raw[]): { date: string; value: number }[] {
@@ -47,6 +51,21 @@ function navSeries(portfolios: Raw[]): { date: string; value: number }[] {
     sum.set(date, { value: hit.value + num(point.Value), n: hit.n + 1 })
   }
   return [...sum.entries()].filter(([, v]) => v.n === histories.length).map(([date, v]) => ({ date, value: v.value })).sort((a, b) => a.date.localeCompare(b.date))
+}
+
+const DROP = -0.03 // a month the client notices on the statement; same threshold as the engine's performance check
+
+function incidents(portfolios: Raw[]): ClientFacts['incidents'] {
+  const nav = navSeries(portfolios)
+  const out: ClientFacts['incidents'] = []
+  for (let i = 1; i < nav.length - 1; i++) {
+    const change = nav[i].value / nav[i - 1].value - 1
+    if (change > DROP) continue
+    const later = nav[i + 3]
+    const back = nav.slice(i + 1).findIndex((p) => p.value >= nav[i - 1].value)
+    out.push({ label: monthLabel(nav[i - 1].date), change: pct(change), after3: later ? pct(later.value / nav[i].value - 1) : undefined, recoveredMonths: back >= 0 ? back + 1 : undefined })
+  }
+  return out.reverse().slice(0, 3)
 }
 
 function performance(portfolios: Raw[]): ClientFacts['performance'] {
@@ -121,6 +140,11 @@ export function factsFromRaw(input: unknown): ClientFacts {
       draft: proposals.filter((p) => status(p) === 'Entwurf').length,
       last: lastProposal ? { date: dayLabel(str(lastProposal.ProposedDateUTC).slice(0, 10)), status: status(lastProposal) || 'ohne Status', reason: str(lastProposal.Reason) } : undefined,
     },
+    incidents: incidents(portfolios),
+    history: proposals.filter((p) => str(p.ProposedDateUTC)).sort((a, b) => str(b.ProposedDateUTC).localeCompare(str(a.ProposedDateUTC))).slice(0, 4).map((p) => ({
+      date: dayLabel(str(p.ProposedDateUTC).slice(0, 10)), status: status(p) || 'ohne Status', reason: str(p.Reason),
+      trades: list(raw.Transactions).filter((t) => t.ProposalId === p.ProposalId && p.ProposalId !== undefined).length,
+    })),
     tags: list(raw.Tags).map((t) => str(t.TagName)).filter(Boolean).slice(0, 8),
   }
 }

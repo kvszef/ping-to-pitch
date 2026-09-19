@@ -1,4 +1,5 @@
 import type { Topic, TranscriptLine } from '../workspace/types'
+import type { BriefItem } from '../workspace/brief'
 
 // BEISPIELDATEN — Themenwissen und Gesprächsverlauf, wie sie später das LLM aus der Datenbank ableitet.
 
@@ -159,5 +160,33 @@ export const transcripts: Record<string, TranscriptLine[]> = {
     { speaker: 'Berater', text: 'Guten Tag. Der Fonds wurde neu eingestuft und passt nicht mehr zu Ihrem Profil, ich empfehle den Verkauf.' },
     { speaker: 'Kunde', text: 'Ich möchte nächstes Jahr eine Wohnung kaufen. Ist mein Geld dafür sicher?' },
     { speaker: 'Berater', text: 'Für den Immobilienkauf reservieren wir die Liquidität jetzt.' },
+  ],
+}
+
+// Hand-written 60-second briefs for the sample clients (real client files get theirs from data/facts.ts).
+export const briefs: Record<string, BriefItem[]> = {
+  'CASE-A': [
+    { id: 'a1', topics: ['technologie'], group: 'Anlass', figure: '−4.2%', text: 'diesen Monat. 3.1 Punkte davon aus drei US-Technologietiteln.', source: 'Performancebeitrag', severity: 'risk' },
+    { id: 'a2', topics: ['technologie', 'klumpen'], group: 'Positionen', figure: '34%', text: 'US-Technologie in 5 Positionen, grösster Einzeltitel 13.4%.', source: 'Positionen', severity: 'warn' },
+    { id: 'a3', topics: ['dollar'], group: 'Positionen', figure: '61%', text: 'USD-Anteil, 11 Punkte über dem Mandatsband.', source: 'SAA-Währungsband', severity: 'risk' },
+    { id: 'a4', topics: ['nachhaltig', 'technologie'], group: 'Verlauf', text: 'Will die Technologie ausbauen, wünscht mehr nachhaltige Fonds.', source: 'Kundennotizen 02.09. und 19.08.2026', severity: 'info' },
+    { id: 'a5', topics: ['nachhaltig'], group: 'Verlauf', text: 'ESG-Aufteilung zugesagt, seit 26.08.2026 überfällig.', source: 'Gespräch 19.08.2026', severity: 'warn' },
+    { id: 'a6', topics: ['technologie'], group: 'Frühere Fälle', figure: '−3.8%', text: 'im Okt. 2023, ebenfalls Technologie. Kunde hielt, nach 4 Monaten wieder auf Vorniveau.', source: 'Eigener Wertverlauf (Beispiel)', severity: 'info' },
+    { id: 'a7', topics: ['dollar', 'klumpen'], group: 'Vorschlag', figure: "CHF 136'000", text: 'USD/CHF absichern statt verkaufen: USD-Anteil 61% → 50%.', source: 'Anlagevorschlag (Entwurf)', severity: 'ok' },
+  ],
+  'CASE-B': [
+    { id: 'b1', topics: ['rueckstand'], group: 'Anlass', figure: '−1.4', text: 'Punkte hinter der Zielallokation im letzten Quartal.', source: 'Performancebeitrag', severity: 'warn' },
+    { id: 'b2', topics: ['europa', 'rueckstand'], group: 'Positionen', figure: '−7', text: 'Punkte Untergewicht in europäischen Aktien, 9% Liquidität.', source: 'SAA-Länderband', severity: 'warn' },
+    { id: 'b3', topics: ['rueckstand'], group: 'Verlauf', text: 'Wartet auf den Benchmark-Vergleich, will alles schriftlich.', source: 'Kundennotiz 10.09.2026', severity: 'info' },
+    { id: 'b4', topics: ['rueckstand'], group: 'Frühere Fälle', text: 'Obligationen senken wurde abgelehnt: will den laufenden Ertrag behalten.', source: 'Gesprächsnotiz', severity: 'warn' },
+    { id: 'b5', topics: ['europa', 'nachhaltig'], group: 'Vorschlag', figure: '+5', text: 'Punkte Liquidität in einen Europa-Fonds, passt zur Hausmeinung.', source: 'CIO-Sicht (Beispiel)', severity: 'ok' },
+  ],
+  'CASE-C': [
+    { id: 'c1', topics: ['immobilie'], group: 'Anlass', text: 'Plant einen Immobilienkauf, Liquidität innert 12 Monaten nötig.', source: 'Kundennotiz 03.07.2026', severity: 'warn' },
+    { id: 'c2', topics: ['fonds'], group: 'Positionen', figure: '12%', text: 'Obligationenfonds über der Risikogrenze des Profils.', source: 'Regelverletzung', severity: 'risk' },
+    { id: 'c3', topics: ['immobilie'], group: 'Positionen', figure: '6%', text: 'Liquidität, reicht für eine Anzahlung nicht.', source: 'Konten', severity: 'warn' },
+    { id: 'c4', topics: ['fonds', 'immobilie'], group: 'Verlauf', figure: '1/5', text: 'Vorschlägen umgesetzt. Seit dem letzten Rückgang sehr risikoscheu.', source: 'Vorschläge, Notiz 23.06.2026', severity: 'warn' },
+    { id: 'c5', topics: ['immobilie'], group: 'Frühere Fälle', text: 'Nach dem Rückgang 2022 verkaufte der Kunde am Tiefpunkt: jetzt Ruhe und Kapitalerhalt betonen.', source: 'Transaktionen (Beispiel)', severity: 'info' },
+    { id: 'c6', topics: ['fonds', 'immobilie'], group: 'Vorschlag', text: 'Fonds verkaufen, Erlös im Geldmarkt parkieren bis zum Kauf.', source: 'Nächste Schritte', severity: 'ok' },
   ],
 }

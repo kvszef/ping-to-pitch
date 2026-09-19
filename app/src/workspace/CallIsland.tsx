@@ -60,19 +60,19 @@ export function RingingIsland({ client, call, signal, onAccept, onDecline }: { c
   )
 }
 
-function Wave() {
+export function Wave() {
   return <span className="flex h-4 items-center gap-[2px]" aria-hidden>{[0, 1, 2, 3, 4].map((i) => <span key={i} className="island-wave w-[2px] rounded-full bg-ok" style={{ animationDelay: `${i * 0.12}s` }} />)}</span>
 }
 
-function SlotView({ tone, icon, label, action, slot, empty }: { tone: string; icon: ReactNode; label: string; action: string; slot: Slot | null; empty: string }) {
+export function SlotView({ tone, icon, label, action, slot, empty }: { tone: string; icon: ReactNode; label: string; action: string; slot: Slot | null; empty: string }) {
   return (
-    <div className="min-w-0 flex-1 rounded-[18px] bg-white/[0.07] p-3">
+    <div className="min-w-0 flex-1 rounded-[18px] bg-white/[0.07] p-4">
       <div className={`mb-1.5 flex items-center gap-1.5 text-[10px] uppercase tracking-wide ${tone}`}>{icon}{label}</div>
       {slot ? (
         <div key={slot.topic + slot.heard} className="island-swap">
-          <p className="truncate text-[11px] italic text-white/45">«{slot.heard}»</p>
+          <p className="truncate text-[12px] italic text-white/45">«{slot.heard}»</p>
           <p className={`mt-1.5 text-[10px] uppercase tracking-wide ${tone}`}>{action}</p>
-          <p className="text-[13px] leading-snug">{slot.text}</p>
+          <p className="text-[16px] leading-snug">{slot.text}</p>
         </div>
       ) : <p className="text-[11px] leading-snug text-white/40">{empty}</p>}
     </div>

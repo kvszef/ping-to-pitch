@@ -79,13 +79,26 @@ Schema: {"supported": boolean, "text": string, "sources": string[], "module": {"
   ]
 }
 
+// The three best sentences for the advisor to say next: openers before the call, follow-ups during it.
+function openersPrompt(p: { context: unknown; transcript: unknown[] }): Message[] {
+  const started = Array.isArray(p.transcript) && p.transcript.length > 0
+  return [
+    { role: 'system', content: `${RULES}
+Schema: {"openers": [{"label": string, "text": string, "why": string, "topic": string}]}
+- Genau drei Einträge, nach Wichtigkeit geordnet, jeder zu einem ANDEREN Thema.
+- ${started ? 'Das Gespräch läuft: die drei besten NÄCHSTEN Sätze, passend zum bisherigen Verlauf. Wiederhole nichts, was schon gesagt wurde, und greife auf, was der Kunde zuletzt gesagt hat.' : 'Vor dem Gespräch: die drei besten Sätze, um das Gespräch zu eröffnen.'}
+- "label": zwei bis drei Wörter, das Thema. "text": ein STICHPUNKT für den Berater, kein ganzer Satz: höchstens 10 Wörter, Nominalstil, ohne Artikel am Anfang, ohne Anrede, mit genau einer Kernzahl aus dem Kontext. Beispiel für die Form: «USD-Anteil 61%, 11 Pkt. über Band: Absicherung ansprechen». "why": die Zahl dahinter, ein kurzer Satz für den Berater. "topic": die "id" des passenden Eintrags aus "themen", sonst ein Stichwort.` },
+    { role: 'user', content: `KUNDENKONTEXT:\n${JSON.stringify(p.context)}\n\nBISHERIGES GESPRÄCH:\n${JSON.stringify(p.transcript ?? [])}` },
+  ]
+}
+
 function analysePrompt(p: { context: unknown; modules: unknown; transcript: unknown; segments: unknown; detail: string }): Message[] {
   return [
     { role: 'system', content: `${RULES}
 Du hörst ein Telefongespräch zwischen Berater und Kunde mit. NEUE ABSCHNITTE stammen aus einer automatischen Transkription mit Sprecher-Kennungen, die nur innerhalb dieser Lieferung gelten.
 Schema: {"segments": [{"speaker": "Kunde" | "Berater", "text": string}], "customer": {"heard": string, "text": string, "why": string, "topic": string} | null, "advisor": {"heard": string, "text": string, "topic": string} | null, "insight": {"text": string, "sources": string[], "module": {"id": string, "confidence": number} | null} | null}
 - "segments": die neuen Abschnitte in Reihenfolge, jeder der Rolle zugeordnet. Der Berater erklärt, ordnet ein und schlägt vor; der Kunde fragt und schildert Anliegen. Transkriptionsfehler behutsam korrigieren, nichts hinzufügen.
-- "customer": nur wenn der KUNDE in den neuen Abschnitten ein Anliegen geäussert hat, das der Kontext abdeckt. "heard" = seine Aussage, "text" = ein Satz, den der Berater wörtlich antworten kann (Sie-Form): Ursache mit Zahl und, falls im Kontext vorhanden, die konkrete Massnahme mit Betrag, "why" = Begründung mit Zahlen, "topic" = Stichwort.
+- "customer": nur wenn der KUNDE in den neuen Abschnitten ein Anliegen geäussert hat, das der Kontext abdeckt. "heard" = seine Aussage, "text" = STICHPUNKT für die Antwort, kein ganzer Satz (höchstens 12 Wörter, Nominalstil, ohne Artikel am Anfang): Ursache mit Zahl und, falls im Kontext vorhanden, die konkrete Massnahme mit Betrag, "why" = Begründung mit Zahlen, "topic" = Stichwort.
 - "advisor": nur wenn der BERATER in den neuen Abschnitten ein Thema angesprochen hat. "heard" = seine Aussage, "text" = der vorausschauend nächste Schritt für ihn, "topic" = Stichwort.
 - "insight": Einblick für den Berater zum Anliegen des Kunden, Umfang: ${DETAIL[p.detail] ?? DETAIL.standard}; Grafik wie beschrieben höchstens eine aus VERFÜGBARE GRAFIKEN mit Konfidenz 0–100.
 Bei Begrüssungen und Belanglosem sind "customer", "advisor" und "insight" null.` },
@@ -152,6 +165,7 @@ export function api(env: Env): Plugin {
           const p = JSON.parse(raw.toString('utf8'))
           const provider: Provider = p.provider === 'apertus' ? 'apertus' : 'openai'
           if (req.url === '/api/chat') return send(res, 200, await complete(env, provider, false, chatPrompt(p)))
+          if (req.url === '/api/openers') return send(res, 200, await complete(env, provider, true, openersPrompt(p)))
           if (req.url === '/api/analyse') return send(res, 200, await complete(env, provider, true, analysePrompt(p)))
           send(res, 404, { error: 'Unbekannter Pfad' })
         } catch (e) {

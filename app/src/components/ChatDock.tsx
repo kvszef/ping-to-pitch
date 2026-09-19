@@ -1,17 +1,24 @@
-import { MessageSquare, X } from 'lucide-react'
+import { BarChart3, MessageSquare, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { ask } from '../assistant'
-import type { ChatMessage, Client } from '../types'
+import type { Client } from '../types'
+import { activeProvider, answer, fetchStatus, question, type Status } from '../workspace/brain'
+import { ModuleView } from '../workspace/modules'
+import { useSettings } from '../workspace/settings'
+import type { ChatEntry } from '../workspace/types'
 
 // Reine Nachrichtenliste + Eingabe, ohne Chrome. Wird sowohl im Slide-in-Panel als auch kompakt im Live-Overlay verwendet.
 export function ChatThread({ client, className = '', autoFocus = false }: { client: Client; className?: string; autoFocus?: boolean }) {
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  // Same path as the workspace chat: the configured model answers from this client's data, example mode as fallback.
+  const [settings] = useSettings()
+  const [status, setStatus] = useState<Status>({ openai: false, apertus: false, elevenlabs: false })
+  const [messages, setMessages] = useState<ChatEntry[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const end = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const suggestions = client.briefing.flatMap((c) => (c.type === 'questions' ? c.items.map((x) => x.q) : []))
 
+  useEffect(() => { fetchStatus().then(setStatus) }, [])
   useEffect(() => { setMessages([]) }, [client.ref])
   useEffect(() => { end.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }) }, [messages])
   useEffect(() => { if (autoFocus) inputRef.current?.focus() }, [autoFocus])
@@ -19,10 +26,10 @@ export function ChatThread({ client, className = '', autoFocus = false }: { clie
   async function send(text: string) {
     if (!text.trim() || busy) return
     setInput('')
-    setMessages((m) => [...m, { role: 'advisor', text }])
+    setMessages((m) => [...m, question(text)])
     setBusy(true)
-    const answer = await ask(client, text)
-    setMessages((m) => [...m, { role: 'assistant', text: answer }])
+    const reply = await answer(client, text, settings, status, messages)
+    setMessages((m) => [...m, reply.entry])
     setBusy(false)
   }
 
@@ -37,14 +44,21 @@ export function ChatThread({ client, className = '', autoFocus = false }: { clie
             ))}
           </div>
         )}
-        {messages.map((m, i) => (
-          <div key={i} className={`max-w-[90%] rounded-2xl px-3 py-1.5 leading-snug anim-rise ${m.role === 'advisor' ? 'ml-auto bg-brand text-white' : 'bg-stripe'}`}>{m.text}</div>
-        ))}
+        {messages.map((m) => m.role === 'berater'
+          ? <div key={m.id} className="anim-rise ml-auto w-fit max-w-[90%] rounded-2xl bg-brand px-3 py-1.5 leading-snug text-white">{m.text}</div>
+          : (
+            <div key={m.id} className="anim-rise max-w-[95%] rounded-2xl bg-stripe/80 px-3 py-2 leading-snug">
+              <p>{m.text}</p>
+              {m.sources.length > 0 && <p className="mt-1 text-[10px] text-muted">Quellen: {m.sources.join(' · ')}</p>}
+              {m.module && <ModuleView spec={m.module} detail={settings.detail} />}
+              {m.offered && <button onClick={() => setMessages((all) => all.map((e) => (e.id === m.id && e.role === 'ki' && e.offered ? { ...e, module: e.offered.spec, offered: undefined } : e)))} className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-white/80 px-2 py-0.5 text-[10px] hover:bg-brand hover:text-white"><BarChart3 size={11} /> Grafik · {m.offered.confidence}%</button>}
+            </div>
+          ))}
         {busy && <div className="text-muted">…</div>}
         <div ref={end} />
       </div>
       <form onSubmit={(e) => { e.preventDefault(); send(input) }} className="flex shrink-0 items-center gap-2 border-t border-line/70 p-3 text-xs">
-        <input ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)} placeholder="Frage stellen …" className="min-w-0 flex-1 rounded-full bg-stripe px-3.5 py-2 outline-none focus:ring-1 focus:ring-brand" />
+        <input ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)} placeholder={`Frage zu ${client.name} …`} title={`KI: ${activeProvider(settings, status) ?? 'Beispielmodus'}`} className="min-w-0 flex-1 rounded-full bg-stripe px-3.5 py-2 outline-none focus:ring-1 focus:ring-brand" />
         <button aria-label="Senden" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand text-white hover:bg-brand-dark">→</button>
       </form>
     </section>
