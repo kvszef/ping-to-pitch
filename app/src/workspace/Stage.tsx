@@ -12,11 +12,12 @@ import { useSummary } from './useSummary'
 import { Bars, Spark, WidgetRail, type Widget } from './Widgets'
 
 // The conversation workspace as one window, 2:1.
-//   left   the 60-second brief as tiles (scrolls; the tile in the middle is in focus), and during a
-//          call the dock underneath: three talking points, the live answer and the transcript. Before
-//          a call the brief's own "Einstieg" line already covers the opener, so the dock stays hidden.
-//   right  the graphs the agent picked plus the advisor's pins, and under them the chat, collapsed
-//          to one line, growing upward over the graphs when needed
+//   left   the 60-second brief as tiles (scrolls; the tile in the middle is in focus). It holds still
+//          during a call: everything the conversation brings up appears on the right.
+//   right  during a call the live answer on top, then the graphs and tiles the agent picked plus the
+//          advisor's pins, and under them the transcript and the chat (collapsed to one line, growing
+//          upward over the graphs when needed). Only while this column is folded away does the dock
+//          under the brief carry the live answer and the transcript instead.
 // The agent's plan decides order, focus, graphs and talking points; this component only shows it,
 // and every change is animated (heights follow content, moved elements glide).
 
@@ -120,10 +121,9 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
   const ordered = plan.order.map((id) => byId.get(id)).filter((t): t is Tile => !!t)
   const [focusIdx, setFocusIdx] = useState(0)
   // The feed is a 60-second brief that only grows at the bottom: a card already shown keeps its
-  // place, a repeat of one already there is skipped. Before the call the agent's order is the
-  // priority, so the brief fills up to ~60 s and stops. During the call a new card (always the one
-  // the conversation is about) goes to the bottom, and cards the advisor has already passed drop
-  // off the top to keep it at ~60 s. Only switching to another client starts a fresh feed.
+  // place, a repeat of one already there is skipped. The agent's order is the priority, so the
+  // brief fills up to ~60 s and stops. A call does not move it: what the conversation is about shows
+  // in the graph column. Only switching to another client starts a fresh feed.
   const source = ordered.length ? ordered : screen.tiles
   const feed = useRef<{ ref: string; ids: string[] }>({ ref: '', ids: [] })
   if (feed.current.ref !== client.ref) feed.current = { ref: client.ref, ids: [] }
@@ -131,16 +131,9 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
     let ids = feed.current.ids.filter((id) => byId.has(id))
     const cardsOf = () => ids.map((id) => byId.get(id)!)
     const secondsOf = () => cardsOf().reduce((n, t) => n + t.seconds, 0)
-    const read = ids[focusIdx] // cards above this one are already passed
     for (const t of source) {
       if (cardsOf().some((s) => s.id === t.id || sameTile(s, t))) continue
-      if (!ids.length || secondsOf() + t.seconds <= BUDGET) { ids = [...ids, t.id]; continue }
-      if (!inCall) continue
-      const passed = read ? ids.indexOf(read) : -1
-      let drop = 0
-      while (drop < passed && secondsOf() - cardsOf().slice(0, drop).reduce((n, c) => n + c.seconds, 0) + t.seconds > BUDGET) drop++
-      const fits = secondsOf() - cardsOf().slice(0, drop).reduce((n, c) => n + c.seconds, 0) + t.seconds <= BUDGET
-      if (fits || t.id === plan.focus) ids = [...ids.slice(drop), t.id]
+      if (!ids.length || secondsOf() + t.seconds <= BUDGET) ids = [...ids, t.id]
     }
     if (ids.join('|') !== feed.current.ids.join('|')) feed.current = { ref: client.ref, ids }
   }
@@ -179,8 +172,9 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
     else el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     if (glow) { setFlash(id); setTimeout(() => setFlash((f) => (f === id ? null : f)), 2400) }
   }, [])
-  // The agent's focus, and a chat answer's topic, bring their tile to the middle.
-  useEffect(() => { if (plan.focus) { const id = plan.focus; const t = setTimeout(() => focus(id, plan.by === 'agent' || inCall), 80); return () => clearTimeout(t) } }, [plan.focus, plan]) // eslint-disable-line react-hooks/exhaustive-deps
+  // The agent's focus, and a chat answer's topic, bring their tile to the middle. Not during a call:
+  // then the brief holds still and the tile shows up in the graph column instead.
+  useEffect(() => { if (plan.focus && !inCall) { const id = plan.focus; const t = setTimeout(() => focus(id, plan.by === 'agent'), 80); return () => clearTimeout(t) } }, [plan.focus, plan, inCall]) // eslint-disable-line react-hooks/exhaustive-deps
   const chatHint = hints.find((h) => h.origin === 'chat')
   useEffect(() => { if (chatHint) { const t = bestTile(screen.tiles, `${chatHint.label} ${chatHint.text}`, chatHint.topicId); if (t) focus(t.id, true) } }, [chatHint?.id]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -243,7 +237,7 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
   const togglePin = (key: string) => { setPins((p) => (p.includes(key) ? p.filter((x) => x !== key) : [key, ...p])); setDismissed((d) => d.filter((x) => x !== key)) }
   const removeWidget = (key: string) => { setPins((p) => p.filter((x) => x !== key)); setDismissed((d) => (d.includes(key) ? d : [...d, key])) }
 
-  const dock = usePresence(inCall, 450)
+  const dock = usePresence(inCall && !graphsOpen, 450)
   // Open graph column: 2/5 of the row by default (the text side gets 3/5), measured so the width can
   // animate; the advisor can drag it wider or narrower (the handle below), clamped and remembered.
   const row = useRef<HTMLDivElement>(null)
@@ -321,7 +315,7 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
           </div>
           <Smooth className="shrink-0">
             <div className={`transition-[opacity,transform] duration-[450ms] ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none ${dock.visible ? 'translate-y-0 opacity-100' : 'translate-y-3 opacity-0'}`}>
-              <Dock plan={plan} inCall={dock.mounted} transcript={!graphsOpen} recording={recording} lines={lines} pending={pending} note={note} name={client.name} />
+              <Dock plan={plan} inCall={dock.mounted} transcript recording={recording} lines={lines} pending={pending} note={note} name={client.name} />
             </div>
           </Smooth>
         </div>
@@ -347,6 +341,7 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
                   <span className="flex items-center gap-1.5"><BarChart3 size={12} /> Grafiken</span>
                   <button onClick={() => onGraphs(false)} aria-label="Grafiken einklappen" title="Grafiken einklappen" className="flex h-6 w-6 items-center justify-center rounded-full normal-case hover:bg-pill hover:text-ink"><PanelRightClose size={14} /></button>
                 </div>
+                {inCall && <div className="mb-3 mt-3"><Dock plan={plan} inCall transcript={false} recording={recording} lines={lines} pending={pending} note={note} name={client.name} /></div>}
                 <WidgetRail widgets={shown} hot={plan.focus ? `tile:${plan.focus}` : null} onPin={(id) => togglePin(id)} onRemove={removeWidget}
                   onFocus={(id) => { if (id.startsWith('tile:')) focus(id.slice(5)) }} onAsk={(w) => { if (w.ask) onAsk(FOLLOW_UPS[0].ask(w.ask)) }} />
               </div>
@@ -367,8 +362,9 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
   )
 }
 
-// The dark dock under the tiles, live calls only: the answer to the client's last concern and the
-// live transcript. Hidden before a call starts: the brief's own "Einstieg" line is the opener already.
+// The call card, live calls only: who is on the line, the answer to the client's last concern and,
+// where asked for, the live transcript. It tops the graph column; under the brief it only appears
+// while that column is folded away.
 function Dock({ plan, inCall, transcript, recording, lines, pending, note, name }: {
   plan: Plan; inCall: boolean; transcript: boolean; recording: boolean; lines: TranscriptLine[]; pending: string[]; note: string | null; name: string
 }) {
@@ -393,14 +389,14 @@ function Dock({ plan, inCall, transcript, recording, lines, pending, note, name 
       {note && <p className="px-4 pt-4 text-[11px] text-risk">{note}</p>}
 
       {inCall && answer && (
-        <div key={answer.heard} className="island-swap relative mx-3 mt-5 rounded-xl border border-brand/30 bg-brand-soft/20 px-4 pb-2.5 pt-3">
+        <div key={answer.heard} className={`island-swap relative mx-3 mt-5 rounded-xl border border-brand/30 bg-brand-soft/20 px-4 pb-2.5 pt-3 ${transcript ? '' : 'mb-3'}`}>
           <span className="absolute left-3 top-0 -translate-y-1/2 rounded-full bg-white px-1.5 text-[10px] uppercase tracking-wide text-brand-dark">Ihre Antwort</span>
           <p className="truncate text-[12px] italic text-muted"><Ear size={11} className="mr-1 inline" />«{answer.heard}»</p>
           <p className="mt-0.5 text-[15px] leading-snug">{answer.text}</p>
         </div>
       )}
 
-      {/* The live transcript sits above the chat in the right column; only while that column is folded does it stay here. */}
+      {inCall && !answer && !transcript && <p className="px-4 pb-3 pt-5 text-[12px] leading-snug text-muted">Hört zu. Die Antwort auf das Anliegen des Kunden erscheint hier, die passenden Zahlen darunter.</p>}
       {inCall && transcript && <Transcript lines={lines} pending={pending} />}
     </div>
   )

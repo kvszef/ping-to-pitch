@@ -142,7 +142,8 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
       const now = latest.current.screen
       setPlan(now === on ? r.plan : rebasePlan(r.plan, now.tiles, now.charts))
       if (r.covered?.length) setLiveCovered((prev) => new Set([...prev, ...r.covered!]))
-      if (r.cardOrder?.length) setLiveOrder(r.cardOrder)
+      // The brief holds still during a call (what the conversation brings up shows in the graph column),
+      // so the agent's live card re-ranking (r.cardOrder -> setLiveOrder) is not applied.
     }
     setThinking(false)
     running.current = false
