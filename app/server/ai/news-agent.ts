@@ -25,7 +25,7 @@ type Severity = NewsAgentItem['affects'][string]['severity']
 type Reach = NewsAgentItem['reach']
 
 /** What we search for. `kind` decides the NewsItem reach. */
-export type SearchTerm = { security: string; query: string; weight: number; kind: 'titel' | 'thema' | 'markt'; ticker?: string }
+export type SearchTerm = { security: string; query: string; weight: number; kind: 'titel' | 'thema' | 'markt'; ticker?: string; named?: string[] }
 
 export type RssItem = { title: string; source: string; url: string; published: string }
 
@@ -142,6 +142,8 @@ export function termFor(name: string, currency = ''): Omit<SearchTerm, 'weight'>
   return company ? { security: company, query: company, kind: 'titel', ticker: TICKER[company] } : null
 }
 
+// A currency headline has to name the foreign currency: "Franken" alone also matches fuel prices and mortgages.
+const CURRENCY_NAMED: Record<string, string[]> = { USD: ['dollar', 'usd', 'greenback'], EUR: ['euro', 'eur'], GBP: ['pfund', 'gbp', 'sterling'], JPY: ['yen', 'jpy'], CHF: ['franken', 'chf', 'snb', 'nationalbank'] }
 const CURRENCY_QUERY: Record<string, string> = { USD: 'Dollar Franken Wechselkurs', EUR: 'Euro Franken Wechselkurs', GBP: 'Pfund Franken Wechselkurs', JPY: 'Yen Franken Wechselkurs', CHF: 'Franken Wechselkurs SNB' }
 // SAA industry → [German label, search term, English label]. The search term stays German (Swiss editions).
 const SECTOR: Record<string, [string, string, string]> = {
@@ -187,7 +189,7 @@ export function searchTerms(raw: Raw, industryOf?: (securityId: number) => strin
   const holdings = [...byQuery.values()].sort((a, b) => b.weight - a.weight).slice(0, max).map(({ top: _top, ...rest }) => rest)
   const market: SearchTerm[] = []
   const [cur, curW] = [...currencies].filter(([c]) => c !== home).sort((a, b) => b[1] - a[1])[0] ?? []
-  if (cur && curW >= 10) market.push({ security: t(`Währung ${cur}`, `Currency ${cur}`), query: CURRENCY_QUERY[cur] ?? `${cur} Franken Wechselkurs`, weight: curW, kind: 'markt' })
+  if (cur && curW >= 10) market.push({ security: t(`Währung ${cur}`, `Currency ${cur}`), query: CURRENCY_QUERY[cur] ?? `${cur} Franken Wechselkurs`, weight: curW, kind: 'markt', named: CURRENCY_NAMED[cur] ?? [cur.toLowerCase()] })
   const [sec, secW] = [...sectors].sort((a, b) => b[1] - a[1])[0] ?? []
   // A sector that is mostly one holding we already search for adds nothing.
   if (sec && secW >= 10 && secW >= 1.5 * (sectorTop.get(sec) ?? 0) && SECTOR[sec] && !holdings.some((h) => h.query === SECTOR[sec][1])) market.push({ security: t(`Sektor ${SECTOR[sec][0]}`, `Sector ${SECTOR[sec][2]}`), query: SECTOR[sec][1], weight: secW, kind: 'thema' })
@@ -249,11 +251,11 @@ const ALSO_NAMED: Record<string, string[]> = { Alphabet: ['google', 'googl', 'yo
 const fold = (t: string) => t.toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
 const escape = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-/** A headline for a single title must name the company; theme and market terms pass as they are. */
+/** A headline for a single title must name the company, one for a currency the currency; other theme and market terms pass. */
 export function mentions(title: string, term: SearchTerm): boolean {
-  if (term.kind !== 'titel') return true
+  if (term.kind !== 'titel' && !term.named) return true
   const t = fold(title)
-  const keys = [fold(term.query).split(/[\s&+-]+/)[0], ...(ALSO_NAMED[term.query] ?? []), ...(term.ticker ? [fold(term.ticker.split('.')[0])] : [])]
+  const keys = term.named ?? [fold(term.query).split(/[\s&+-]+/)[0], ...(ALSO_NAMED[term.query] ?? []), ...(term.ticker ? [fold(term.ticker.split('.')[0])] : [])]
   return keys.some((k) => k.length >= 2 && new RegExp(`(^|[^a-z0-9])${escape(k)}`).test(t))
 }
 

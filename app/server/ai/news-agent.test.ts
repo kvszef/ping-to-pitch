@@ -97,6 +97,13 @@ describe('rank and checks', () => {
     expect(mentions('Dollar fällt', { ...alphabet, kind: 'markt' })).toBe(true)
   })
 
+  it('a currency term only takes headlines that name that currency', () => {
+    const usd = { security: 'Currency USD', query: 'Dollar Franken Wechselkurs', weight: 67, kind: 'markt' as const, named: ['dollar', 'usd'] }
+    expect(mentions('Diesel erreicht in der Schweiz mit 2.41 Franken ein Allzeithoch', usd)).toBe(false)
+    expect(mentions('Franken so schwach wie seit 16 Monaten nicht mehr: Das steckt hinter dem Dollar-Anstieg', usd)).toBe(true)
+    expect(mentions('USD/CHF: Fed und SNB driften auseinander', usd)).toBe(true)
+  })
+
   it('accepts a model line only with numbers from the headline or the weight', () => {
     expect(checkWhy('Apple ist mit 17.8% die zweitgrösste Position.', 'Apple fällt 3%', 17.8)).toBe('Apple ist mit 17.8% die zweitgrösste Position.')
     expect(checkWhy('Verlust von 12% droht dem Portfolio.', 'Apple fällt 3%', 17.8)).toBeUndefined()
