@@ -236,7 +236,37 @@ export function callEnded(reason?: string): void {
   abbrechen()
   const call = bus.activeCall()
   bus.endCall(reason)
-  if (call) mitschnittSchreiben(call.callId)
+  if (!call) return
+  mitschnittSchreiben(call.callId)
+  // Das Gespraechsgedaechtnis: eine kurze Zusammenfassung wandert in den Freitext des
+  // Kunden und steht beim naechsten Anruf im Briefing. Laeuft im Hintergrund, damit das
+  // Auflegen nicht darauf wartet.
+  void zusammenfassungSchreiben(call.callId, call.clientRef)
+}
+
+async function zusammenfassungSchreiben(callId: string, clientRef: string | null): Promise<void> {
+  if (!clientRef) return
+  const zeilen = bus.recentLines(200)
+  const vorschlaege = bus.activeCall()?.history.filter((e) => e.type === 'suggestion') ?? []
+  const t0 = Date.now()
+  try {
+    const text = await brain.summary({ callId, clientRef, transcript: zeilen, suggestions: vorschlaege as never[] })
+    if (!text.trim()) {
+      console.log('  Keine Zusammenfassung: im Gespraech kam nichts Festhaltenswertes vor')
+      return
+    }
+    await toolbox.invoke('append_call_summary', {
+      datum: new Date().toISOString().slice(0, 10),
+      zusammenfassung: text.trim(),
+      client_ref: clientRef,
+    })
+    console.log(`  Dossier ergaenzt (${clientRef}) nach ${Date.now() - t0} ms: ${text.trim().slice(0, 90)}`)
+    bus.status('toolbox', true, 'Gespraechsnotiz im Dossier abgelegt')
+  } catch (e) {
+    const grund = e instanceof Error ? e.message : String(e)
+    bus.status('toolbox', false, `Gespraechsnotiz nicht abgelegt: ${grund}`)
+    console.error(`  Zusammenfassung nicht abgelegt: ${grund}`)
+  }
 }
 
 function abbrechen(): void {

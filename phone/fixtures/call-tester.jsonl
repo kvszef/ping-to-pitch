@@ -1,0 +1,16 @@
+{"meta":{"clientRef":"TESTER-01","name":"Tester Muster","from":"+41791234567","beschreibung":"Standard-Testgespraech. Der Kunde spricht genau die Punkte an, die in fixtures/tester.json angelegt sind, damit sich pruefen laesst, ob der Copilot sie findet und belegt. Das Feld truth ist die echte Rolle und dient nur der Bewertung der Rollenzuordnung; dem System wird sie nie gezeigt.","erwartet":["Aktienquote 86,8 Prozent ueber dem Maximum von 85 Prozent","Obligationen 5,0 Prozent unter dem Minimum von 10 Prozent","Einzelposition OC Oerlikon 36,6 Prozent, Klumpenrisikogrenze 20 Prozent","Volatilitaet 13,5 Prozent ueber den 12 Prozent des Anlageprofils 5","Notiz vom 28.08.2026: nachhaltiger Schweizer Aktienfonds statt Einzeltitel","Notiz vom 04.07.2026: rund 80 Tausend Franken Entnahme Anfang 2027","Entwurf-Vorschlag 990702 zum nachhaltigen Fonds","ausgesetzte Regel Mindestliquiditaet ist kein offener Verstoss"]}}
+{"ms":1200,"truth":"advisor","text":"Gruezi Herr Muster, schoen hoeren Sie sich. Was kann ich fuer Sie tun?"}
+{"ms":6500,"truth":"caller","text":"Gruezi. Ich habe den Depotauszug angeschaut und mich gefragt, ob bei mir noch alles im Rahmen ist."}
+{"ms":13000,"truth":"advisor","text":"Gerne, ich schaue mir das gerade mit Ihnen an."}
+{"ms":17500,"truth":"caller","text":"Mir ist vor allem aufgefallen, dass ich fast nur noch Aktien drin habe. Ist das nicht zu viel fuer mein Profil?"}
+{"ms":26000,"truth":"advisor","text":"Das ist ein berechtigter Punkt, den schauen wir uns an."}
+{"ms":30000,"truth":"caller","text":"Und von Obligationen sehe ich fast nichts mehr. War das nicht mal deutlich mehr?"}
+{"ms":38500,"truth":"advisor","text":"Ja, da hat sich einiges verschoben."}
+{"ms":42500,"truth":"caller","text":"Die Oerlikon-Position kommt mir auch gross vor. Ist das nicht ein Klumpenrisiko?"}
+{"ms":51000,"truth":"advisor","text":"Dazu habe ich Ihnen bereits etwas vorbereitet."}
+{"ms":55000,"truth":"caller","text":"Ich hatte ausserdem beim letzten Mal nach einem nachhaltigen Schweizer Fonds gefragt. Ist da etwas passiert?"}
+{"ms":64000,"truth":"advisor","text":"Das ist notiert, dazu liegt ein Entwurf bereit."}
+{"ms":69000,"truth":"caller","text":"Und denken Sie bitte daran, ich brauche Anfang 2027 rund achtzig Tausend Franken fuer die Wohnung."}
+{"ms":78000,"truth":"advisor","text":"Das nehme ich in die Planung auf."}
+{"ms":82000,"truth":"caller","text":"Gut. Dann machen wir das so. Besten Dank und auf Wiederhoeren."}
+{"ms":88000,"truth":"advisor","text":"Sehr gerne, Herr Muster. Ich melde mich diese Woche. Auf Wiederhoeren."}

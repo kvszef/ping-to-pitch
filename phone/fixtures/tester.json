@@ -1,0 +1,236 @@
+[
+  {
+    "ClientId": 990001,
+    "ClientRef": "TESTER-01",
+    "FirstName": "Tester",
+    "LastName": "Muster",
+    "Company": null,
+    "IsClientACompany": false,
+    "IsEmployee": false,
+    "RegulatoryClientTypeId": 13,
+    "RegulatoryClientTypeName": "Private client",
+    "ReportingCurrency": "CHF",
+    "RiskProfileId": 17,
+    "RiskProfileName": "Anlageprofil 5",
+    "EsgProfileId": 1,
+    "EsgProfileName": "Yes",
+    "Birthday": "1979-04-12",
+    "ProfilingDateUtc": "2025-03-18T09:00:00+01:00",
+    "AssetsUnderManagementInDefaultCurrency": 842500.0,
+    "LiquidityInDefaultCurrency": 33700.0,
+    "Description": "Testkunde für Entwicklung und Vorführung. Alle Zahlen sind erfunden, die Wertschriften und die Anlagestrategie stammen aber aus den echten Stammdaten, damit die Auswertungen greifen.",
+    "Tags": [
+      { "TagName": "Switzerland", "TagTypeName": "Region" },
+      { "TagName": "Sustainability", "TagTypeName": "Theme" }
+    ],
+    "Portfolios": [
+      {
+        "PortfolioId": 990101,
+        "PortfolioNr": "TESTER-01-01",
+        "Name": "Anlageberatung Test",
+        "PortfolioCurrency": "CHF",
+        "StrategicAssetAllocationId": 44,
+        "InvestmentServiceId": 8,
+        "InvestmentServiceName": "Comprehensive Investment Advisory",
+        "StrategyId": 5,
+        "StrategyName": "Investor profile 5",
+        "ReferenceCurrency": "CHF",
+        "AssetsUnderManagementInDefaultCurrency": 842500.0,
+        "LiquidityInDefaultCurrency": 33700.0,
+        "Volatility": 0.1348,
+        "ExpectedReturn": 0.0412,
+        "ValueAtRisk": 0.1465,
+        "FactoryDateUtc": "2026-09-03T11:15:26.0000000Z",
+        "AccountPositions": [
+          {
+            "AccountName": "Privatkonto Test CHF",
+            "Currency": "CHF",
+            "TotalAmountInPortfolioCurrency": 33700.0,
+            "PortfolioValuePercentage": 0.04
+          }
+        ],
+        "SecurityPositions": [
+          {
+            "SecurityId": 146,
+            "Isin": "CH0000816824",
+            "SecurityName": "Namen-Aktie OC Oerlikon Corporation AG",
+            "Quantity": 9800.0,
+            "PricePerUnit": 31.5,
+            "Currency": "CHF",
+            "TotalAmountInPortfolioCurrency": 308700.0,
+            "PortfolioValuePercentage": 0.3664
+          },
+          {
+            "SecurityId": 149,
+            "Isin": "CH0003671440",
+            "SecurityName": "Namen-Aktie Rieter Holding AG",
+            "Quantity": 1250.0,
+            "PricePerUnit": 92.4,
+            "Currency": "CHF",
+            "TotalAmountInPortfolioCurrency": 115500.0,
+            "PortfolioValuePercentage": 0.1371
+          },
+          {
+            "SecurityId": 165,
+            "Isin": "CH0004311335",
+            "SecurityName": "Anteile -P- UBS (CH) Equity Fund - Small Caps Switzerland",
+            "Quantity": 480.0,
+            "PricePerUnit": 640.0,
+            "Currency": "CHF",
+            "TotalAmountInPortfolioCurrency": 307200.0,
+            "PortfolioValuePercentage": 0.3646
+          },
+          {
+            "SecurityId": 1211,
+            "Isin": "IE00B4YLF345",
+            "SecurityName": "Anteile CHF (Hedged) PIMCO Funds Glob.Inv.Series",
+            "Quantity": 2100.0,
+            "PricePerUnit": 20.0,
+            "Currency": "CHF",
+            "TotalAmountInPortfolioCurrency": 42000.0,
+            "PortfolioValuePercentage": 0.0499
+          },
+          {
+            "SecurityId": 622,
+            "Isin": "CH0037430946",
+            "SecurityName": "Anteile -FA CHF- Swisscanto (CH) Real Estate Fund",
+            "Quantity": 190.0,
+            "PricePerUnit": 110.0,
+            "Currency": "CHF",
+            "TotalAmountInPortfolioCurrency": 20900.0,
+            "PortfolioValuePercentage": 0.0248
+          },
+          {
+            "SecurityId": 197,
+            "Isin": "CH0002811245",
+            "SecurityName": "Goldbarren 100 Gramm 999.9 fein",
+            "Quantity": 2.0,
+            "PricePerUnit": 7250.0,
+            "Currency": "CHF",
+            "TotalAmountInPortfolioCurrency": 14500.0,
+            "PortfolioValuePercentage": 0.0172
+          }
+        ],
+        "PerformanceHistory": [
+          { "Date": "2026-01-01", "Value": 781400.0 },
+          { "Date": "2026-03-01", "Value": 798200.0 },
+          { "Date": "2026-05-01", "Value": 812900.0 },
+          { "Date": "2026-07-01", "Value": 829600.0 },
+          { "Date": "2026-09-01", "Value": 842500.0 }
+        ]
+      }
+    ],
+    "SuitabilityViolations": [
+      {
+        "Id": 990501,
+        "RuleCode": "Minimum limit fixed income",
+        "RuleDescription": "Der Obligationenanteil liegt unter der Untergrenze von 10 Prozent der Anlagestrategie.",
+        "Severity": "Error",
+        "ErrorLevel": 2,
+        "PortfolioId": 990101,
+        "LastViolatedDateUTC": "2026-09-03T11:15:02.000Z"
+      },
+      {
+        "Id": 990502,
+        "RuleCode": "Cluster risk of a single financial instrument",
+        "RuleDescription": "Für Privatkunden mit umfassender Anlageberatung darf eine Einzelposition 20 Prozent nicht überschreiten.",
+        "Severity": "Error",
+        "ErrorLevel": 2,
+        "PortfolioId": 990101,
+        "SecurityIsin": "CH0000816824",
+        "LastViolatedDateUTC": "2026-09-03T11:15:02.000Z"
+      },
+      {
+        "Id": 990503,
+        "RuleCode": "Compliance with maximum volatility",
+        "RuleDescription": "Die Volatilität des Portfolios überschreitet die für Anlageprofil 5 zulässigen 12 Prozent.",
+        "Severity": "Error",
+        "ErrorLevel": 2,
+        "PortfolioId": 990101,
+        "LastViolatedDateUTC": "2026-09-03T11:15:02.000Z"
+      },
+      {
+        "Id": 990504,
+        "RuleCode": "Overweight in the equity sector \"Industrials\"",
+        "RuleDescription": "Übergewicht (+/- 5% zum SAA-Sollwert der Benchmark) im Aktiensektor \"Industrie\".",
+        "Severity": "Warning",
+        "ErrorLevel": 1,
+        "PortfolioId": 990101
+      }
+    ],
+    "IndividualRuleOverrides": [
+      {
+        "RuleCode": "Minimum limit liquidity",
+        "RuleDescription": "Mindestliquidität wurde auf Wunsch des Kunden bis Ende 2026 ausgesetzt."
+      }
+    ],
+    "Proposals": [
+      {
+        "ProposalId": 990701,
+        "PortfolioId": 990101,
+        "ProposalStatusName": "Final",
+        "AdvisoryTypeName": "Investment proposal",
+        "ProposedDateUTC": "2026-08-12T10:04:00.000Z",
+        "Reason": "Rückführung der Aktienquote in die Bandbreite",
+        "Notes": "Teilverkauf OC Oerlikon, Aufbau Obligationen CHF.",
+        "ExpectedReturn": 0.039,
+        "Volatility": 0.114,
+        "ValueAtRisk": 0.121,
+        "SecurityPositions": [
+          { "SecurityName": "Anteile CHF (Hedged) PIMCO Funds Glob.Inv.Series" },
+          { "SecurityName": "Namen-Aktie OC Oerlikon Corporation AG" }
+        ]
+      },
+      {
+        "ProposalId": 990702,
+        "PortfolioId": 990101,
+        "ProposalStatusName": "Entwurf",
+        "AdvisoryTypeName": "Investment proposal",
+        "ProposedDateUTC": "2026-09-02T08:30:00.000Z",
+        "Reason": "Nachhaltigkeitswunsch aus dem letzten Gespräch",
+        "Notes": "Prüfung eines nachhaltigen Schweizer Aktienfonds als Ersatz für die Einzeltitel.",
+        "SecurityPositions": [
+          { "SecurityName": "Anteile -P- UBS (CH) Equity Fund - Small Caps Switzerland" }
+        ]
+      }
+    ],
+    "Transactions": [
+      {
+        "TransactionId": 990801,
+        "PortfolioId": 990101,
+        "SecurityId": 146,
+        "SecurityName": "Namen-Aktie OC Oerlikon Corporation AG",
+        "Isin": "CH0000816824",
+        "Quantity": 2400.0,
+        "Amount": 74800.0,
+        "Currency": "CHF",
+        "IsExpiry": false
+      },
+      {
+        "TransactionId": 990802,
+        "PortfolioId": 990101,
+        "SecurityId": 197,
+        "SecurityName": "Goldbarren 100 Gramm 999.9 fein",
+        "Isin": "CH0002811245",
+        "Quantity": 1.0,
+        "Amount": 7100.0,
+        "Currency": "CHF",
+        "IsExpiry": false
+      }
+    ],
+    "ClientNotes": [
+      {
+        "Note": "Möchte beim nächsten Rebalancing einen nachhaltigen Schweizer Aktienfonds statt der Einzeltitel prüfen.",
+        "CreatedByDateUTC": "2026-08-28T14:10:00.000Z"
+      },
+      {
+        "Note": "Hat angekündigt, Anfang 2027 rund 80 Tausend Franken für einen Wohnungskauf zu entnehmen.",
+        "CreatedByDateUTC": "2026-07-04T09:45:00.000Z"
+      },
+      {
+        "Note": "Jahresgespräch geführt, Anlageprofil 5 bestätigt, keine Änderung der Strategie gewünscht.",
+        "CreatedByDateUTC": "2026-03-18T11:00:00.000Z"
+      }
+    ]
+  }
+]

@@ -179,6 +179,14 @@ export const demoPage = `<!doctype html>
     padding: 3px 9px; border-radius: 20px;
   }
 
+  /* Das Dossier: was aus dem Gespräch dauerhaft beim Kunden landet. Erscheint erst am Ende. */
+  .dossier { border-left: 3px solid var(--live); animation: rein .5s ease both; }
+  .dossier .kartentitel { color: var(--live); }
+  .dossier .alt { font-size: 13px; color: var(--ink-3); margin: 0 0 10px; }
+  .dossier .neu { font-size: 14px; margin: 0; padding: 10px 12px; border-radius: 8px;
+                  background: color-mix(in srgb, var(--live) 12%, var(--surface)); }
+  .dossier .neu b { font-family: var(--f-mono); font-size: 12px; font-weight: 500; display: block; margin-bottom: 4px; }
+
   .brief-kopf { font-family: var(--f-display); font-size: 17px; line-height: 1.4; margin: 0 0 6px; text-wrap: balance; }
   .brief-sub { font-size: 13px; color: var(--ink-2); margin: 0; }
 
@@ -303,6 +311,7 @@ export const demoPage = `<!doctype html>
     <section class="col">
       <h2>Was der Berater sieht <span id="vorzaehler">0 Vorschläge</span></h2>
       <div class="panel client" id="kunde"></div>
+      <div class="panel dossier" id="dossier" hidden></div>
       <div class="panel" id="briefing"></div>
       <div id="vorschlaege" class="liste"></div>
     </section>
@@ -321,13 +330,13 @@ export const demoPage = `<!doctype html>
         <span class="nr">Schritt 1</span>
         <b>Nummer erkennen</b>
         <p>Die Anrufernummer wird auf E.164 gebracht und über das Werkzeug <code>find_client_by_phone</code> nachgeschlagen.</p>
-        <span class="zeit">gemessen: 38 ms</span>
+        <span class="zeit">gemessen: 41 ms</span>
       </div>
       <div class="glied">
         <span class="nr">Schritt 2</span>
         <b>Briefing bauen</b>
         <p>Sieben Werkzeuge laufen parallel gegen die Kundendaten, das Modell verdichtet sie zu fünf Karten.</p>
-        <span class="zeit">gemessen: 9 655 ms</span>
+        <span class="zeit">gemessen: 9 277 ms</span>
       </div>
       <div class="glied">
         <span class="nr">Schritt 3</span>
@@ -339,81 +348,99 @@ export const demoPage = `<!doctype html>
         <span class="nr">Schritt 4</span>
         <b>Vorschlagen</b>
         <p>Das Modell ruft die passenden Werkzeuge nach und liefert Antwort, Fakt und nächsten Schritt.</p>
-        <span class="zeit">gemessen: 1,4 bis 3,6 s</span>
+        <span class="zeit">gemessen: 1,4 bis 2,5 s</span>
       </div>
     </div>
 
-    <p class="notiz"><b>Alle Inhalte auf dieser Seite sind echt.</b> Briefing, Vorschläge, Werkzeugaufrufe und Laufzeiten stammen aus einem aufgezeichneten Durchlauf gegen die Case-Daten von CASE-038 mit <span style="font-family:var(--f-mono);font-size:12.5px">gpt-5.6-luna</span>. Nichts davon ist für die Darstellung ausgedacht.</p>
+    <p class="notiz"><b>Alle Inhalte auf dieser Seite sind echt.</b> Briefing, Vorschläge, Werkzeugaufrufe, Laufzeiten und die Dossiernotiz am Ende stammen aus einem aufgezeichneten Durchlauf gegen den Testkunden TESTER-01 mit <span style="font-family:var(--f-mono);font-size:12.5px">gpt-5.6-luna</span>. Nichts davon ist für die Darstellung ausgedacht.</p>
     <p class="notiz"><b>Die Wiedergabe ist absichtlich langsamer als das Gespräch.</b> In Wirklichkeit erscheint ein Vorschlag ein bis drei Sekunden nach der Aussage des Kunden, also noch während der Berater Luft holt. Hier läuft es im Lesetempo.</p>
     <p class="notiz"><b>Die Zuordnung von Nummer zu Kunde ist der einzige erfundene Teil.</b> Die 47 Case-Kunden führen keine Telefonnummern, deshalb kommt sie aus einer eigenen kleinen Tabelle. Alles andere steht in den gelieferten Daten.</p>
   </footer>
 </div>
 
 <script>
-// Aufgezeichneter Durchlauf: Briefing, Gespraech und Vorschlaege kommen unveraendert
-// aus einem echten Lauf gegen die Case-Daten (CASE-038, Charlie Brown).
+// Aufgezeichneter Durchlauf: Briefing, Gespraech, Vorschlaege und die Dossiernotiz am Ende
+// kommen unveraendert aus einem echten Lauf gegen TESTER-01 mit gpt-5.6-luna.
+const KUNDE = { ref: "TESTER-01", name: "Tester Muster", profil: "Anlageprofil 5 · umfassende Anlageberatung · CHF" };
+
+const DOSSIER_VORHER = "Testkunde für Entwicklung und Vorführung. Alle Zahlen sind erfunden, die Wertschriften und die Anlagestrategie stammen aber aus den echten Stammdaten, damit die Auswertungen greifen.";
+const DOSSIER_NOTIZ = "Der Kunde wollte prüfen, ob die hohe Aktienquote und der geringe Obligationenanteil noch seinem Profil entsprechen, und äusserte Bedenken zur Grösse der OC-Oerlikon-Position. Zudem erkundigte er sich nach dem gewünschten nachhaltigen Schweizer Fonds; dazu wurde ein noch nicht finalisierter Entwurf erwähnt. Der Kunde wies auf einen geplanten Bedarf von rund 80 Tausend Franken für die Wohnung Anfang 2027 hin, und der Berater sagte zu, dies in die Planung aufzunehmen und sich diese Woche zu melden. Offen bleiben die Besprechung des vorbereiteten Vorschlags zur Oerlikon-Position und zu Schweizer Obligationen sowie die Prüfung und Finalisierung des Fondsentwurfs.";
+
 const BRIEFING = [
   { type: "headline",
-    text: "Das Beratungsdepot ist seit Jahresbeginn von rund 1,3 Millionen auf rund 1,6 Millionen Franken gestiegen; die Daten enthalten Ein- und Auszahlungen.",
-    sub: "Depotberatung in CHF mit Anlageprofil 6; maximale Volatilität 15 Prozent und Aktienquote bis 100 Prozent. Ein ESG-Profil liegt nicht vor." },
+    text: "Ihr Vermögen beträgt rund 843 Tausend Franken; die Aktienquote liegt mit 86,81 Prozent über dem Maximum von 85 Prozent und die Volatilität mit 13,48 Prozent über den zulässigen 12 Prozent.",
+    sub: "Mandat: umfassende Anlageberatung, Anlageprofil 5, ESG-Profil vorhanden, Referenzwährung Schweizer Franken." },
   { type: "metrics", items: [
-    { label: "Vermögen", value: "rund 1,6 Mio. Franken", tone: "info" },
-    { label: "Seit Jahresbeginn", value: "1,3 → 1,6 Mio.", tone: "info" },
-    { label: "Aktien im Depot", value: "76,31 %", tone: "ok" },
-    { label: "Offene Verstösse", value: "18", tone: "risk" },
-    { label: "Offene Vorschläge", value: "12", tone: "warn" } ] },
+    { label: "Vermögen", value: "rund 843 Tsd. Franken", tone: "info" },
+    { label: "Volatilität", value: "13,48 %", tone: "risk" },
+    { label: "Aktienanteil", value: "86,81 %", tone: "risk" },
+    { label: "Obligationen", value: "4,99 %", tone: "warn" },
+    { label: "Offene Vorschläge", value: "2", tone: "info" } ] },
+  { type: "allocation", title: "Soll und Ist", rows: [
+    { label: "Shares", min: 0.20, target: 0.50, max: 0.85, actual: 0.8681 },
+    { label: "Bonds", min: 0.10, target: 0.42, max: 0.70, actual: 0.0499 },
+    { label: "Real estate", min: 0, target: 0.05, max: 0.15, actual: 0.0248 },
+    { label: "Specialties andCommodities", min: 0, target: 0, max: 0.20, actual: 0.0172 },
+    { label: "Liquidity", min: 0, target: 0.03, max: 0.60, actual: 0.04 } ] },
   { type: "flags", title: "Risiken und Chancen", items: [
-    { severity: "risk", text: "10 Fehler und 5 Warnungen sind offen. Dazu gehören ein USD-Anteil über 35,5 Prozent, ein Fremdwährungsanteil über 50 Prozent, ein EUR-Anteil über 9 Prozent und drei Einzelinstrument-Klumpenrisiken.", source: "get_violations(CASE-038)" },
-    { severity: "warn", text: "Als Einzelpositionen sind der S&P-500-ETF mit rund 237 Tausend Franken und 14,64 Prozent im Beratungsdepot sowie der World-Value-ETF und Nestlé mit je rund 87 beziehungsweise 82 Tausend Franken ausgewiesen.", source: "get_positions_top(CASE-038)" },
-    { severity: "info", text: "Das konsolidierte Portfolio hat keine Zielbandvorgaben; seine Aktienquote beträgt 80,64 Prozent. Es darf nicht zum Beratungsdepot addiert werden.", source: "get_portfolio_summary(CASE-038)" },
-    { severity: "warn", text: "Der Kunde wünscht bei der nächsten Umschichtung möglichst hohe Nachhaltigkeitsfonds und möchte fossile Energie vermeiden; ein ESG-Profil liegt nicht vor.", source: "get_recent_notes(CASE-038)" },
-    { severity: "warn", text: "Ein finaler Vorschlag vom 24. Mai 2025 zur Auszahlung ist noch nicht übermittelt.", source: "get_open_proposals(CASE-038)" } ] },
+    { severity: "risk", text: "Vier offene Regelverstösse: Einzelposition über 20 Prozent, Volatilität über 12 Prozent, Obligationen unter dem Minimum und ein Sektorübergewicht Industrie.", source: "get_violations(TESTER-01)" },
+    { severity: "warn", text: "Die grössten Positionen sind OC Oerlikon mit rund 309 Tausend Franken und ein UBS-Small-Caps-Fonds mit rund 307 Tausend Franken, zusammen 73 Prozent des Portfolios.", source: "get_positions_top(TESTER-01)" },
+    { severity: "warn", text: "Ein finaler Vorschlag vom 12. August 2026 wartet auf Zustimmung: Teilverkauf OC Oerlikon und Aufbau von Schweizer Obligationen.", source: "get_open_proposals(TESTER-01)" },
+    { severity: "info", text: "Für Anfang 2027 wurde eine Entnahme von rund 80 Tausend Franken für einen Wohnungskauf angekündigt.", source: "get_recent_notes(TESTER-01)" },
+    { severity: "info", text: "Die Mindestliquidität ist auf Kundenwunsch bis Ende 2026 ausgesetzt und zählt deshalb nicht als offener Verstoss.", source: "get_client_overview(TESTER-01)" } ] },
   { type: "questions", title: "Womit der Kunde kommt", items: [
-    { q: "Warum ist der Depotwert so stark gestiegen?", a: "Von rund 1,3 auf rund 1,6 Millionen Franken. Diese Zahl enthält Ein- und Auszahlungen; eine Rendite lässt sich daraus nicht ableiten." },
-    { q: "Liegt das Depot ausserhalb meiner Zielaufteilung?", a: "Nein. Alle ausgewiesenen Kategorien liegen innerhalb ihrer Bandbreiten. Aktien liegen bei 76,31 Prozent gegenüber einem Ziel von 75 Prozent." },
-    { q: "Was muss wegen der Regelverstösse geprüft werden?", a: "Offen sind 10 Fehler und 5 Warnungen. Besonders die Fremdwährungsanteile, die Nordamerika- und Sektorabweichungen sowie drei Klumpenrisiken." },
-    { q: "Wurde mein Wunsch nach nachhaltigen Anlagen berücksichtigt?", a: "Dazu liegt mir keine Angabe vor. Ein ESG-Profil ist nicht hinterlegt; die letzte Notiz hält den Wunsch fest." } ] },
+    { q: "Warum ist mein Portfolio zu risikoreich?", a: "Die Aktienquote liegt bei 86,81 Prozent gegenüber einem Maximum von 85 Prozent, die Volatilität bei 13,48 gegenüber 12 Prozent." },
+    { q: "Was soll mit den Aktien und Obligationen geschehen?", a: "Ein finaler Vorschlag sieht den Teilverkauf von OC Oerlikon und den Aufbau von Schweizer Obligationen vor; er wartet auf Zustimmung." },
+    { q: "Wurde mein Wunsch nach Nachhaltigkeit berücksichtigt?", a: "Ein Entwurf vom 2. September 2026 prüft einen nachhaltigen Schweizer Aktienfonds als Ersatz für die Einzeltitel." },
+    { q: "Kann ich Anfang 2027 rund 80 Tausend Franken entnehmen?", a: "Die Entnahme ist notiert. Zur Finanzierbarkeit liegt keine Berechnung vor." } ] },
   { type: "actions", title: "Nächste Schritte", items: [
-    { text: "Prüfen Sie die 10 Fehler und 5 Warnungen, zuerst USD, EUR und den gesamten Fremdwährungsanteil.", why: "Grenzwerte: USD 35,5 Prozent, EUR 9 Prozent, Fremdwährung gesamt 50 Prozent." },
-    { text: "Prüfen Sie die drei Einzelinstrument-Klumpen im Beratungsdepot.", why: "Betroffen sind der S&P-500-ETF, Zurich Insurance und ein weiteres Instrument." },
-    { text: "Klären Sie das ESG-Profil vor einer Umschichtung.", why: "Das Profil fehlt, während die letzte Notiz nachhaltige Fonds und den Ausschluss fossiler Energie festhält." },
-    { text: "Klären Sie den offenen Vorschlag vom 24. Mai 2025 über 41 Positionen.", why: "Er betrifft eine Auszahlung und wartet auf die Übermittlung." },
-    { text: "Vergleichen Sie die aktuelle Aufteilung mit der Benchmark.", why: "Am 16. Juni 2026 gewünscht; mehrere Benchmarkabweichungen sind ausgewiesen." } ] }
+    { text: "Besprechen Sie den finalen Vorschlag über zwei Positionen zur Rückführung der Aktienquote.", why: "Er liegt seit dem 12. August 2026 bereit und wartet auf die Zustimmung des Kunden." },
+    { text: "Klären Sie die Zustimmung zum Teilverkauf von OC Oerlikon und zum Aufbau von Schweizer Obligationen.", why: "Die Einzelposition liegt mit 36,64 Prozent deutlich über der Klumpengrenze von 20 Prozent." },
+    { text: "Prüfen Sie den Entwurf für einen nachhaltigen Schweizer Aktienfonds.", why: "Notiz vom 28. August 2026: Ersatz der Einzeltitel beim nächsten Rebalancing gewünscht." },
+    { text: "Planen Sie die angekündigte Entnahme von rund 80 Tausend Franken für Anfang 2027 ein.", why: "Notiz vom 4. Juli 2026, Wohnungskauf." } ] }
 ];
 
 const GESPRAECH = [
-  { sp: "advisor", t: "Grüezi Herr Brown, schön hören Sie sich. Was kann ich für Sie tun?" },
-  { sp: "caller", t: "Grüezi. Ich habe mir gestern den Depotauszug angeschaut und mich gefragt, wie es eigentlich um mein Portfolio steht.", ms: 796, tools: [], h: [] },
+  { sp: "advisor", t: "Grüezi Herr Muster, schön hören Sie sich. Was kann ich für Sie tun?" },
+  { sp: "caller", t: "Grüezi. Ich habe den Depotauszug angeschaut und mich gefragt, ob bei mir noch alles im Rahmen ist.", ms: 1481, tools: [], h: [
+    { k: "say", t: "Ihr Aktienanteil liegt mit 86,81 Prozent über dem Maximum von 85 Prozent, und die Volatilität beträgt 13,48 Prozent statt maximal 12 Prozent.", q: "briefing(TESTER-01)" },
+    { k: "fact", t: "Die Obligationenquote beträgt 4,99 Prozent; das Mindestband liegt bei 10 Prozent. Quelle: get_saa_gap(TESTER-01)", q: "briefing(TESTER-01)" },
+    { k: "next", t: "Besprechen Sie den finalen Vorschlag zum Teilverkauf von OC Oerlikon und zum Aufbau von Schweizer Obligationen. Quelle: get_open_proposals(TESTER-01)", q: "briefing(TESTER-01)" }
+  ] },
   { sp: "advisor", t: "Gerne, ich schaue mir das gerade mit Ihnen an." },
-  { sp: "caller", t: "Mir ist vor allem aufgefallen, dass da sehr viel in Dollar drin ist. Ist das nicht ein bisschen viel?", ms: 1836, tools: ["get_violations"], h: [
-    { k: "say",  t: "Ja, Ihr Dollar-Anteil liegt über der Grenze von 35,5 Prozent; auch der gesamte Fremdwährungsanteil überschreitet 50 Prozent.", q: "get_violations(CASE-038)" },
-    { k: "fact", t: "Der USD-Anteil liegt über 35,5 Prozent, der Fremdwährungsanteil über 50 Prozent.", q: "get_violations(CASE-038)" },
-    { k: "next", t: "Prüfen Sie zuerst die betroffenen Dollar-Positionen und eine mögliche Rückführung innerhalb des Anlageprofils.", q: "get_violations(CASE-038)" } ] },
-  { sp: "advisor", t: "Da haben Sie recht, das schauen wir uns an." },
-  { sp: "caller", t: "Und der Euro-Anteil kommt ja auch noch dazu. Trifft mich das zusätzlich, wenn der Franken stark bleibt?", ms: 2516, tools: ["get_violations"], h: [
-    { k: "say",  t: "Ja, ein starker Franken belastet Fremdwährungsanlagen zusätzlich; der Euro-Anteil überschreitet die Grenze von 9 Prozent.", q: "get_violations(CASE-038)" },
-    { k: "fact", t: "Der Euro-Anteil liegt über 9 Prozent und der gesamte Fremdwährungsanteil über 50 Prozent.", q: "get_violations(CASE-038)" },
-    { k: "next", t: "Prüfen Sie zuerst die genaue Währungsaufteilung und mögliche Absicherung, bevor Sie eine Umschichtung vorschlagen.", q: "get_violations(CASE-038)" } ] },
-  { sp: "advisor", t: "Der gesamte Fremdwährungsanteil ist tatsächlich höher als in Ihrem Profil vorgesehen." },
-  { sp: "caller", t: "Und wie sieht es mit Schweizer Aktien aus? Ich dachte immer, da wäre ich breiter aufgestellt.", ms: 2586, tools: ["get_violations", "get_saa_gap"], h: [
-    { k: "say",  t: "Schweizer Aktien sind gegenüber der Benchmark deutlich untergewichtet; die Daten nennen keinen aktuellen Anteil in Prozent.", q: "get_violations(CASE-038)" },
-    { k: "fact", t: "Die Untergewichtung ist als Fehler ausgewiesen; die Ausprägung beträgt mehr als 10 Prozentpunkte gegenüber dem Benchmark-Sollwert.", q: "get_violations(CASE-038)" },
-    { k: "next", t: "Prüfen Sie den aktuellen Schweizer Aktienanteil und den Benchmark-Sollwert, bevor Sie eine Umschichtung besprechen.", q: "get_violations(CASE-038)" } ] },
-  { sp: "advisor", t: "Das ist ein guter Punkt, den nehme ich gleich mit auf." },
-  { sp: "caller", t: "Ich hatte ausserdem beim letzten Mal gesagt, dass ich gerne mehr nachhaltige Fonds hätte. Ist da etwas passiert?", ms: 2427, tools: ["get_recent_notes", "get_client_overview"], h: [
-    { k: "say",  t: "Dazu liegt mir keine Angabe vor; festgehalten ist jedoch Ihr Wunsch nach möglichst nachhaltigen Fonds bei der nächsten Umschichtung.", q: "get_recent_notes(CASE-038)" },
-    { k: "fact", t: "Ein ESG-Profil ist nicht hinterlegt.", q: "get_recent_notes(CASE-038)" },
-    { k: "next", t: "Klären Sie vor einer Umschichtung das ESG-Profil und die gewünschte Nachhaltigkeitsquote.", q: "get_recent_notes(CASE-038)" } ] },
-  { sp: "advisor", t: "Das ist notiert, und beim nächsten Rebalancing setzen wir das um." },
-  { sp: "caller", t: "Wichtig ist mir, dass keine fossilen Energieträger drin sind. Das hatte ich damals ausdrücklich gesagt.", ms: 1778, tools: ["get_recent_notes"], h: [] },
-  { sp: "advisor", t: "Das ist so hinterlegt, daran halten wir uns." },
-  { sp: "caller", t: "Und können Sie mir noch sagen, wie ich im Vergleich zur Benchmark liege? Das wollte ich schon letztes Mal wissen.", ms: 1447, tools: [], h: [
-    { k: "say",  t: "Ein Benchmarkvergleich wurde am 16. Juni 2026 für die nächste Überprüfung gewünscht; konkrete Vergleichswerte liegen mir hier nicht vor.", q: "briefing(CASE-038)" },
-    { k: "fact", t: "Konkrete Benchmarkabweichungen sind als Fehler oder Warnungen ausgewiesen, aber ohne Vergleichswerte.", q: "briefing(CASE-038)" },
-    { k: "next", t: "Prüfen Sie den Benchmarkvergleich in der nächsten Überprüfung.", q: "briefing(CASE-038)" } ] },
-  { sp: "advisor", t: "Ja, den Vergleich bereite ich Ihnen auf und schicke ihn Ihnen zu." },
-  { sp: "caller", t: "Gut. Dann machen wir das so. Besten Dank und auf Wiederhören.", ms: 3595, tools: [], h: [] },
-  { sp: "advisor", t: "Sehr gerne, Herr Brown. Ich melde mich diese Woche. Auf Wiederhören." }
+  { sp: "caller", t: "Mir ist vor allem aufgefallen, dass ich fast nur noch Aktien drin habe. Ist das nicht zu viel für mein Profil?", ms: 1576, tools: [], h: [
+    { k: "say", t: "Ja, Ihr Aktienanteil beträgt 86,81 Prozent und liegt damit 1,81 Prozentpunkte über dem Maximum von 85 Prozent.", q: "briefing(TESTER-01)" },
+    { k: "fact", t: "Die Volatilität beträgt 13,48 Prozent gegenüber maximal 12 Prozent im Anlageprofil 5. Quelle: get_client_overview(TESTER-01), get_portfolio_summary(TESTER-01)", q: "briefing(TESTER-01)" },
+    { k: "next", t: "Besprechen Sie den finalen Vorschlag zum Teilverkauf von OC Oerlikon und zum Aufbau von Schweizer Obligationen. Quelle: get_open_proposals(TESTER-01)", q: "briefing(TESTER-01)" }
+  ] },
+  { sp: "advisor", t: "Das ist ein berechtigter Punkt, den schauen wir uns an." },
+  { sp: "caller", t: "Und von Obligationen sehe ich fast nichts mehr. War das nicht mal deutlich mehr?", ms: 1626, tools: [], h: [
+    { k: "say", t: "Ihr Obligationenanteil liegt aktuell bei 4,99 Prozent und damit unter dem Mindestanteil von 10 Prozent.", q: "briefing(TESTER-01)" },
+    { k: "fact", t: "Obligationen: 4,99 Prozent; Mindestanteil: 10 Prozent. Quelle: get_saa_gap(TESTER-01)", q: "briefing(TESTER-01)" },
+    { k: "next", t: "Besprechen Sie den finalen Vorschlag zum Aufbau Schweizer Obligationen; er wartet noch auf Ihre Zustimmung. Quelle: get_open_proposals(TESTER-01)", q: "briefing(TESTER-01)" }
+  ] },
+  { sp: "advisor", t: "Ja, da hat sich einiges verschoben." },
+  { sp: "caller", t: "Die Oerlikon-Position kommt mir auch gross vor. Ist das nicht ein Klumpenrisiko?", ms: 2494, tools: ["get_positions_top"], h: [
+    { k: "say", t: "Ja, die Oerlikon-Position beträgt rund 309 Tausend Franken und entspricht 36,64 Prozent des Portfolios; die Einzelpositionsgrenze liegt bei 20 Prozent.", q: "get_positions_top(TESTER-01)" },
+    { k: "fact", t: "OC Oerlikon beträgt rund 309 Tausend Franken beziehungsweise 36,64 Prozent des Portfolios. Quelle: get_positions_top(TESTER-01)", q: "get_positions_top(TESTER-01)" },
+    { k: "next", t: "Besprechen Sie den finalen Vorschlag zum Teilverkauf von OC Oerlikon. Quelle: get_open_proposals(TESTER-01)", q: "get_positions_top(TESTER-01)" }
+  ] },
+  { sp: "advisor", t: "Dazu habe ich Ihnen bereits etwas vorbereitet." },
+  { sp: "caller", t: "Ich hatte ausserdem beim letzten Mal nach einem nachhaltigen Schweizer Fonds gefragt. Ist da etwas passiert?", ms: 1377, tools: [], h: [
+    { k: "say", t: "Dazu gibt es bisher einen Entwurf vom 2. September 2026 für einen nachhaltigen Schweizer Aktienfonds als Ersatz für Einzeltitel.", q: "briefing(TESTER-01)" },
+    { k: "fact", t: "Der Vorschlag ist noch nicht final. Quelle: get_open_proposals(TESTER-01).", q: "briefing(TESTER-01)" },
+    { k: "next", t: "Prüfen Sie den Entwurf gemeinsam mit dem Kunden; eine konkrete Umsetzung ist erst nach Finalisierung möglich.", q: "briefing(TESTER-01)" }
+  ] },
+  { sp: "advisor", t: "Das ist notiert, dazu liegt ein Entwurf bereit." },
+  { sp: "caller", t: "Und denken Sie bitte daran, ich brauche Anfang 2027 rund achtzig Tausend Franken für die Wohnung.", ms: 1696, tools: [], h: [
+    { k: "say", t: "Die Entnahme von rund 80 Tausend Franken für Anfang 2027 ist notiert; zur konkreten Finanzierbarkeit liegen mir keine weiteren Daten vor.", q: "briefing(TESTER-01)" },
+    { k: "fact", t: "Für Anfang 2027 ist eine Entnahme von rund 80 Tausend Franken für einen Wohnungskauf angekündigt. Quelle: get_recent_notes(TESTER-01)", q: "briefing(TESTER-01)" },
+    { k: "next", t: "Berücksichtigen Sie die geplante Entnahme bei der weiteren Allokationsprüfung.", q: "briefing(TESTER-01)" }
+  ] },
+  { sp: "advisor", t: "Das nehme ich in die Planung auf." },
+  { sp: "caller", t: "Gut. Dann machen wir das so. Besten Dank und auf Wiederhören.", ms: 894, tools: [], h: [
+  ] },
+  { sp: "advisor", t: "Sehr gerne, Herr Muster. Ich melde mich diese Woche. Auf Wiederhören." },
 ];
 
 const ART = { say: "Das können Sie sagen", fact: "Fakt", next: "Nächster Schritt", warning: "Achtung" };
@@ -428,8 +455,8 @@ let tempo = 1, laeuft = true, lauf = 0, sekunden = 0, werkzeuge = 0, vorschlaege
 // ----------------------------------------------------------------- Aufbau
 function kundeZeigen() {
   $("kunde").innerHTML =
-    '<div class="kopf"><h3>Charlie Brown</h3><span class="sicher">über die Nummer erkannt</span></div>' +
-    '<div class="ref">CASE-038 · Anlageprofil 6 · Depotberatung · CHF</div>';
+    '<div class="kopf"><h3>Tester Muster</h3><span class="sicher">über die Nummer erkannt</span></div>' +
+    '<div class="ref">' + esc(KUNDE.ref + ' · ' + KUNDE.profil) + '</div>';
 }
 
 function briefingZeigen() {
@@ -538,7 +565,7 @@ async function abspielen() {
   await schlaf(700); if (id !== lauf) return;
   logEintrag("tool", "<b>find_client_by_phone</b> · Nummer auf E.164 gebracht", 38);
   await schlaf(900); if (id !== lauf) return;
-  logEintrag("treffer", "Kunde erkannt: <b>CASE-038</b> Charlie Brown");
+  logEintrag("treffer", "Kunde erkannt: <b>TESTER-01</b> Tester Muster");
   werkzeuge++; $("werkzeugzaehler").textContent = werkzeuge + " Aufrufe";
   await schlaf(900); if (id !== lauf) return;
   logEintrag("tool", "7 Werkzeuge parallel: <b>overview, portfolio, positions, saa_gap, proposals, violations, notes</b>");
@@ -556,7 +583,7 @@ async function abspielen() {
     logEintrag("treffer", "Rolle bestimmt: <b>Kunde</b> · Hinweise angestossen");
     for (const w of z.tools || []) {
       await schlaf(500); if (id !== lauf) return;
-      logEintrag("tool", "<b>" + w + "(CASE-038)</b> nachgeschlagen");
+      logEintrag("tool", "<b>" + w + "(TESTER-01)</b> nachgeschlagen");
       werkzeuge++; $("werkzeugzaehler").textContent = werkzeuge + " Aufrufe";
     }
     await schlaf(700); if (id !== lauf) return;
@@ -572,10 +599,32 @@ async function abspielen() {
 
   if (id !== lauf) return;
   logEintrag("treffer", "Gespräch beendet · Mitschnitt abgelegt");
+  await schlaf(1200); if (id !== lauf) return;
+
+  // Der Rückweg: was im Gespräch aufkam, wandert in den Freitext des Kunden und steht
+  // beim nächsten Anruf wieder im Briefing.
+  logEintrag("modell", "<b>gpt-5.6-luna</b> fasst das Gespräch fürs Dossier zusammen", 1751);
+  await schlaf(1400); if (id !== lauf) return;
+  logEintrag("tool", "<b>append_call_summary(TESTER-01)</b> · an den Freitext angehängt");
+  werkzeuge++; $("werkzeugzaehler").textContent = werkzeuge + " Aufrufe";
+  dossierZeigen();
+  await schlaf(900); if (id !== lauf) return;
+  logEintrag("treffer", "Dossier ergänzt · beim nächsten Anruf im Briefing");
+
   $("zustand").textContent = "Gespräch beendet";
   $("bar").classList.remove("playing");
   $("spielen").textContent = "Von vorn";
   laeuft = false;
+}
+
+function dossierZeigen() {
+  const d = $("dossier");
+  d.hidden = false;
+  d.innerHTML =
+    '<p class="kartentitel">Ins Dossier geschrieben</p>' +
+    '<p class="alt">' + esc(DOSSIER_VORHER) + "</p>" +
+    '<p class="neu"><b>Telefon 2026-09-19</b>' + esc(DOSSIER_NOTIZ) + "</p>";
+  d.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 function start() {

@@ -239,3 +239,31 @@ export const SCHEMA_ANSWER = objekt({ supported: { type: 'boolean' }, text, sour
 export const SCHEMA_ROLES = objekt({
   zuordnung: liste(objekt({ lineId: { type: 'integer' }, speaker: { enum: ['caller', 'advisor', 'unknown'] }, text })),
 })
+
+/**
+ * Am Gesprächsende: der Text, der in den Freitext des Kunden wandert und beim nächsten
+ * Anruf wieder gelesen wird. Er hat deshalb eine andere Aufgabe als ein Vorschlag -- er
+ * muss in einem Jahr noch verständlich sein, ohne das Transkript daneben.
+ */
+export const SYSTEM_SUMMARY = `${RULES}
+
+Du fasst ein soeben beendetes Telefongespräch für das Kundendossier zusammen.
+
+- Zwei bis vier Sätze, nüchtern, in der dritten Person über den Kunden.
+- Nur was im Gespräch wirklich gesagt wurde. Keine Kennzahlen aus den Stammdaten wiederholen,
+  die stehen ohnehin im Dossier; nur wenn eine Zahl im Gespräch eine Rolle spielte.
+- Halte fest, was der Kunde wollte, was ihn beschäftigt hat, und was zugesagt wurde.
+- Offene Punkte gehören hinein, damit sie beim nächsten Anruf wieder auftauchen.
+- Kein Datum voranstellen, das setzt das System selbst.
+- Wurde nichts Nennenswertes besprochen, gib eine leere Zusammenfassung zurück.
+
+Antworte als ein einziges JSON-Objekt: {"zusammenfassung": string}`
+
+export const summaryUser = (input: { transcript: Line[]; suggestions: { kind: string; text: string }[] }): string =>
+  [
+    'GESPRÄCH:',
+    transkript(input.transcript, 100),
+    '',
+    'WAS DER COPILOT VORGESCHLAGEN HAT (nur als Gedächtnisstütze, nicht abschreiben):',
+    input.suggestions.map((s) => `- [${s.kind}] ${s.text}`).join('\n') || '- nichts',
+  ].join('\n')

@@ -83,6 +83,11 @@ CREATE TABLE clients (
   profiling_date    TEXT,                      -- ProfilingDateUtc
   aum               REAL,                      -- AssetsUnderManagementInDefaultCurrency
   liquidity         REAL,                      -- LiquidityInDefaultCurrency
+  -- Freitext zum Kunden. Startwert aus dem Feld `Description` der Quelldatei, danach haengt
+  -- der Copilot nach jedem Gespraech eine kurze Zusammenfassung an. scripts/load-data.ts
+  -- rettet diese Ergaenzungen ueber einen Neuaufbau der Stammdaten hinweg -- sonst waere das
+  -- Gespraechsgedaechtnis nach jedem `npm run load-data` weg.
+  description       TEXT,
   raw_json          TEXT NOT NULL
 );
 

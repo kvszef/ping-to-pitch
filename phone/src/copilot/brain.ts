@@ -30,12 +30,12 @@ import type { Answer, Briefing, BriefingCard, Severity, Suggestion } from './eve
 import { nextId } from './events.ts'
 import { laufeOpenAI, openaiBereit } from './openai.ts'
 import { falten, gefaltetesMuster as fm } from './roles.ts'
-import type { AskInput, Brain, HintInput, ToolName, ToolRow, ToolboxClient } from './types.ts'
+import type { AskInput, Brain, HintInput, SummaryInput, ToolName, ToolRow, ToolboxClient } from './types.ts'
 import { LIMITS, TOOL_NAMES } from './types.ts'
 import {
   SCHEMA_ANSWER, SCHEMA_BRIEFING, SCHEMA_HINTS,
-  SYSTEM_ASK, SYSTEM_BRIEFING, SYSTEM_HINTS,
-  askUser, briefingUser, hintsUser, istQuelle, quelle,
+  SYSTEM_ASK, SYSTEM_BRIEFING, SYSTEM_HINTS, SYSTEM_SUMMARY,
+  askUser, briefingUser, hintsUser, istQuelle, quelle, summaryUser,
 } from './prompts.ts'
 
 // ---------------------------------------------------------------------------
@@ -143,7 +143,7 @@ const anzahl = (n: number, einzahl: string, mehrzahl: string): string => `${n} $
 // Die Werkzeugschleife
 // ---------------------------------------------------------------------------
 
-type Zweck = 'briefing' | 'hints' | 'ask'
+type Zweck = 'briefing' | 'hints' | 'ask' | 'summary'
 
 type Auftrag = {
   zweck: Zweck
@@ -451,7 +451,57 @@ export function createBrain(toolboxClient: ToolboxClient, opts: { log?: (zeile: 
         throw e
       }
     },
+
+    async summary(input, signal) {
+      // Kein Rückfall auf feste Antworten mit Modellfehler: lieber nichts ins Dossier
+      // schreiben als etwas Ausgedachtes. Der Mock-Betrieb liefert dagegen bewusst einen
+      // Text, damit sich die ganze Kette auch ohne Schlüssel prüfen lässt.
+      const knapp = input.transcript.filter((l) => l.final && l.text.trim().length > 12)
+      if (knapp.length < 2) return ''
+      return versuche(
+        'summary',
+        async () => {
+          const { daten } = await laufe({
+            zweck: 'summary',
+            system: SYSTEM_SUMMARY,
+            stabil: `Kundennummer: ${input.clientRef}`,
+            fluechtig: summaryUser({ transcript: input.transcript, suggestions: input.suggestions }),
+            schema: SCHEMA_SUMMARY,
+            maxTokens: 600,
+            effort: CONF.effort,
+            // Eine Runde genügt: die Stammdaten stehen schon im Dossier, hier zählt nur,
+            // was im Gespräch gesagt wurde.
+            hops: 1,
+            clientRef: input.clientRef,
+            signal,
+          })
+          const t = alsText((daten as Record<string, unknown> | null)?.zusammenfassung)
+          return t ?? ''
+        },
+        async () => mockSummary(input),
+      )
+    },
   }
+}
+
+const SCHEMA_SUMMARY = {
+  type: 'object',
+  properties: { zusammenfassung: { type: 'string' } },
+  required: ['zusammenfassung'],
+  additionalProperties: false,
+}
+
+/** Ohne Modell: die Kundenaussagen des Gesprächs aneinandergereiht, klar als solches erkennbar. */
+export function mockSummary(input: SummaryInput): string {
+  const vom_kunden = input.transcript.filter((l) => l.speaker === 'caller' && l.final).map((l) => l.text.trim())
+  if (!vom_kunden.length) return ''
+  const themen = vom_kunden.slice(0, 3).join(' ')
+  const zusagen = input.suggestions.filter((s) => s.kind === 'next').slice(0, 2).map((s) => s.text)
+  return [
+    `Der Kunde sprach folgende Punkte an: ${themen}`,
+    zusagen.length ? `Als nächste Schritte notiert: ${zusagen.join(' ')}` : '',
+    '(Ohne Sprachmodell erstellt.)',
+  ].filter(Boolean).join(' ')
 }
 
 // ---------------------------------------------------------------------------

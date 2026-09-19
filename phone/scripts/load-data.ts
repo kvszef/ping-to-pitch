@@ -213,6 +213,16 @@ try {
 } catch {
   schema = fail(`Schema nicht gefunden: ${SCHEMA_PATH}`, 'toolbox/schema.sql gehört zum Repo und darf nicht fehlen.')
 }
+// Der Copilot schreibt nach jedem Gespräch eine Zusammenfassung in clients.description.
+// Das Schema wirft die Tabelle gleich weg, also vorher retten und nachher zurückschreiben –
+// sonst wäre das Gesprächsgedächtnis nach jedem Lauf gelöscht.
+const gerettet = new Map<string, string>()
+try {
+  for (const r of db.prepare('SELECT client_ref, description FROM clients WHERE description IS NOT NULL').all() as { client_ref: string; description: string }[]) {
+    gerettet.set(r.client_ref, r.description)
+  }
+} catch { /* erster Lauf: die Tabelle gibt es noch nicht */ }
+
 try {
   db.exec(schema)
 } catch (err) {
@@ -223,10 +233,10 @@ const stmt = {
   client: db.prepare(`INSERT INTO clients
     (client_ref, client_id, name, first_name, last_name, company, is_company, is_employee, client_type,
      reporting_ccy, risk_profile_id, risk_profile, esg_profile_id, esg_profile, tags, birthday,
-     profiling_date, aum, liquidity, raw_json)
+     profiling_date, aum, liquidity, description, raw_json)
     VALUES (:client_ref, :client_id, :name, :first_name, :last_name, :company, :is_company, :is_employee,
      :client_type, :reporting_ccy, :risk_profile_id, :risk_profile, :esg_profile_id, :esg_profile, :tags,
-     :birthday, :profiling_date, :aum, :liquidity, :raw_json)`),
+     :birthday, :profiling_date, :aum, :liquidity, :description, :raw_json)`),
   portfolio: db.prepare(`INSERT INTO portfolios
     (portfolio_id, client_ref, portfolio_nr, name, currency, reference_ccy, saa_id, service_id, service_name,
      strategy_id, strategy_name, aum, liquidity, volatility, expected_return, value_at_risk, performance_ytd,
@@ -383,6 +393,9 @@ try {
       profiling_date: text(c.ProfilingDateUtc),
       aum: num(c.AssetsUnderManagementInDefaultCurrency),
       liquidity: num(c.LiquidityInDefaultCurrency),
+      // Vorrang hat, was der Copilot schon geschrieben hat: sonst löschte jeder Neuaufbau
+      // der Stammdaten das Gesprächsgedächtnis.
+      description: gerettet.get(ref) ?? text(c.Description),
       raw_json: jsonWithout(c, ['Portfolios', 'Proposals', 'Transactions', 'SuitabilityViolations', 'ClientNotes']),
     })
     counts.clients++

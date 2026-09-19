@@ -110,7 +110,9 @@ description: |
   haben kein Risikoprofil und neunzehn kein ESG-Profil, diese Felder koennen also leer sein.
   ist_mitarbeiter = 1 heisst Mitarbeitergeschaeft, das ist am Telefon relevant. Das Feld profil
   enthaelt den Kundensatz als verschachteltes JSON. Erster Aufruf nach der Identifikation,
-  Grundlage des Briefings.
+  Grundlage des Briefings. Das Feld beschreibung traegt den Freitext zum Kunden, in den der
+  Copilot nach jedem Gespraech eine kurze Zusammenfassung anhaengt -- dort steht also, was
+  beim letzten Mal besprochen wurde.
 annotations:
   readOnlyHint: true
 parameters:
@@ -127,6 +129,7 @@ statement: |
          c.risk_profile         AS risikoprofil,
          c.esg_profile          AS esg_profil,
          c.tags                 AS interessen,
+         c.description          AS beschreibung,
          c.birthday             AS geburtstag,
          c.profiling_date       AS profiliert_am,
          ROUND(c.aum, 2)        AS vermoegen,
@@ -579,3 +582,42 @@ name: dev
 tools:
   - dev_list_tables
   - dev_violation_details
+---
+# Das einzige schreibende Werkzeug. Es haengt nur an, es ueberschreibt nie: der Freitext
+# eines Kunden ist ein Gedaechtnis, und ein Gespraech darf das vorige nicht loeschen.
+# Bewusst in einem eigenen Toolset, damit das lesende Toolset call_copilot rein lesend bleibt.
+kind: tool
+name: append_call_summary
+type: sqlite-sql
+source: unrisk-db
+description: |
+  Haengt die Zusammenfassung eines Telefongespraechs an den Freitext eines Kunden an, mit
+  Datum davor. Wird einmal am Ende eines Anrufs aufgerufen. Bestehender Text bleibt erhalten.
+annotations:
+  readOnlyHint: false
+  destructiveHint: false
+  idempotentHint: false
+# Die Reihenfolge hier ist bindend: SQLite bindet die Fragezeichen in der Reihenfolge,
+# in der die Parameter stehen. Deshalb datum, zusammenfassung, client_ref -- genau so,
+# wie sie unten im Statement vorkommen.
+parameters:
+  - name: datum
+    type: string
+    description: Datum des Gespraechs als JJJJ-MM-TT.
+  - name: zusammenfassung
+    type: string
+    description: Zwei bis vier Saetze zum Gespraech, in Schweizer Schreibweise.
+  - name: client_ref
+    type: string
+    description: Kundenkennung, zum Beispiel TESTER-01.
+statement: |
+  UPDATE clients
+     SET description = TRIM(
+           COALESCE(description || char(10) || char(10), '')
+           || 'Telefon ' || ? || ': ' || ?)
+   WHERE client_ref = ?;
+---
+kind: toolset
+name: write
+tools:
+  - append_call_summary

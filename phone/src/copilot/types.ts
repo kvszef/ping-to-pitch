@@ -28,6 +28,15 @@ export const TOOL_NAMES = [
 
 export type ToolName = (typeof TOOL_NAMES)[number]
 
+/**
+ * Das einzige schreibende Werkzeug, in einem eigenen Toolset `write`. Es taucht bewusst
+ * nicht in `TOOL_NAMES` auf: das Modell bekommt nur die lesenden Werkzeuge zu sehen und
+ * kann deshalb nichts von sich aus in das Kundendossier schreiben. Den Aufruf macht
+ * session.ts am Gesprächsende, mit einem Text, den das Modell vorher formuliert hat.
+ */
+export const WRITE_TOOLS = ['append_call_summary'] as const
+export type WriteToolName = (typeof WRITE_TOOLS)[number]
+
 /** Eine Zeile aus einem Werkzeug. Toolbox liefert Objekte; JSON-Spalten sind bereits geparst. */
 export type ToolRow = Record<string, unknown>
 
@@ -37,7 +46,7 @@ export type ToolRow = Record<string, unknown>
  */
 export type ToolboxClient = {
   /** Ein Werkzeug aufrufen. Wirft bei Netz- oder Werkzeugfehlern. */
-  invoke(name: ToolName, args: Record<string, unknown>): Promise<ToolRow[]>
+  invoke(name: ToolName | WriteToolName, args: Record<string, unknown>): Promise<ToolRow[]>
   /** Kurzer Erreichbarkeitstest für die Statusanzeige. */
   health(): Promise<boolean>
   /** Beschreibungen der Werkzeuge, wie das Modell sie als Tool-Definitionen bekommt. */
@@ -89,6 +98,22 @@ export type Brain = {
   hints(input: HintInput, signal?: AbortSignal): Promise<Suggestion[]>
   /** Freie Rückfrage des Beraters im Eingabefeld. */
   ask(input: AskInput, signal?: AbortSignal): Promise<Answer>
+  /**
+   * Einmal am Gesprächsende: zwei bis vier Sätze zu dem, was besprochen und zugesagt wurde.
+   * Der Text wird über `append_call_summary` an den Freitext des Kunden angehängt, steht also
+   * beim nächsten Anruf im Briefing. Nur was im Gespräch wirklich gesagt wurde, keine Zahlen
+   * aus den Stammdaten wiederholen.
+   */
+  summary(input: SummaryInput, signal?: AbortSignal): Promise<string>
+}
+
+export type SummaryInput = {
+  callId: string
+  clientRef: string
+  /** Das ganze Gespräch, älteste Zeile zuerst. */
+  transcript: Line[]
+  /** Was der Copilot währenddessen vorgeschlagen hat. */
+  suggestions: Suggestion[]
 }
 
 export type HintInput = {

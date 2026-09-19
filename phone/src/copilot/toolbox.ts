@@ -226,7 +226,7 @@ export function createToolboxClient(options: ToolboxOptions = {}): ToolboxClient
   }
 
   return {
-    async invoke(name: ToolName, args: Record<string, unknown>): Promise<ToolRow[]> {
+    async invoke(name: ToolName | WriteToolName, args: Record<string, unknown>): Promise<ToolRow[]> {
       const data = await request('POST', `/api/tool/${encodeURIComponent(name)}/invoke`, args ?? {}, timeout(), name)
       return toRows(data.result, name)
     },
