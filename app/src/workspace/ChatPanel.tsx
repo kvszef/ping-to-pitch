@@ -1,5 +1,5 @@
 import { ArrowRight, BarChart3, ChevronDown, MessageSquare, Pin } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ModuleView } from './modules'
 import { Smooth } from './motion'
 import type { ChatEntry, Detail } from './types'
@@ -15,8 +15,8 @@ export const FOLLOW_UPS: { label: string; ask: (q: string) => string }[] = [
   { label: 'Für den Kunden', ask: (q) => `Wie sage ich das dem Kunden in zwei Sätzen? Zur Frage: ${q}` },
 ]
 
-export function ChatPanel({ name, chat, busy, detail, suggestions, pinned, onAsk, onShow, onPin }: {
-  name: string; chat: ChatEntry[]; busy: boolean; detail: Detail; suggestions: string[]; pinned: string[]
+export function ChatPanel({ above, name, chat, busy, detail, suggestions, pinned, onAsk, onShow, onPin }: {
+  above?: ReactNode; name: string; chat: ChatEntry[]; busy: boolean; detail: Detail; suggestions: string[]; pinned: string[]
   onAsk: (text: string) => void; onShow: (id: string) => void; onPin: (id: string) => void
 }) {
   const [open, setOpen] = useState(false)
@@ -37,7 +37,9 @@ export function ChatPanel({ name, chat, busy, detail, suggestions, pinned, onAsk
   const send = (text: string) => { if (text.trim()) { onAsk(text); setOpen(true) } }
 
   return (
-    <div className="absolute inset-x-0 bottom-0 z-20 overflow-hidden rounded-2xl bg-white/70 shadow-[0_12px_40px_rgba(31,56,88,0.18)] ring-1 ring-white/80 backdrop-blur-2xl">
+    <div className="absolute inset-x-3 bottom-3 z-20 overflow-hidden rounded-2xl bg-white/70 shadow-[0_12px_40px_rgba(31,56,88,0.18)] ring-1 ring-white/80 backdrop-blur-2xl">
+      {/* During a call the live transcript sits right above the chat. */}
+      {above && <div className="pt-2">{above}</div>}
       <Smooth>
         {open && (
           <div className="max-h-[60vh] overflow-y-auto px-4 pb-1 pt-3 text-[13px]">

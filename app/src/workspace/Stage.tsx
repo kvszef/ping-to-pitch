@@ -321,7 +321,7 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
           </div>
           <Smooth className="shrink-0">
             <div className={`transition-[opacity,transform] duration-[450ms] ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none ${dock.visible ? 'translate-y-0 opacity-100' : 'translate-y-3 opacity-0'}`}>
-              <Dock plan={plan} inCall={dock.mounted} recording={recording} lines={lines} pending={pending} note={note} name={client.name} />
+              <Dock plan={plan} inCall={dock.mounted} transcript={!graphsOpen} recording={recording} lines={lines} pending={pending} note={note} name={client.name} />
             </div>
           </Smooth>
         </div>
@@ -342,7 +342,7 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
         <div className={`relative min-h-0 shrink-0 overflow-hidden ${dragging ? '' : 'transition-[width] duration-500 ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none'}`} style={{ width: graphsOpen ? openWidth : 44 }}>
           {graphs.mounted && (
             <div style={{ width: openWidth }} className={`absolute inset-y-0 right-0 origin-right transition-[opacity,transform] duration-[450ms] ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none ${graphs.visible ? 'scale-100 opacity-100' : 'pointer-events-none scale-[0.97] opacity-0'}`}>
-              <div className={`absolute inset-0 overflow-y-auto p-3 pb-16 [scrollbar-width:none] ${GLASS}`}>
+              <div className={`absolute inset-0 overflow-y-auto p-3 ${inCall ? 'pb-[17rem]' : 'pb-20'} [scrollbar-width:none] ${GLASS}`}>
                 <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-wide text-muted">
                   <span className="flex items-center gap-1.5"><BarChart3 size={12} /> Grafiken</span>
                   <button onClick={() => onGraphs(false)} aria-label="Grafiken einklappen" title="Grafiken einklappen" className="flex h-6 w-6 items-center justify-center rounded-full normal-case hover:bg-pill hover:text-ink"><PanelRightClose size={14} /></button>
@@ -350,7 +350,7 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
                 <WidgetRail widgets={shown} hot={plan.focus ? `tile:${plan.focus}` : null} onPin={(id) => togglePin(id)} onRemove={removeWidget}
                   onFocus={(id) => { if (id.startsWith('tile:')) focus(id.slice(5)) }} onAsk={(w) => { if (w.ask) onAsk(FOLLOW_UPS[0].ask(w.ask)) }} />
               </div>
-              <ChatPanel name={client.name} chat={chat} busy={busy} detail={detail} suggestions={chatSuggestions} onAsk={onAsk} onShow={onShowChart}
+              <ChatPanel above={inCall ? <Transcript lines={lines} pending={pending} /> : null} name={client.name} chat={chat} busy={busy} detail={detail} suggestions={chatSuggestions} onAsk={onAsk} onShow={onShowChart}
                 pinned={pins.filter((p) => p.startsWith('chat:')).map((p) => p.slice(5))} onPin={(id) => togglePin(`chat:${id}`)} />
             </div>
           )}
@@ -369,8 +369,8 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
 
 // The dark dock under the tiles, live calls only: the answer to the client's last concern and the
 // live transcript. Hidden before a call starts: the brief's own "Einstieg" line is the opener already.
-function Dock({ plan, inCall, recording, lines, pending, note, name }: {
-  plan: Plan; inCall: boolean; recording: boolean; lines: TranscriptLine[]; pending: string[]; note: string | null; name: string
+function Dock({ plan, inCall, transcript, recording, lines, pending, note, name }: {
+  plan: Plan; inCall: boolean; transcript: boolean; recording: boolean; lines: TranscriptLine[]; pending: string[]; note: string | null; name: string
 }) {
   const [seconds, setSeconds] = useState(0)
   useEffect(() => {
@@ -400,7 +400,8 @@ function Dock({ plan, inCall, recording, lines, pending, note, name }: {
         </div>
       )}
 
-      {inCall && <Transcript lines={lines} pending={pending} />}
+      {/* The live transcript sits above the chat in the right column; only while that column is folded does it stay here. */}
+      {inCall && transcript && <Transcript lines={lines} pending={pending} />}
     </div>
   )
 }
