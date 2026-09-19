@@ -1,5 +1,6 @@
 import { ArrowRight, BarChart3, ChevronDown, MessageSquare, Pin } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useTranslated, type Language } from '../data/useTranslate'
 import { ModuleView } from './modules'
 import { Smooth } from './motion'
 import type { ChatEntry, Detail } from './types'
@@ -15,9 +16,9 @@ export const FOLLOW_UPS: { label: string; ask: (q: string) => string }[] = [
   { label: 'Für den Kunden', ask: (q) => `Wie sage ich das dem Kunden in zwei Sätzen? Zur Frage: ${q}` },
 ]
 
-export function ChatPanel({ above, name, chat, busy, detail, suggestions, pinned, onAsk, onShow, onPin }: {
+export function ChatPanel({ above, name, chat, busy, detail, suggestions, pinned, onAsk, onShow, onPin, language }: {
   above?: ReactNode; name: string; chat: ChatEntry[]; busy: boolean; detail: Detail; suggestions: string[]; pinned: string[]
-  onAsk: (text: string) => void; onShow: (id: string) => void; onPin: (id: string) => void
+  onAsk: (text: string) => void; onShow: (id: string) => void; onPin: (id: string) => void; language: Language
 }) {
   const [open, setOpen] = useState(false)
   const input = useRef<HTMLInputElement>(null)
@@ -35,6 +36,11 @@ export function ChatPanel({ above, name, chat, busy, detail, suggestions, pinned
   const lastQ = [...chat].reverse().find((e) => e.role === 'berater')
   const lastA = lastQ ? chat.slice(chat.indexOf(lastQ) + 1).find((e) => e.role === 'ki') : undefined
   const send = (text: string) => { if (text.trim()) { onAsk(text); setOpen(true) } }
+  const [suggestionsT, lastQT, lastAT] = [useTranslated(suggestions, language), useTranslated([lastQ?.text ?? ''], language)[0], useTranslated([lastA?.role === 'ki' ? lastA.text : ''], language)[0]]
+  const [chrome, followUps] = [
+    useTranslated(['Nachfragen', 'Quellen:', 'Grafik', 'Lösen', 'Rechts anheften', 'Angeheftet', 'Anheften', `Nachfragen zu ${name} …  /`], language),
+    useTranslated(FOLLOW_UPS.map((f) => f.label), language),
+  ]
 
   return (
     <div className="absolute inset-x-3 bottom-3 z-20 overflow-hidden rounded-2xl bg-white/70 shadow-[0_12px_40px_rgba(31,56,88,0.18)] ring-1 ring-white/80 backdrop-blur-2xl">
@@ -44,29 +50,29 @@ export function ChatPanel({ above, name, chat, busy, detail, suggestions, pinned
         {open && (
           <div className="max-h-[60vh] overflow-y-auto px-4 pb-1 pt-3 text-[13px]">
             <div className="mb-2 flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted">
-              <MessageSquare size={11} /> Nachfragen
+              <MessageSquare size={11} /> {chrome[0]}
               <button onClick={() => setOpen(false)} aria-label="Einklappen" className="ml-auto flex h-6 w-6 items-center justify-center rounded-full hover:bg-pill hover:text-ink"><ChevronDown size={13} /></button>
             </div>
             {!lastQ && !busy && (
               <div className="flex flex-wrap gap-1.5 pb-2">
-                {suggestions.slice(0, 4).map((s) => <button key={s} onClick={() => send(s)} className="rounded-full bg-white/70 px-2.5 py-1 text-[11px] text-muted hover:bg-brand-soft/60 hover:text-ink">{s}</button>)}
+                {suggestions.slice(0, 4).map((s, i) => <button key={s} onClick={() => send(s)} className="rounded-full bg-white/70 px-2.5 py-1 text-[11px] text-muted hover:bg-brand-soft/60 hover:text-ink">{suggestionsT[i] || s}</button>)}
               </div>
             )}
-            {lastQ && <p className="mb-1.5 text-[11px] text-muted">{lastQ.text}</p>}
+            {lastQ && <p className="mb-1.5 text-[11px] text-muted">{lastQT || lastQ.text}</p>}
             {busy && !lastA && <p className="animate-pulse pb-2 text-muted">…</p>}
             {lastA?.role === 'ki' && (
               <div key={lastA.id} className="anim-rise pb-2">
-                <p className="leading-relaxed">{lastA.text}</p>
-                {lastA.sources.length > 0 && <p className="mt-1 text-[10px] text-muted">Quellen: {lastA.sources.join(' · ')}</p>}
-                {lastA.module && <ModuleView spec={lastA.module} detail={detail} />}
+                <p className="leading-relaxed">{lastAT || lastA.text}</p>
+                {lastA.sources.length > 0 && <p className="mt-1 text-[10px] text-muted">{chrome[1]} {lastA.sources.join(' · ')}</p>}
+                {lastA.module && <ModuleView spec={lastA.module} detail={detail} language={language} />}
                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                  {lastA.offered && <button onClick={() => onShow(lastA.id)} className="inline-flex items-center gap-1 rounded-full bg-pill px-2 py-0.5 text-[10px] hover:bg-brand hover:text-white"><BarChart3 size={11} /> Grafik · {lastA.offered.confidence}%</button>}
-                  <button onClick={() => onPin(lastA.id)} aria-pressed={pinned.includes(lastA.id)} title={pinned.includes(lastA.id) ? 'Lösen' : 'Rechts anheften'}
+                  {lastA.offered && <button onClick={() => onShow(lastA.id)} className="inline-flex items-center gap-1 rounded-full bg-pill px-2 py-0.5 text-[10px] hover:bg-brand hover:text-white"><BarChart3 size={11} /> {chrome[2]} · {lastA.offered.confidence}%</button>}
+                  <button onClick={() => onPin(lastA.id)} aria-pressed={pinned.includes(lastA.id)} title={pinned.includes(lastA.id) ? chrome[3] : chrome[4]}
                     className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] ${pinned.includes(lastA.id) ? 'bg-brand text-white' : 'bg-pill hover:bg-brand hover:text-white'}`}>
-                    <Pin size={11} className={pinned.includes(lastA.id) ? 'fill-current' : ''} /> {pinned.includes(lastA.id) ? 'Angeheftet' : 'Anheften'}
+                    <Pin size={11} className={pinned.includes(lastA.id) ? 'fill-current' : ''} /> {pinned.includes(lastA.id) ? chrome[5] : chrome[6]}
                   </button>
-                  {lastQ && !busy && FOLLOW_UPS.map((f) => (
-                    <button key={f.label} onClick={() => send(f.ask(lastQ.text))} className="rounded-full bg-white/70 px-2 py-0.5 text-[10px] text-muted hover:bg-brand-soft/60 hover:text-ink">{f.label}</button>
+                  {lastQ && !busy && FOLLOW_UPS.map((f, i) => (
+                    <button key={f.label} onClick={() => send(f.ask(lastQ.text))} className="rounded-full bg-white/70 px-2 py-0.5 text-[10px] text-muted hover:bg-brand-soft/60 hover:text-ink">{followUps[i] || f.label}</button>
                   ))}
                 </div>
               </div>

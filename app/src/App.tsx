@@ -11,6 +11,8 @@ import { CardSkeleton, MetricsSkeleton } from './components/Skeleton'
 import { demoCalls } from './data/demoCalls'
 import { listClients, localClients } from './data/source'
 import { useBriefing } from './data/useBriefing'
+import { useLanguage } from './data/useLanguage'
+import { useTranslated } from './data/useTranslate'
 import type { Card, Client, IncomingCall } from './types'
 import * as deskLine from './phone/deskLine'
 import { RingingIsland } from './workspace/CallIsland'
@@ -83,7 +85,54 @@ export default function App() {
   // Ein angenommener Anruf öffnet den Arbeitsplatz mit dem Kunden und laufendem Gespräch.
   const accept = () => { if (!call) return; setSession((s) => ({ n: s.n + 1, ref: call.ref || undefined, call: true, demo: call.demo })); setCall(null); home('signale') }
 
-  const signalsItem: ToolItem = { label: 'Anrufe & Signale', icon: Radio, badge: call ? 1 : undefined, badgeTone: 'red', active: !client && page === 'signale', onClick: () => home('signale') }
+  const language = useLanguage()
+  const [
+    tKundeWirdGeladen,
+    tKundenberaterDashboard,
+    tBeratermappe,
+    tAnrufeSignale,
+    tKundenliste,
+    tRegelverletzungen,
+    tWarnungen,
+    tKundenWerdenGeladen,
+    tTelefonberatung,
+    tNotizen,
+    tBriefing,
+    tAnalyse,
+    tKundeninformation,
+    tPortfolio,
+    tAnlagedienstleistung,
+    tStrategie,
+    tAnlass,
+    tEinschaetzungWirdErstellt,
+    tKundendatenWerdenGeladen,
+    tMarktumfeldWirdAbgeglichen,
+    tNurAngabenHinweis,
+  ] = useTranslated([
+    'Kunde wird geladen',
+    'Kundenberater-Dashboard',
+    'Beratermappe',
+    'Anrufe & Signale',
+    'Kundenliste',
+    'Regelverletzungen',
+    'Warnungen',
+    'Kunden werden geladen',
+    'Telefonberatung',
+    'Notizen',
+    'Briefing',
+    'Analyse',
+    'Kundeninformation',
+    'Portfolio',
+    'Anlagedienstleistung',
+    'Strategie',
+    'Anlass',
+    'Einschätzung wird erstellt',
+    'Kundendaten werden geladen',
+    'Marktumfeld wird abgeglichen',
+    'Für diesen Kunden liegen nur die Angaben aus der Kundendatei vor. Einschätzung, Gesprächsvorschläge und Marktumfeld folgen, sobald die Analyse angebunden ist – es wird nichts vermutet.',
+  ], language)
+
+  const signalsItem: ToolItem = { label: tAnrufeSignale, icon: Radio, badge: call ? 1 : undefined, badgeTone: 'red', active: !client && page === 'signale', onClick: () => home('signale') }
   // An unknown number rings without client details; the name is picked up from the conversation.
   const banner = call && (caller || !call.ref) && <RingingIsland client={caller} call={call} busyWith={onCall?.name} onLater={later} onAccept={() => { if (deskLine.getLine().state === 'ringing') void deskLine.accept(); accept() }} onDecline={() => { deskLine.decline(); setCall(null) }} />
 
@@ -93,7 +142,7 @@ export default function App() {
       <div className="flex h-full flex-col">
         <TopBar />
         <SubBar title={ref} items={[]} />
-        <div className="p-2"><CardSkeleton label="Kunde wird geladen" /></div>
+        <div className="p-2"><CardSkeleton label={tKundeWirdGeladen} /></div>
       </div>
     )
   }
@@ -102,19 +151,19 @@ export default function App() {
     return (
       <div className="flex h-full flex-col">
         <TopBar />
-        <SubBar title="Kundenberater-Dashboard" items={[
-          { label: 'Beratermappe', icon: Briefcase },
+        <SubBar title={tKundenberaterDashboard} items={[
+          { label: tBeratermappe, icon: Briefcase },
           signalsItem,
-          { label: 'Kundenliste', icon: Users, active: page === 'kunden', onClick: () => home('kunden') },
-          { label: 'Regelverletzungen', icon: Ban, badge: clients.reduce((n, c) => n + c.errors, 0), badgeTone: 'red' },
-          { label: 'Warnungen', icon: AlertTriangle, badge: clients.reduce((n, c) => n + c.warnings, 0), badgeTone: 'red' },
+          { label: tKundenliste, icon: Users, active: page === 'kunden', onClick: () => home('kunden') },
+          { label: tRegelverletzungen, icon: Ban, badge: clients.reduce((n, c) => n + c.errors, 0), badgeTone: 'red' },
+          { label: tWarnungen, icon: AlertTriangle, badge: clients.reduce((n, c) => n + c.warnings, 0), badgeTone: 'red' },
           { label: '', icon: Menu },
         ]} />
         {page === 'kunden'
           ? <Dashboard clients={clients} onUploaded={refresh} />
           : listed ? <Workspace key={session.n} clients={clients} signals={[]} initialRef={session.ref} initialCall={session.call} initialDemo={session.demo} onSimulateCall={ring} onOpenBriefing={open}
             callbacks={callbacks} onCallbackDone={(id) => setCallbacks((list) => list.filter((c) => c.id !== id))} onCallState={setOnCall} />
-          : <div className="p-3"><CardSkeleton label="Kunden werden geladen" /></div>}
+          : <div className="p-3"><CardSkeleton label={tKundenWerdenGeladen} /></div>}
         {banner}
       </div>
     )
@@ -131,22 +180,22 @@ export default function App() {
     <div className="flex h-full flex-col">
       <TopBar />
       <SubBar title={`${client.name} (${client.ref})`} items={[
-        { label: 'Telefonberatung', icon: Phone, active: live, onClick: () => setLive((v) => !v) },
-        { label: 'Beratermappe', icon: Briefcase },
+        { label: tTelefonberatung, icon: Phone, active: live, onClick: () => setLive((v) => !v) },
+        { label: tBeratermappe, icon: Briefcase },
         signalsItem,
-        { label: 'Notizen', icon: StickyNote, badge: 0 },
-        { label: 'Briefing', icon: ClipboardList, active: !live },
-        { label: 'Analyse', icon: PieChart },
-        { label: 'Kundeninformation', icon: CircleUser },
-        { label: 'Portfolio', icon: Info },
+        { label: tNotizen, icon: StickyNote, badge: 0 },
+        { label: tBriefing, icon: ClipboardList, active: !live },
+        { label: tAnalyse, icon: PieChart },
+        { label: tKundeninformation, icon: CircleUser },
+        { label: tPortfolio, icon: Info },
         { label: '', icon: ArrowLeft, onClick: () => home(page) },
         { label: '', icon: Menu },
       ]} />
       <InfoBand total={client.aum} fields={[
-        { label: 'Portfolio', value: client.portfolioNr },
-        { label: 'Anlagedienstleistung', value: client.service },
-        { label: 'Strategie', value: client.strategy },
-        { label: 'Anlass', value: client.context },
+        { label: tPortfolio, value: client.portfolioNr },
+        { label: tAnlagedienstleistung, value: client.service },
+        { label: tStrategie, value: client.strategy },
+        { label: tAnlass, value: client.context },
       ]}>
         <div className="mt-2 flex gap-2">
           {pills.map((c) => <Pill key={c.ref} icon={CircleUser} active={c.ref === client.ref} onClick={() => open(c.ref, live)}>{c.name}</Pill>)}
@@ -158,12 +207,12 @@ export default function App() {
 
       <div className="flex min-h-0 flex-1 gap-2.5 p-2">
         <main className="min-w-0 flex-1 space-y-4 overflow-y-auto pb-2 pr-0.5">
-          {loading('fast') && <CardSkeleton lines={2} label="Einschätzung wird erstellt" />}
+          {loading('fast') && <CardSkeleton lines={2} label={tEinschaetzungWirdErstellt} />}
           {main.map((card, i) => <div key={cardKey(main, i)} className="anim-rise"><CardView card={card} /></div>)}
-          {loading('instant') && <><CardSkeleton lines={4} label="Kundendaten werden geladen" /><CardSkeleton lines={3} /></>}
-          {loading('slow') && <CardSkeleton lines={4} label="Marktumfeld wird abgeglichen" />}
+          {loading('instant') && <><CardSkeleton lines={4} label={tKundendatenWerdenGeladen} /><CardSkeleton lines={3} /></>}
+          {loading('slow') && <CardSkeleton lines={4} label={tMarktumfeldWirdAbgeglichen} />}
           {briefing.pending.length === 0 && !briefing.cards.some((c) => c.type === 'headline' || c.type === 'talktrack') && (
-            <p className="px-1 text-[11px] leading-snug text-muted">Für diesen Kunden liegen nur die Angaben aus der Kundendatei vor. Einschätzung, Gesprächsvorschläge und Marktumfeld folgen, sobald die Analyse angebunden ist – es wird nichts vermutet.</p>
+            <p className="px-1 text-[11px] leading-snug text-muted">{tNurAngabenHinweis}</p>
           )}
         </main>
         <aside className="flex w-[300px] shrink-0 flex-col gap-4">

@@ -46,6 +46,13 @@ export function SettingsPanel({ open, settings, status, update, onClose }: { ope
           <button onClick={onClose} aria-label="Schliessen"><X size={16} /></button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-4 text-xs">
+          <Row title="Sprache" hint="Die Engine rechnet und begründet weiterhin auf Deutsch; Englisch übersetzt nur die Anzeige, keine Zahl oder Kennzahl ändert sich dabei.">
+            <div className="grid grid-cols-2 gap-1.5">
+              <button onClick={() => update({ language: 'de' })} className={`rounded-sm px-2 py-1.5 transition-colors ${settings.language === 'de' ? 'bg-brand text-white' : 'bg-pill hover:bg-track'}`}>Deutsch</button>
+              <button onClick={() => update({ language: 'en' })} className={`rounded-sm px-2 py-1.5 transition-colors ${settings.language === 'en' ? 'bg-brand text-white' : 'bg-pill hover:bg-track'}`}>English</button>
+            </div>
+          </Row>
+
           <Row title="KI-Anbieter" hint="Welches Sprachmodell Gesprächsassistent und Berater-Chat verwenden. Ist der gewählte Anbieter nicht eingerichtet, arbeitet das Werkzeug im Beispielmodus.">
             <div className="grid grid-cols-2 gap-1.5">
               {providers.map((p) => (

@@ -1,12 +1,15 @@
 import { ClipboardList, Flag, GitCompareArrows, ListChecks, MessageCircleQuestion, PieChart } from 'lucide-react'
 import type { CardOf } from '../types'
-import { KindTag, Panel, SeverityIcon, Source, toneText } from './ui'
+import { KindTag, Panel, SeverityIcon, Source, toneText, useLanguage } from './ui'
+import { useTranslated } from '../data/useTranslate'
 
 export function Headline({ card }: { card: CardOf<'headline'> }) {
+  const language = useLanguage()
+  const [briefing, beraterTipp] = useTranslated(['Briefing', 'Beratertipp:'], language)
   return (
-    <Panel title="Briefing" icon={ClipboardList}>
+    <Panel title={briefing} icon={ClipboardList}>
       <p className="text-[17px] leading-snug">{card.text}</p>
-      {card.sub && <p className="mt-3 text-muted"><span className="font-medium text-ink">Beratertipp:</span> {card.sub}</p>}
+      {card.sub && <p className="mt-3 text-muted"><span className="font-medium text-ink">{beraterTipp}</span> {card.sub}</p>}
     </Panel>
   )
 }
@@ -52,6 +55,8 @@ const pct = (n: number) => `${n.toFixed(1)}%`
 const barColors = ['#5997ed', '#5aa5ee', '#5fc0ea', '#69d4d6', '#6fe0b5']
 
 export function Allocation({ card }: { card: CardOf<'allocation'> }) {
+  const language = useLanguage()
+  const headers = useTranslated(['Min.', 'Soll', 'Max.', 'Portfolio', 'Aktion'], language)
   const scale = Math.max(...card.rows.map((r) => r.actual), 1)
   return (
     <Panel title={card.title} icon={PieChart}>
@@ -59,7 +64,7 @@ export function Allocation({ card }: { card: CardOf<'allocation'> }) {
         <thead>
           <tr className="text-right font-normal">
             <th />
-            {['Min.', 'Soll', 'Max.', 'Portfolio', 'Aktion'].map((h) => <th key={h} className="pb-1 font-normal">{h}</th>)}
+            {headers.map((h) => <th key={h} className="pb-1 font-normal">{h}</th>)}
           </tr>
         </thead>
         <tbody>

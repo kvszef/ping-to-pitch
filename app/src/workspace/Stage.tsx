@@ -2,6 +2,7 @@ import { BarChart3, Ear, PanelRightClose, PanelRightOpen, Pin, Sparkles, Timer }
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { SeverityIcon } from '../cards/ui'
 import type { Client } from '../types'
+import { useTranslated, type Language } from '../data/useTranslate'
 import type { Screen } from './brain'
 import { usePaced, Wave } from './CallIsland'
 import { ChatPanel, FOLLOW_UPS } from './ChatPanel'
@@ -25,26 +26,30 @@ const BUDGET = 60
 // One frosted-glass look for the four parts of the page.
 export const GLASS = 'rounded-2xl bg-white/55 shadow-[0_8px_32px_rgba(31,56,88,0.10)] ring-1 ring-white/70 backdrop-blur-xl'
 
-function TileBody({ tile, text, clientRef, chart, fresh }: { tile: Tile; text?: string; clientRef: string; chart?: Screen['charts'][number]; fresh?: Set<string> }) {
+function TileBody({ tile, text, clientRef, chart, fresh, language }: { tile: Tile; text?: string; clientRef: string; chart?: Screen['charts'][number]; fresh?: Set<string>; language: Language }) {
+  const itemText = text && tile.item?.figure && text.startsWith(tile.item.figure) ? text.slice(tile.item.figure.length).replace(/^[\s,:]+/, '') : text ?? tile.item?.text ?? ''
+  const newsTexts = useTranslated((tile.news ?? []).flatMap((n) => [n.title, n.affects[clientRef].meaning]), language)
+  const [main, proposalSummary] = useTranslated([itemText, tile.card?.type === 'proposal' ? tile.card.summary : ''], language)
+  const effectLabels = useTranslated(tile.card?.type === 'proposal' ? tile.card.effects.slice(0, 4).map((e) => e.label) : [], language)
   if (tile.item) return (
     <div className="flex items-center gap-4">
       <p className="min-w-0 flex-1 text-[16px] leading-snug">
         {tile.item.figure && <span className="mr-2 text-[24px] leading-none tabular-nums text-brand-dark">{tile.item.figure}</span>}
-        {text && tile.item.figure && text.startsWith(tile.item.figure) ? text.slice(tile.item.figure.length).replace(/^[\s,:]+/, '') : text ?? tile.item.text}
+        {main}
       </p>
-      {chart && <div className="w-32 shrink-0">{chart.spec.type === 'verlauf' ? <Spark spec={chart.spec} /> : <Bars spec={chart.spec} />}</div>}
+      {chart && <div className="w-32 shrink-0">{chart.spec.type === 'verlauf' ? <Spark spec={chart.spec} language={language} /> : <Bars spec={chart.spec} language={language} />}</div>}
     </div>
   )
   if (tile.news) return (
     <ul className="divide-y divide-black/5">
-      {tile.news.map((n) => {
+      {tile.news.map((n, i) => {
         const hit = n.affects[clientRef]
         return (
           <li key={n.id} className={`${fresh?.has(n.id) ? 'news-in' : ''} flex items-start gap-3 py-2 first:pt-0 last:pb-0`}>
             <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${hit.severity === 'risk' ? 'bg-risk' : hit.severity === 'warn' ? 'bg-warn' : hit.severity === 'ok' ? 'bg-ok' : 'bg-brand'}`} />
             <div className="min-w-0 flex-1">
-              <a href={(n as { url?: string }).url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="block text-[14px] leading-snug hover:text-brand-dark">{n.title}</a>
-              <p className="mt-0.5 text-[12px] leading-snug text-ink/70">{hit.meaning}</p>
+              <a href={(n as { url?: string }).url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="block text-[14px] leading-snug hover:text-brand-dark">{newsTexts[i * 2] || n.title}</a>
+              <p className="mt-0.5 text-[12px] leading-snug text-ink/70">{newsTexts[i * 2 + 1] || hit.meaning}</p>
               <p className="mt-0.5 text-[10px] text-muted">{n.source} · {n.time}</p>
             </div>
             <span className="shrink-0 rounded-full bg-pill px-2 py-0.5 text-[11px] tabular-nums">{hit.tag}</span>
@@ -55,12 +60,12 @@ function TileBody({ tile, text, clientRef, chart, fresh }: { tile: Tile; text?: 
   )
   if (tile.card?.type === 'proposal') return (
     <div>
-      <p className="mb-2 text-[15px] leading-snug">{text ?? tile.card.summary}</p>
+      <p className="mb-2 text-[15px] leading-snug">{text ?? proposalSummary}</p>
       <ul className="grid gap-x-6 gap-y-1 text-[13px] sm:grid-cols-2">
-        {tile.card.effects.slice(0, 4).map((e) => (
+        {tile.card.effects.slice(0, 4).map((e, i) => (
           <li key={e.label} className="flex items-center gap-2">
             <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${e.ok ? 'bg-ok' : 'bg-risk'}`} />
-            <span className="min-w-0 flex-1 truncate">{e.label}</span>
+            <span className="min-w-0 flex-1 truncate">{effectLabels[i] || e.label}</span>
             <span className="shrink-0 tabular-nums text-muted">{e.before} → <span className="text-ink">{e.after}</span></span>
           </li>
         ))}
@@ -72,7 +77,7 @@ function TileBody({ tile, text, clientRef, chart, fresh }: { tile: Tile; text?: 
 
 // Who the client is, in a few facts: the first card of the scrolling brief, set apart from the tiles (the assets
 // as a big figure, never dimmed), but not fixed, so the advisor can scroll past it to the brief.
-function Profile({ client, compact = false }: { client: Client; compact?: boolean }) {
+function Profile({ client, compact = false, language }: { client: Client; compact?: boolean; language: Language }) {
   const context = client.briefing.find((c) => c.type === 'context')
   const persona = client.briefing.find((c) => c.type === 'profile')
   const fact = (label: string) => context?.type === 'context' ? context.facts.find((f) => f.label === label)?.value : undefined
@@ -83,20 +88,21 @@ function Profile({ client, compact = false }: { client: Client; compact?: boolea
   const notes = context?.type === 'context' ? context.notes.slice(0, 2) : []
   const reasons = (client.findings ?? []).filter((f) => f.check === 'profile.call-reason').map((f) => f.title).slice(0, 2)
   // The engine's facts are precise but wordy; the model condenses them to a glance, in the advisor's language.
-  // Only German ships today (see useSummary) — the language is already a parameter, ready for a picker later.
-  const summary = useSummary(persona?.type === 'profile' ? persona.persona : undefined, reasons, notes, 'de')
+  const summary = useSummary(persona?.type === 'profile' ? persona.persona : undefined, reasons, notes, language)
+  const labels = useTranslated(facts.map(([label]) => label), language)
+  const aumLabel = useTranslated(['Vermögen'], language)[0]
   return (
     <section className="mb-3 snap-start rounded-xl bg-gradient-to-br from-brand-soft/70 to-white/90 px-4 py-3.5 shadow-card ring-1 ring-brand/25">
       <div className={`flex ${compact ? 'items-baseline gap-4' : 'flex-col gap-3'}`}>
         {client.aum && client.aum !== '–' && (
           <div className="shrink-0">
-            <div className="text-[10px] uppercase tracking-wide text-muted">Vermögen</div>
+            <div className="text-[10px] uppercase tracking-wide text-muted">{aumLabel}</div>
             <div className={`${compact ? 'text-[20px]' : 'text-[28px]'} leading-tight tabular-nums text-brand-dark`}>{client.aum}</div>
           </div>
         )}
         <dl className={`min-w-0 flex-1 ${compact ? 'flex flex-wrap gap-x-4 gap-y-0.5' : 'grid grid-cols-2 gap-x-5 gap-y-2 sm:grid-cols-4'}`}>
-          {facts.map(([label, value]) => (
-            <div key={label} className={compact ? 'flex min-w-0 items-baseline gap-1' : 'min-w-0'}><dt className="text-[10px] uppercase tracking-wide text-muted">{label}</dt><dd className="truncate text-[14px] text-ink" title={value}>{value}</dd></div>
+          {facts.map(([label, value], i) => (
+            <div key={label} className={compact ? 'flex min-w-0 items-baseline gap-1' : 'min-w-0'}><dt className="text-[10px] uppercase tracking-wide text-muted">{labels[i]}</dt><dd className="truncate text-[14px] text-ink" title={value}>{value}</dd></div>
           ))}
         </dl>
       </div>
@@ -109,12 +115,12 @@ function Profile({ client, compact = false }: { client: Client; compact?: boolea
   )
 }
 
-export function Stage({ client, screen, plan, thinking, inCall, recording, lines, pending, note, hints, freshNews, lead, actions, chat, busy, detail, chatSuggestions, onAsk, onShowChart, graphsOpen, onGraphs, graphWidth, onGraphWidth }: {
+export function Stage({ client, screen, plan, thinking, inCall, recording, lines, pending, note, hints, freshNews, lead, actions, chat, busy, detail, chatSuggestions, onAsk, onShowChart, graphsOpen, onGraphs, graphWidth, onGraphWidth, language }: {
   client: Client; screen: Screen; plan: Plan; thinking: boolean
   inCall: boolean; recording: boolean; lines: TranscriptLine[]; pending: string[]; note: string | null; hints: Hint[]; freshNews: Set<string>
   lead: ReactNode; actions: ReactNode
   chat: ChatEntry[]; busy: boolean; detail: Detail; chatSuggestions: string[]; onAsk: (text: string) => void; onShowChart: (id: string) => void
-  graphsOpen: boolean; onGraphs: (open: boolean) => void; graphWidth?: number; onGraphWidth: (width: number) => void
+  graphsOpen: boolean; onGraphs: (open: boolean) => void; graphWidth?: number; onGraphWidth: (width: number) => void; language: Language
 }) {
   const byId = useMemo(() => new Map(screen.tiles.map((t) => [t.id, t])), [screen.tiles])
   const chartById = useMemo(() => new Map(screen.charts.map((c) => [c.id, c])), [screen.charts])
@@ -139,6 +145,9 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
   }
   const grown = feed.current.ids.map((id) => byId.get(id)).filter((t): t is Tile => !!t)
   const tiles = grown.length ? grown : source.slice(0, 1)
+  const groupLabels = useTranslated(tiles.map((t) => t.group), language)
+  const sourceLabels = useTranslated(tiles.map((t) => t.item?.source ?? ''), language)
+  const graphsChrome = useTranslated(['Grafiken', 'Grafiken · Chat'], language)
 
   // ---- tiles: focus by scrolling, dimming away from the middle, gliding when the order changes ----
   const box = useRef<HTMLDivElement>(null)
@@ -293,13 +302,13 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
           </div>
           <div ref={box} onScroll={onScroll} className={`relative min-h-0 flex-1 overflow-y-auto px-3 [scrollbar-width:none] ${GLASS}`}>
             <div className="h-2" aria-hidden />
-            <Profile client={client} compact={inCall} />
-            {tiles.map((t) => (
+            <Profile client={client} compact={inCall} language={language} />
+            {tiles.map((t, i) => (
               <article key={t.id} data-tile={t.id} data-flip={t.id} onClick={() => focus(t.id)}
                 className={`group relative mb-3 rounded-xl bg-white/85 p-4 shadow-card ring-1 transition-[box-shadow] duration-500 ${flash === t.id ? 'ring-2 ring-brand' : 'ring-black/5'}`}>
                 <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-muted">
                   {t.severity && <SeverityIcon severity={t.severity} size={11} />}
-                  <span>{t.group}</span>
+                  <span>{groupLabels[i]}</span>
                   {t.news && <span className="flex items-center gap-1 rounded-full bg-risk/10 px-1.5 text-[10px] uppercase tracking-wide text-risk"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-risk" /> Live</span>}
                   {flash === t.id && <span className="flex items-center gap-1 text-brand"><Sparkles size={11} /> Im Gespräch</span>}
                   <button onClick={(e) => { e.stopPropagation(); togglePin(`tile:${t.id}`) }} aria-label={pinnedTile(t.id) ? 'Lösen' : 'Anheften'} title={pinnedTile(t.id) ? 'Lösen' : 'Rechts anheften'}
@@ -307,8 +316,8 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
                     <Pin size={12} className={pinnedTile(t.id) ? 'fill-current' : ''} />
                   </button>
                 </div>
-                <TileBody tile={t} text={plan.texts[t.id]} clientRef={client.ref} chart={t.chart ? chartById.get(t.chart) : undefined} fresh={freshNews} />
-                {t.item && <p className="mt-1.5 text-[10px] text-muted">{t.item.source}</p>}
+                <TileBody tile={t} text={plan.texts[t.id]} clientRef={client.ref} chart={t.chart ? chartById.get(t.chart) : undefined} fresh={freshNews} language={language} />
+                {t.item && <p className="mt-1.5 text-[10px] text-muted">{sourceLabels[i] || t.item.source}</p>}
               </article>
             ))}
             <div className="h-[40%]" aria-hidden />
@@ -338,15 +347,15 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
             <div style={{ width: openWidth }} className={`absolute inset-y-0 right-0 origin-right transition-[opacity,transform] duration-[450ms] ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none ${graphs.visible ? 'scale-100 opacity-100' : 'pointer-events-none scale-[0.97] opacity-0'}`}>
               <div className={`absolute inset-0 overflow-y-auto p-3 ${inCall ? 'pb-[17rem]' : 'pb-20'} [scrollbar-width:none] ${GLASS}`}>
                 <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-wide text-muted">
-                  <span className="flex items-center gap-1.5"><BarChart3 size={12} /> Grafiken</span>
+                  <span className="flex items-center gap-1.5"><BarChart3 size={12} /> {graphsChrome[0]}</span>
                   <button onClick={() => onGraphs(false)} aria-label="Grafiken einklappen" title="Grafiken einklappen" className="flex h-6 w-6 items-center justify-center rounded-full normal-case hover:bg-pill hover:text-ink"><PanelRightClose size={14} /></button>
                 </div>
                 {inCall && <div className="mb-3 mt-3"><Dock plan={plan} inCall transcript={false} recording={recording} lines={lines} pending={pending} note={note} name={client.name} /></div>}
                 <WidgetRail widgets={shown} hot={plan.focus ? `tile:${plan.focus}` : null} onPin={(id) => togglePin(id)} onRemove={removeWidget}
-                  onFocus={(id) => { if (id.startsWith('tile:')) focus(id.slice(5)) }} onAsk={(w) => { if (w.ask) onAsk(FOLLOW_UPS[0].ask(w.ask)) }} />
+                  onFocus={(id) => { if (id.startsWith('tile:')) focus(id.slice(5)) }} onAsk={(w) => { if (w.ask) onAsk(FOLLOW_UPS[0].ask(w.ask)) }} language={language} />
               </div>
               <ChatPanel above={inCall ? <Transcript lines={lines} pending={pending} /> : null} name={client.name} chat={chat} busy={busy} detail={detail} suggestions={chatSuggestions} onAsk={onAsk} onShow={onShowChart}
-                pinned={pins.filter((p) => p.startsWith('chat:')).map((p) => p.slice(5))} onPin={(id) => togglePin(`chat:${id}`)} />
+                pinned={pins.filter((p) => p.startsWith('chat:')).map((p) => p.slice(5))} onPin={(id) => togglePin(`chat:${id}`)} language={language} />
             </div>
           )}
             <button onClick={() => onGraphs(true)} aria-label="Grafiken und Chat öffnen" title="Grafiken und Chat öffnen"
@@ -354,7 +363,7 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
               <PanelRightOpen size={15} />
               <BarChart3 size={15} strokeWidth={1.5} />
               {shown.filter((w) => !w.leaving).length > 0 && <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-[10px] tabular-nums text-white">{shown.filter((w) => !w.leaving).length}</span>}
-              <span className="whitespace-nowrap text-[11px] [writing-mode:vertical-rl]">Grafiken · Chat</span>
+              <span className="whitespace-nowrap text-[11px] [writing-mode:vertical-rl]">{graphsChrome[1]}</span>
             </button>
         </div>
       </div>

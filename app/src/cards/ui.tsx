@@ -1,6 +1,10 @@
 import { AlertTriangle, CircleCheck, Info, XCircle, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { Kind, Severity } from '../types'
+import { useTranslated } from '../data/useTranslate'
+import { useLanguage } from '../data/useLanguage'
+
+export { useLanguage }
 
 export function Panel({ title, icon: Icon, aside, children, className = '' }: { title?: string; icon?: LucideIcon; aside?: ReactNode; children: ReactNode; className?: string }) {
   return (
@@ -22,9 +26,13 @@ const kindStyle: Record<Kind, string> = {
   action: 'bg-teal/30 text-ink',
 }
 
-const kindLabel: Record<Kind, string> = { fact: 'Fakt', interpretation: 'Einschätzung', action: 'Massnahme' }
+const kindLabelDe: Record<Kind, string> = { fact: 'Fakt', interpretation: 'Einschätzung', action: 'Massnahme' }
+const kindOrder: Kind[] = ['fact', 'interpretation', 'action']
 
 export function KindTag({ kind }: { kind: Kind }) {
+  const language = useLanguage()
+  const [fact, interpretation, action] = useTranslated(kindOrder.map((k) => kindLabelDe[k]), language)
+  const kindLabel: Record<Kind, string> = { fact, interpretation, action }
   return <span className={`mr-1 px-1.5 py-px text-[10px] uppercase tracking-wide ${kindStyle[kind]}`}>{kindLabel[kind]}</span>
 }
 

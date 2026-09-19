@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import { useBriefing } from '../data/useBriefing'
 import { sortCards } from '../data/source'
 import { useNews } from '../data/useNews'
+import { useTranslated } from '../data/useTranslate'
 import * as deskLine from '../phone/deskLine'
 import { usePhoneAudio } from '../phone/usePhoneAudio'
 import { demoCalls, lineDelay, type DemoLine } from '../data/demoCalls'
@@ -291,6 +292,16 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
   const topSignal = (r: string) => signals.flatMap((s) => s.affected.filter((a) => a.ref === r).map((a) => ({ ...a, title: s.title }))).sort((a, b) => rank[a.severity] - rank[b.severity])[0]
   const chatSuggestions = useMemo(() => topicsFor(client).map((t) => t.label), [client])
 
+  // The left roster and the demo-call menu are the last hand-built German chrome: batched once,
+  // cached, so the rest of the app (already language-aware via useTranslated) stays consistent.
+  const [chrome, rosterReasons, callbackTexts, demoInTexts, demoOutTexts] = [
+    useTranslated(['Kunden', 'Rückrufe', 'Heute anrufen', 'Alle Kunden', 'Chance: ', 'Eingehender Anruf', 'Ausgehender Anruf', 'Heute an erster Stelle', 'Rangliste lädt …', 'Name suchen …', 'Kundenliste einklappen', 'Kundenliste öffnen'], settings.language),
+    useTranslated(roster.map((c) => rankOf.get(c.ref)?.reasons[0]?.title ?? ''), settings.language),
+    useTranslated(callbacks.flatMap((cb) => [cb.label, cb.reason]), settings.language),
+    useTranslated(demoCalls.filter((d) => d.direction === 'eingehend').map((d) => d.label), settings.language),
+    useTranslated(ranking.slice(0, 2).map((r) => r.reasons[0]?.title ?? ''), settings.language),
+  ]
+
   return (
     <>
       <div className="flex min-h-0 flex-1 gap-3 bg-[radial-gradient(ellipse_at_top_left,rgba(89,151,237,0.28),transparent_55%),radial-gradient(ellipse_at_bottom_right,rgba(105,212,214,0.22),transparent_55%)] p-3">
@@ -299,26 +310,26 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
             <button onClick={() => update({ clientsOpen: true })} aria-label="Kundenliste öffnen" title="Kundenliste öffnen"
               className="flex h-full w-11 flex-col items-center gap-2.5 py-4 text-muted transition-colors hover:text-ink">
               <Users size={16} strokeWidth={1.5} />
-              <span className="whitespace-nowrap text-[11px] [writing-mode:vertical-rl]">Kunden</span>
+              <span className="whitespace-nowrap text-[11px] [writing-mode:vertical-rl]">{chrome[0]}</span>
             </button>
           ) : (
             <>
               <div className="flex shrink-0 items-center gap-1 border-b border-line/60 px-1.5 py-1.5">
                 <label className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg bg-white/70 px-2 py-1 text-[12px] text-muted">
                   <Search size={12} className="shrink-0" />
-                  <input value={rosterQuery} onChange={(e) => setRosterQuery(e.target.value)} placeholder="Name suchen …" aria-label="Kunden suchen" className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted" />
+                  <input value={rosterQuery} onChange={(e) => setRosterQuery(e.target.value)} placeholder={chrome[9]} aria-label="Kunden suchen" className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted" />
                 </label>
-                <button onClick={() => update({ clientsOpen: false })} aria-label="Kundenliste einklappen" title="Kundenliste einklappen" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted hover:bg-pill hover:text-ink"><PanelLeftClose size={15} /></button>
+                <button onClick={() => update({ clientsOpen: false })} aria-label="Kundenliste einklappen" title={chrome[10]} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted hover:bg-pill hover:text-ink"><PanelLeftClose size={15} /></button>
               </div>
               <ul className="min-h-0 flex-1 overflow-y-auto py-1.5">
                 {callbacks.length > 0 && (
                   <li className="px-3 pb-1 pt-1">
-                    <div className="mb-1 text-[10px] uppercase tracking-wide text-risk">Rückrufe</div>
-                    {callbacks.map((cb) => (
+                    <div className="mb-1 text-[10px] uppercase tracking-wide text-risk">{chrome[1]}</div>
+                    {callbacks.map((cb, ci) => (
                       <button key={cb.id} onClick={() => { onCallbackDone?.(cb.id); if (cb.ref) void callOut(cb.ref, false); else if (cb.demo) onSimulateCall(cb.demo) }}
                         className="anim-rise mb-1 flex w-full items-start gap-2 rounded-lg bg-risk/10 px-2 py-1.5 text-left hover:bg-risk/15">
                         <PhoneCall size={12} className="mt-0.5 shrink-0 text-risk" />
-                        <span className="min-w-0 flex-1"><span className="block truncate text-[12px]">{cb.label}</span><span className="block text-[10px] text-muted">{cb.at} · {cb.reason}</span></span>
+                        <span className="min-w-0 flex-1"><span className="block truncate text-[12px]">{callbackTexts[ci * 2] || cb.label}</span><span className="block text-[10px] text-muted">{cb.at} · {callbackTexts[ci * 2 + 1] || cb.reason}</span></span>
                       </button>
                     ))}
                   </li>
@@ -331,13 +342,13 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
                   const today = !rosterQuery && r && i < TODAY
                   return (
                     <li key={c.ref} data-flip={c.ref}>
-                      {!rosterQuery && i === 0 && r && <div className="px-4 pb-1 pt-1 text-[10px] uppercase tracking-wide text-brand-dark">Heute anrufen</div>}
-                      {!rosterQuery && i === TODAY && <div className="mt-1 border-t border-line/60 px-4 pb-1 pt-2 text-[10px] uppercase tracking-wide text-muted">Alle Kunden</div>}
+                      {!rosterQuery && i === 0 && r && <div className="px-4 pb-1 pt-1 text-[10px] uppercase tracking-wide text-brand-dark">{chrome[2]}</div>}
+                      {!rosterQuery && i === TODAY && <div className="mt-1 border-t border-line/60 px-4 pb-1 pt-2 text-[10px] uppercase tracking-wide text-muted">{chrome[3]}</div>}
                       <button onClick={() => select(c.ref)} title={top?.title ?? s?.title ?? c.profile} className={`flex w-full items-start gap-2.5 px-4 py-2 text-left text-[13px] transition-colors duration-200 ${c.ref === client.ref && !identifying ? 'bg-brand-soft/40 text-ink' : 'text-ink/75 hover:bg-brand-soft/20'}`}>
                         <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${severity === 'risk' ? 'bg-risk' : severity === 'warn' ? 'bg-warn' : severity === 'ok' ? 'bg-ok' : 'bg-transparent'}`} />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate">{c.name}</span>
-                          {today && top && <span className="line-clamp-2 text-[10px] leading-snug text-muted">{top.kind === 'opportunity' ? 'Chance: ' : ''}{top.title}</span>}
+                          {today && top && <span className="line-clamp-2 text-[10px] leading-snug text-muted">{top.kind === 'opportunity' ? chrome[4] : ''}{rosterReasons[i] || top.title}</span>}
                         </span>
                       </button>
                     </li>
@@ -354,22 +365,22 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
 <div data-demo-menu style={menuAt} className="anim-rise fixed z-[70] w-72 rounded-xl bg-white/90 p-1.5 shadow-[0_12px_40px_rgba(31,56,88,0.18)] ring-1 ring-black/5 backdrop-blur-xl">
                       {(['eingehend', 'ausgehend'] as const).map((dir) => (
                         <div key={dir}>
-                          <div className="px-2 pb-0.5 pt-1.5 text-[10px] uppercase tracking-wide text-muted">{dir === 'eingehend' ? 'Eingehender Anruf' : 'Ausgehender Anruf'}</div>
-                          {dir === 'eingehend' ? demoCalls.filter((d) => d.direction === dir).map((d) => {
+                          <div className="px-2 pb-0.5 pt-1.5 text-[10px] uppercase tracking-wide text-muted">{dir === 'eingehend' ? chrome[5] : chrome[6]}</div>
+                          {dir === 'eingehend' ? demoCalls.filter((d) => d.direction === dir).map((d, di) => {
                             const who = clients.find((c) => c.ref === d.ref)
                             return (
                               <button key={d.id} onClick={() => { setDemoMenu(false); onSimulateCall(d.id) }} className="flex w-full flex-col rounded-lg px-2 py-1.5 text-left hover:bg-brand-soft/40">
                                 <span className="text-[12px]">{who?.name ?? d.ref}</span>
-                                <span className="text-[11px] text-muted">{d.label}</span>
+                                <span className="text-[11px] text-muted">{demoInTexts[di] || d.label}</span>
                               </button>
                             )
-                          }) : ranking.slice(0, 2).map((r) => (
+                          }) : ranking.slice(0, 2).map((r, ri) => (
                             <button key={r.ref} onClick={() => void callOut(r.ref, true)} className="flex w-full flex-col rounded-lg px-2 py-1.5 text-left hover:bg-brand-soft/40">
                               <span className="text-[12px]">{clients.find((c) => c.ref === r.ref)?.name ?? r.name ?? r.ref}</span>
-                              <span className="line-clamp-2 text-[11px] text-muted">{r.reasons[0]?.title ?? 'Heute an erster Stelle'}</span>
+                              <span className="line-clamp-2 text-[11px] text-muted">{demoOutTexts[ri] || r.reasons[0]?.title || chrome[7]}</span>
                             </button>
                           ))}
-                          {dir === 'ausgehend' && !ranking.length && <p className="px-2 py-1 text-[11px] text-muted">Rangliste lädt …</p>}
+                          {dir === 'ausgehend' && !ranking.length && <p className="px-2 py-1 text-[11px] text-muted">{chrome[8]}</p>}
                         </div>
                       ))}
                     </div>
@@ -409,6 +420,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
             chat={chat} busy={busy} detail={settings.detail} chatSuggestions={chatSuggestions} onAsk={ask}
             graphsOpen={settings.graphsOpen} onGraphs={(open) => update({ graphsOpen: open })}
             graphWidth={settings.graphWidth} onGraphWidth={(width) => update({ graphWidth: width })}
+            language={settings.language}
             onShowChart={(id) => setChat((c) => c.map((e) => (e.id === id && e.role === 'ki' && e.offered ? { ...e, module: e.offered.spec, offered: undefined } : e)))} />
           )}
         </section>

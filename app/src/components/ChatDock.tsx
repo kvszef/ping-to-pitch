@@ -50,7 +50,7 @@ export function ChatThread({ client, className = '', autoFocus = false }: { clie
             <div key={m.id} className="anim-rise max-w-[95%] rounded-2xl bg-stripe/80 px-3 py-2 leading-snug">
               <p>{m.text}</p>
               {m.sources.length > 0 && <p className="mt-1 text-[10px] text-muted">Quellen: {m.sources.join(' · ')}</p>}
-              {m.module && <ModuleView spec={m.module} detail={settings.detail} />}
+              {m.module && <ModuleView spec={m.module} detail={settings.detail} language={settings.language} />}
               {m.offered && <button onClick={() => setMessages((all) => all.map((e) => (e.id === m.id && e.role === 'ki' && e.offered ? { ...e, module: e.offered.spec, offered: undefined } : e)))} className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-white/80 px-2 py-0.5 text-[10px] hover:bg-brand hover:text-white"><BarChart3 size={11} /> Grafik · {m.offered.confidence}%</button>}
             </div>
           ))}

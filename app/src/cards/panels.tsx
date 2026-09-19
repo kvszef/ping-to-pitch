@@ -1,20 +1,26 @@
 import { ArrowRight, Check, ChevronDown, FileText, TrendingUp, UserRound, X } from 'lucide-react'
 import { useState } from 'react'
 import type { CardOf } from '../types'
-import { Panel } from './ui'
+import { Panel, useLanguage } from './ui'
+import { useTranslated } from '../data/useTranslate'
 
 const POS = '#3f7fd9', NEG = '#c8662b'
 const signed = (n: number, digits = 1) => `${n > 0 ? '+' : ''}${n.toFixed(digits)}`
 
 // Beitrag je Position zur Wertentwicklung: Richtung und Farbe zeigen das Vorzeichen, die Zahl steht daneben.
 export function Drivers({ card }: { card: CardOf<'drivers'> }) {
+  const language = useLanguage()
+  const [portfolio, weightLabel, returnLabel, contributionLabel, ppLabel, belastet, stuetzt, beitragPp] = useTranslated(
+    ['Portfolio', 'Gewicht', 'Rendite', 'Beitrag', 'Prozentpunkte', 'belastet', 'stützt', 'Beitrag in Prozentpunkten'],
+    language,
+  )
   const scale = Math.max(...card.items.map((d) => Math.abs(d.contribution)), 0.1)
   return (
     <Panel title={card.title} icon={TrendingUp}>
-      <div className="mb-2 flex items-baseline justify-between text-[11px] text-muted"><span>{card.period}</span><span>Portfolio <span className="text-[13px] text-ink">{card.total}</span></span></div>
+      <div className="mb-2 flex items-baseline justify-between text-[11px] text-muted"><span>{card.period}</span><span>{portfolio} <span className="text-[13px] text-ink">{card.total}</span></span></div>
       <div className="space-y-1.5">
         {card.items.map((d) => (
-          <div key={d.name} className="grid grid-cols-[minmax(0,1fr)_96px_52px] items-center gap-2 text-xs" title={`${d.name}: Gewicht ${d.weight}%, Rendite ${signed(d.ret)}%, Beitrag ${signed(d.contribution, 2)} Prozentpunkte`}>
+          <div key={d.name} className="grid grid-cols-[minmax(0,1fr)_96px_52px] items-center gap-2 text-xs" title={`${d.name}: ${weightLabel} ${d.weight}%, ${returnLabel} ${signed(d.ret)}%, ${contributionLabel} ${signed(d.contribution, 2)} ${ppLabel}`}>
             <span className="truncate">{d.name} <span className="text-[11px] text-muted">{d.weight}%</span></span>
             <div className="relative h-2.5">
               <span className="absolute inset-y-0 left-1/2 w-px bg-line" />
@@ -24,13 +30,15 @@ export function Drivers({ card }: { card: CardOf<'drivers'> }) {
           </div>
         ))}
       </div>
-      <div className="mt-2 flex items-center gap-3 text-[10px] text-muted"><span className="flex items-center gap-1"><span className="h-2 w-3 rounded-sm" style={{ background: NEG }} /> belastet</span><span className="flex items-center gap-1"><span className="h-2 w-3 rounded-sm" style={{ background: POS }} /> stützt</span><span className="ml-auto">Beitrag in Prozentpunkten</span></div>
+      <div className="mt-2 flex items-center gap-3 text-[10px] text-muted"><span className="flex items-center gap-1"><span className="h-2 w-3 rounded-sm" style={{ background: NEG }} /> {belastet}</span><span className="flex items-center gap-1"><span className="h-2 w-3 rounded-sm" style={{ background: POS }} /> {stuetzt}</span><span className="ml-auto">{beitragPp}</span></div>
       <p className="mt-2 text-[11px] leading-snug text-muted">{card.note}</p>
     </Panel>
   )
 }
 
 export function Context({ card }: { card: CardOf<'context'> }) {
+  const language = useLanguage()
+  const [newSinceLastContact] = useTranslated(['Neu seit dem letzten Kontakt'], language)
   return (
     <Panel title={card.title} icon={UserRound}>
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
@@ -38,7 +46,7 @@ export function Context({ card }: { card: CardOf<'context'> }) {
       </dl>
       {card.changes.length > 0 && (
         <div className="mt-3 border-l-2 border-brand bg-brand-soft/25 px-2.5 py-2">
-          <div className="text-[10px] uppercase tracking-wide text-muted">Neu seit dem letzten Kontakt</div>
+          <div className="text-[10px] uppercase tracking-wide text-muted">{newSinceLastContact}</div>
           <ul className="mt-0.5 space-y-0.5 text-xs leading-snug">{card.changes.map((c) => <li key={c}>{c}</li>)}</ul>
         </div>
       )}
@@ -52,13 +60,15 @@ export function Context({ card }: { card: CardOf<'context'> }) {
 const sideStyle = { Kauf: 'bg-brand text-white', Verkauf: 'bg-ink text-white', Absicherung: 'bg-teal/60 text-ink' }
 
 export function Proposal({ card }: { card: CardOf<'proposal'> }) {
+  const language = useLanguage()
+  const [wenigerAnzeigen, mehrAnzeigen, wirkung] = useTranslated(['Weniger anzeigen', 'Mehr anzeigen', 'Wirkung'], language)
   // Im schmalen Berater-Chat-Layout ist die Zusammenfassung eingeklappt; ein Klick zeigt sie und bleibt an, bis erneut geklickt wird.
   const [expanded, setExpanded] = useState(false)
   return (
     <Panel title={card.title} icon={FileText} aside={
       <span className="flex items-center gap-1.5">
         <span title={[card.summary, card.open].filter(Boolean).join(' ')} className="rounded-sm bg-pill px-1.5 py-px text-[10px]">{card.status}</span>
-        <button onClick={() => setExpanded((e) => !e)} title={expanded ? 'Weniger anzeigen' : 'Mehr anzeigen'} className="hidden items-center rounded-sm p-0.5 text-muted hover:bg-pill hover:text-ink [.compact_&]:flex">
+        <button onClick={() => setExpanded((e) => !e)} title={expanded ? wenigerAnzeigen : mehrAnzeigen} className="hidden items-center rounded-sm p-0.5 text-muted hover:bg-pill hover:text-ink [.compact_&]:flex">
           <ChevronDown size={13} className={`transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />
         </button>
       </span>
@@ -73,7 +83,7 @@ export function Proposal({ card }: { card: CardOf<'proposal'> }) {
           </li>
         ))}
       </ul>
-      <div className="mt-3 text-[10px] uppercase tracking-wide text-muted">Wirkung</div>
+      <div className="mt-3 text-[10px] uppercase tracking-wide text-muted">{wirkung}</div>
       <ul className="mt-1 space-y-1 text-xs">
         {card.effects.map((e) => (
           <li key={e.label} className="flex items-center gap-2">

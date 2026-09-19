@@ -3,9 +3,11 @@ import type { Severity } from '../types'
 export type Detail = 'kurz' | 'standard' | 'detailliert'
 
 export type Provider = 'openai' | 'apertus'
+export type Language = 'de' | 'en'
 
 export type Settings = {
   provider: Provider
+  language: Language // display language; the engine still computes and grounds in German
   record: boolean
   detail: Detail
   autoModules: boolean

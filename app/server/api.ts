@@ -88,6 +88,20 @@ Antworte als ein einziges JSON-Objekt ohne weiteren Text: {"text": string}` },
   ]
 }
 
+// Translates already-generated, already-grounded German UI text for display. Translation only: the
+// engine and the model keep computing and phrasing in German (unchanged, still tested); this is a
+// display-time pass, so no number, name or date may move or change, only the language.
+function translatePrompt(p: { texts: string[]; language: string }): Message[] {
+  return [
+    { role: 'system', content: `Du übersetzt kurze Textstücke aus der Oberfläche eines Kundenberater-Werkzeugs ins ${p.language === 'en' ? 'Englische (British spelling)' : 'Deutsche'}.
+Übersetze NUR. Ändere keine Zahl, keinen Namen, kein Datum, keine Prozentangabe und keine Grössenordnung; übernimm sie unverändert. Erfinde nichts hinzu, lass nichts weg.
+Der Ton bleibt sachlich und knapp, wie im Original.
+"texts" ist ein Array; gib ein Array exakt derselben Länge und Reihenfolge zurück, ein übersetzter Eintrag pro Eingabe (leerer String bleibt leer).
+Antworte als ein einziges JSON-Objekt ohne weiteren Text: {"texts": string[]}` },
+    { role: 'user', content: JSON.stringify({ texts: p.texts }) },
+  ]
+}
+
 function chatPrompt(p: { context: unknown; modules: unknown; question: string; history: unknown; detail: string }): Message[] {
   return [
     { role: 'system', content: `${RULES}
@@ -266,6 +280,13 @@ export function api(env: Env): Plugin {
           if (req.url === '/api/chat') return send(res, 200, await chatWithData(p, provider, providerConfig(env, provider, false), chatPrompt(p), (m) => complete(env, provider, false, m)))
           if (req.url === '/api/chat/data') return send(res, 200, await askData(p))
           if (req.url === '/api/summary') return send(res, 200, await complete(env, provider, true, summaryPrompt(p)))
+          if (req.url === '/api/translate') {
+            if (!Array.isArray(p.texts) || !p.texts.length) return send(res, 200, { texts: [] })
+            if (p.language !== 'en') return send(res, 200, { texts: p.texts })
+            const out = await complete(env, provider, true, translatePrompt(p)) as { texts?: unknown }
+            const texts = Array.isArray(out.texts) && out.texts.length === p.texts.length ? out.texts : p.texts
+            return send(res, 200, { texts })
+          }
           if (req.url === '/api/demo-script') return send(res, 200, await complete(env, provider, false, demoScriptPrompt(p)))
           // The screen agent decides what the advisor sees mid-call: it may run on a stronger model than the other fast calls.
           if (req.url === '/api/agent') return send(res, 200, await complete(env, provider, true, agentPrompt(p), env.OPENAI_MODEL_AGENT))
