@@ -113,14 +113,27 @@ if (!(await waitFor(LOCAL))) {
 // 3. Tunnel
 const cloudflared = findCloudflared()
 if (!cloudflared) banner()
-else {
-  let url, shown = false
-  start('tunnel', cloudflared, ['tunnel', '--url', LOCAL], app, async (text) => {
+else openTunnel()
+
+// A quick tunnel can be dropped by Cloudflare (laptop slept, network changed). cloudflared then retries under
+// the old name forever ("Tunnel not found") and the printed link is dead. So: a new tunnel, a new link box.
+function openTunnel() {
+  let url, shown = false, lost = false
+  const child = start('tunnel', cloudflared, ['tunnel', '--url', LOCAL], app, async (text) => {
+    if (!lost && /Tunnel not found/.test(text)) {
+      lost = true
+      console.log('\n[tunnel] the link died (Cloudflare dropped the tunnel). Opening a new one: the links below will be NEW.\n')
+      children.splice(children.indexOf(child), 1)
+      if (win) spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
+      else child.kill()
+      if (!stopping) openTunnel()
+      return
+    }
     url ??= text.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/)?.[0]
-    if (!url || shown || !/Registered tunnel connection/.test(text)) return
+    if (!url || shown || lost || !/Registered tunnel connection/.test(text)) return
     shown = true
     console.log('[tunnel] connected, waiting until the link is known on the internet ...')
     if (!(await resolves(new URL(url).hostname))) console.log('[tunnel] the name is slow to appear: if the link fails, wait a minute and reload')
-    banner(url)
+    if (!lost) banner(url)
   }, / ERR | WRN /) // cloudflared is chatty: only its warnings and errors are shown
 }
