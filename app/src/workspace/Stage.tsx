@@ -109,18 +109,17 @@ export function Stage({ client, screen, plan, thinking, inCall, recording, lines
   const byId = useMemo(() => new Map(screen.tiles.map((t) => [t.id, t])), [screen.tiles])
   const chartById = useMemo(() => new Map(screen.charts.map((c) => [c.id, c])), [screen.charts])
   const ordered = plan.order.map((id) => byId.get(id)).filter((t): t is Tile => !!t)
-  // During a call the feed only grows: tiles already shown keep their place, and what the agent
-  // surfaces from the transcript is appended — unless it repeats a tile already in the feed.
-  // Before a call (and on a new client) the agent's order is shown as is.
-  const feed = useRef<{ ref: string; ids: string[] }>({ ref: client.ref, ids: [] })
-  if (!inCall || feed.current.ref !== client.ref) feed.current = { ref: client.ref, ids: inCall ? (ordered.length ? ordered : screen.tiles).map((t) => t.id) : [] }
-  else {
-    const shown = feed.current.ids.map((id) => byId.get(id)).filter((t): t is Tile => !!t)
-    const fresh = ordered.filter((t) => !shown.some((s) => s.id === t.id || sameTile(s, t)))
-    if (fresh.length) feed.current = { ref: client.ref, ids: [...feed.current.ids, ...fresh.map((t) => t.id)] }
-  }
+  // The feed only grows, before and during a call: a card already shown keeps its place, and whatever
+  // the agent or a later engine tier adds goes to the bottom — unless it repeats a card already there.
+  // Only switching to another client starts a fresh feed.
+  const source = ordered.length ? ordered : screen.tiles
+  const feed = useRef<{ ref: string; ids: string[] }>({ ref: '', ids: [] })
+  if (feed.current.ref !== client.ref) feed.current = { ref: client.ref, ids: [] }
+  const inFeed = feed.current.ids.map((id) => byId.get(id)).filter((t): t is Tile => !!t)
+  const fresh = source.filter((t) => !inFeed.some((s) => s.id === t.id || sameTile(s, t)))
+  if (fresh.length) feed.current = { ref: client.ref, ids: [...feed.current.ids, ...fresh.map((t) => t.id)] }
   const grown = feed.current.ids.map((id) => byId.get(id)).filter((t): t is Tile => !!t)
-  const tiles = inCall && grown.length ? grown : ordered.length ? ordered : screen.tiles
+  const tiles = grown.length ? grown : source
 
   // ---- tiles: focus by scrolling, dimming away from the middle, gliding when the order changes ----
   const box = useRef<HTMLDivElement>(null)
