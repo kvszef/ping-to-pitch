@@ -11,8 +11,9 @@ import type { ChatEntry, Detail, Hint, TranscriptLine } from './types'
 import { Bars, Spark, WidgetRail, type Widget } from './Widgets'
 
 // The conversation workspace as one window, 2:1.
-//   left   the 60-second brief as tiles (scrolls; the tile in the middle is in focus), and under it
-//          the dock: three talking points and, during a call, the live answer and transcript
+//   left   the 60-second brief as tiles (scrolls; the tile in the middle is in focus), and during a
+//          call the dock underneath: three talking points, the live answer and the transcript. Before
+//          a call the brief's own "Einstieg" line already covers the opener, so the dock stays hidden.
 //   right  the graphs the agent picked plus the advisor's pins, and under them the chat, collapsed
 //          to one line, growing upward over the graphs when needed
 // The agent's plan decides order, focus, graphs and talking points; this component only shows it,
@@ -235,9 +236,10 @@ export function Stage({ client, screen, plan, thinking, said, onUse, inCall, rec
   )
 }
 
-// The dark dock under the tiles: three talking points side by side. Saying one (the transcript
-// matches it) or clicking it marks it and asks the agent for the next step. During a call the answer
-// to the client's last concern and the latest transcript line sit with it. Labels live in the borders.
+// The dark dock under the tiles, live calls only: three talking points side by side. Saying one (the
+// transcript matches it) or clicking it marks it and asks the agent for the next step. The answer to
+// the client's last concern and the latest transcript line sit with it. Labels live in the borders.
+// Hidden before a call starts: the brief's own "Einstieg" line is the opener, these chips would repeat it.
 function Dock({ plan, said, onUse, inCall, recording, lines, pending, note, name }: {
   plan: Plan; said: string[]; onUse: (s: Suggestion) => void; inCall: boolean; recording: boolean; lines: TranscriptLine[]; pending: string[]; note: string | null; name: string
 }) {
@@ -250,14 +252,18 @@ function Dock({ plan, said, onUse, inCall, recording, lines, pending, note, name
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLElement && e.target.closest('input, textarea')) return
+      if (!inCall) return
       const s = plan.suggestions[Number(e.key) - 1]
       if (s) onUse(s)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [plan.suggestions, onUse])
+  }, [plan.suggestions, onUse, inCall])
   const answer = usePaced(plan.answer, 6000)
   const clock = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
+  // Before a call starts, the talk track's own "Einstieg" line already covers the opener; the three
+  // talking-point chips only earn their place once there's a live conversation to react to.
+  if (!inCall) return null
 
   return (
     <div data-dock className={`relative mt-2 ${GLASS}`}>
