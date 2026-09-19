@@ -1,8 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { Segment } from '../workspace/brain'
 import { audioContext, onCaption } from './deskLine'
-
-const CHUNK_MS = 4000
+import { inOrder, recordUtterances } from './utterances'
 
 type Recognition = { lang: string; continuous: boolean; interimResults: boolean; start: () => void; stop: () => void; onresult: ((e: { resultIndex: number; results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void) | null; onend: (() => void) | null }
 const BrowserRecognition = ((window as unknown as Record<string, unknown>).SpeechRecognition ?? (window as unknown as Record<string, unknown>).webkitSpeechRecognition) as (new () => Recognition) | undefined
@@ -42,59 +41,17 @@ export function usePhoneAudio(
       return () => { stopped = true; off(); rec?.stop() }
     }
 
-    const timers: ReturnType<typeof setTimeout>[] = []
-    const recorders: MediaRecorder[] = []
-    // Chrome refuses to record a remote WebRTC stream directly (MediaRecorder.start throws), so both
-    // sides are routed through Web Audio and the recorder takes the resulting local stream.
-    const audio = audioContext() ?? new AudioContext()
-    void audio.resume()
-    console.info('[call] audio context', audio.state)
-    const recordable = (stream: MediaStream) => {
-      const out = audio.createMediaStreamDestination()
-      audio.createMediaStreamSource(stream).connect(out)
-      return out.stream
-    }
-    const record = (stream: MediaStream, speaker: Speaker) => {
-      if (stopped || !stream.getAudioTracks().length) return
-      // Every chunk is a complete file of its own, hence a new recorder per chunk.
-      const current = new MediaRecorder(stream)
-      recorders.push(current)
-      const parts: Blob[] = []
-      current.ondataavailable = (e) => { if (e.data.size) parts.push(e.data) }
-      current.onstop = async () => {
-        recorders.splice(recorders.indexOf(current), 1)
-        record(stream, speaker)
-        const blob = new Blob(parts, { type: current.mimeType })
-        console.info('[call] chunk', speaker, blob.size, blob.type)
-        if (blob.size < 4000) return
-        try {
-          const r = await fetch('/api/transcribe', { method: 'POST', headers: { 'Content-Type': blob.type || 'audio/webm' }, body: blob })
-          const data = await r.json()
-          if (!r.ok) throw new Error(data.error)
-          const text = ((data.segments ?? []) as Segment[]).map((s) => s.text.trim()).filter(Boolean).join(' ')
-          console.info('[call] text', speaker, text)
-          emit(speaker, text)
-        } catch (e) {
-          if (!stopped) handlers.current.onError?.(e instanceof Error ? e.message : String(e))
-        }
-      }
-      try { current.start() } catch (e) {
-        recorders.splice(recorders.indexOf(current), 1)
-        if (!stopped) handlers.current.onError?.(`Aufnahme (${speaker}) nicht möglich: ${e instanceof Error ? e.message : String(e)}`)
-        return
-      }
-      timers.push(setTimeout(() => current.state === 'recording' && current.stop(), CHUNK_MS))
-    }
     // The client's words come from the phone itself (it transcribes its own voice and sends captions),
-    // so they arrive even when the network blocks the direct audio link. The laptop records the advisor.
+    // so they arrive even when the network blocks the direct audio link. The laptop records the advisor,
+    // cut at speech pauses so no sentence is split (utterances.ts).
     const off = onCaption((text) => emit('Kunde', text))
-    record(recordable(call.local), 'Berater')
+    const send = inOrder((text) => { console.info('[call] text Berater', text); emit('Berater', text) }, (e) => { if (!stopped) handlers.current.onError?.(e instanceof Error ? e.message : String(e)) })
+    const stop = recordUtterances(call.local, send, { audio: audioContext(), onLog: (t) => console.info('[call]', t) })
 
     return () => {
       stopped = true
       off()
-      timers.forEach(clearTimeout)
-      recorders.forEach((r) => { if (r.state === 'recording') r.stop() })
+      stop()
     }
   }, [call, active, transcribe])
 }

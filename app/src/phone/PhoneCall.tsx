@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Mic, MicOff, Phone, PhoneOff, UserRound } from 'lucide-react'
 import { ICE, gathered, listenCall, sendCall, type CallMessage } from './protocol.ts'
 import { startRingback, startRingtone, unlockTones } from './tones.ts'
+import { inOrder, recordUtterances } from './utterances.ts'
 
 // The client's side of the internet call: pick a client, call the advisor's desk, talk over WebRTC.
 // The advisor can also call: a 'dial' makes this page ring ('incoming'); picking up runs the same
@@ -173,40 +174,17 @@ export default function PhoneCall() {
     return () => { active = false; document.removeEventListener('visibilitychange', take); void lock?.release().catch(() => {}) }
   }, [phase])
 
-  // The phone transcribes its own voice: 4 s chunks go through the tunnel to /api/transcribe and the
+  // The phone transcribes its own voice: utterances cut at speech pauses go through the tunnel to /api/transcribe and the
   // text reaches the desk as a caption. This works even when the network blocks the direct audio link.
   useEffect(() => {
     if (phase !== 'connected') return
     log(`recorder check: transcribe=${transcribe} stream=${!!streamRef.current} MediaRecorder=${typeof MediaRecorder !== 'undefined'}`)
     if (transcribe !== true || !streamRef.current || typeof MediaRecorder === 'undefined') return
-    const stream = streamRef.current
-    let stopped = false
-    let timer = 0
-    let recorder: MediaRecorder | null = null
-    const record = () => {
-      if (stopped) return
-      const current = new MediaRecorder(stream)
-      recorder = current
-      const parts: Blob[] = []
-      current.ondataavailable = (e) => { if (e.data.size) parts.push(e.data) }
-      current.onstop = async () => {
-        record()
-        const blob = new Blob(parts, { type: current.mimeType })
-        log(`chunk ${blob.size} bytes ${blob.type}`)
-        if (blob.size < 4000) return
-        try {
-          const r = await fetch('/api/transcribe', { method: 'POST', headers: { 'Content-Type': blob.type || 'audio/webm' }, body: blob })
-          const data = (await r.json()) as { segments?: { text: string }[] }
-          const text = (data.segments ?? []).map((s) => s.text.trim()).filter(Boolean).join(' ')
-          log(`transcribed ${r.status}: "${text.slice(0, 60)}"`)
-          if (text) void sendCall('desk', { type: 'caption', speaker: 'Kunde', text }).catch(() => {})
-        } catch (e) { log(`transcribe failed ${e}`) }
-      }
-      try { current.start() } catch (e) { log(`recorder start failed ${e}`); return }
-      timer = window.setTimeout(() => current.state === 'recording' && current.stop(), 4000)
-    }
-    record()
-    return () => { stopped = true; clearTimeout(timer); if (recorder?.state === 'recording') recorder.stop() }
+    const send = inOrder((text) => {
+      log(`transcribed: "${text.slice(0, 60)}"`)
+      void sendCall('desk', { type: 'caption', speaker: 'Kunde', text }).catch(() => {})
+    }, (e) => log(`transcribe failed ${e}`))
+    return recordUtterances(streamRef.current, (audio) => { log(`utterance ${audio.size} bytes`); send(audio) }, { onLog: log })
   }, [phase, transcribe, log])
 
   // Fallback captions from the phone's own speech recognition when the server cannot transcribe.
