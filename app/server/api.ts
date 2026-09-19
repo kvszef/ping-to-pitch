@@ -125,8 +125,25 @@ async function caseClients(): Promise<unknown[]> {
 
 type Word = { text: string; type?: string; speaker_id?: string }
 
+// Without an ElevenLabs key the OpenAI key transcribes. It has no speaker separation, so the whole
+// chunk comes back as one speaker and the screen agent assigns Kunde/Berater from the content.
+async function transcribeOpenAI(env: Env, audio: Buffer, contentType: string) {
+  const form = new FormData()
+  form.append('model', env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-transcribe')
+  form.append('language', 'de')
+  form.append('prompt', 'Telefongespräch zwischen einem Kundenberater einer Schweizer Bank und seinem Kunden über das Portfolio.')
+  form.append('file', new Blob([new Uint8Array(audio)], { type: contentType }), 'abschnitt.webm')
+  const r = await fetch(`${env.OPENAI_BASE_URL || 'https://api.openai.com/v1'}/audio/transcriptions`, { method: 'POST', headers: { Authorization: `Bearer ${env.OPENAI_API_KEY}` }, body: form })
+  if (!r.ok) throw new Error(`OpenAI-Transkription ${r.status}: ${(await r.text()).slice(0, 300)}`)
+  const text = ((await r.json()) as { text?: string }).text?.trim() ?? ''
+  return text ? [{ speaker: 'speaker_0', text }] : []
+}
+
 async function transcribe(env: Env, audio: Buffer, contentType: string) {
-  if (!env.ELEVENLABS_API_KEY) throw new Error('ElevenLabs ist nicht konfiguriert')
+  if (!env.ELEVENLABS_API_KEY) {
+    if (env.OPENAI_API_KEY) return transcribeOpenAI(env, audio, contentType)
+    throw new Error('Keine Transkription konfiguriert (ElevenLabs oder OpenAI)')
+  }
   const form = new FormData()
   form.append('model_id', env.ELEVENLABS_STT_MODEL || 'scribe_v1')
   form.append('language_code', 'deu')
@@ -153,7 +170,7 @@ export function api(env: Env): Plugin {
       server.middlewares.use(async (req, res, next) => {
         if (!req.url?.startsWith('/api/')) return next()
         try {
-          if (req.url === '/api/status') return send(res, 200, { openai: ready(env, 'openai'), apertus: ready(env, 'apertus'), elevenlabs: !!env.ELEVENLABS_API_KEY })
+          if (req.url === '/api/status') return send(res, 200, { openai: ready(env, 'openai'), apertus: ready(env, 'apertus'), elevenlabs: !!env.ELEVENLABS_API_KEY, transcribe: !!env.ELEVENLABS_API_KEY || !!env.OPENAI_API_KEY })
           if (req.url === '/api/clients' && req.method === 'GET') return send(res, 200, await caseClients())
           const llm = { complete: (p: Provider, m: Message[]) => complete(env, p, true, m), ready: (p: Provider) => ready(env, p) }
           if (req.url.startsWith('/api/briefing60')) {
