@@ -22,7 +22,7 @@ const BUDGET = 60
 // One frosted-glass look for the four parts of the page.
 export const GLASS = 'rounded-2xl bg-white/55 shadow-[0_8px_32px_rgba(31,56,88,0.10)] ring-1 ring-white/70 backdrop-blur-xl'
 
-function TileBody({ tile, text, clientRef, chart }: { tile: Tile; text?: string; clientRef: string; chart?: Screen['charts'][number] }) {
+function TileBody({ tile, text, clientRef, chart, fresh }: { tile: Tile; text?: string; clientRef: string; chart?: Screen['charts'][number]; fresh?: Set<string> }) {
   if (tile.item) return (
     <div className="flex items-center gap-4">
       <p className="min-w-0 flex-1 text-[16px] leading-snug">
@@ -33,14 +33,21 @@ function TileBody({ tile, text, clientRef, chart }: { tile: Tile; text?: string;
     </div>
   )
   if (tile.news) return (
-    <ul className="space-y-1.5">
-      {tile.news.map((n) => (
-        <li key={n.id} className="flex items-baseline gap-2.5 text-[14px] leading-snug">
-          <span className="shrink-0 text-[11px] tabular-nums text-muted">{n.time}</span>
-          <span className="min-w-0 flex-1">{n.title}</span>
-          <span className="shrink-0 rounded-full bg-pill px-2 py-px text-[11px]">{n.affects[clientRef].tag}</span>
-        </li>
-      ))}
+    <ul className="divide-y divide-black/5">
+      {tile.news.map((n) => {
+        const hit = n.affects[clientRef]
+        return (
+          <li key={n.id} className={`${fresh?.has(n.id) ? 'news-in' : ''} flex items-start gap-3 py-2 first:pt-0 last:pb-0`}>
+            <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${hit.severity === 'risk' ? 'bg-risk' : hit.severity === 'warn' ? 'bg-warn' : hit.severity === 'ok' ? 'bg-ok' : 'bg-brand'}`} />
+            <div className="min-w-0 flex-1">
+              <a href={(n as { url?: string }).url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="block text-[14px] leading-snug hover:text-brand-dark">{n.title}</a>
+              <p className="mt-0.5 text-[12px] leading-snug text-ink/70">{hit.meaning}</p>
+              <p className="mt-0.5 text-[10px] text-muted">{n.source} · {n.time}</p>
+            </div>
+            <span className="shrink-0 rounded-full bg-pill px-2 py-0.5 text-[11px] tabular-nums">{hit.tag}</span>
+          </li>
+        )
+      })}
     </ul>
   )
   if (tile.card?.type === 'proposal') return (
@@ -91,9 +98,9 @@ function Profile({ client, compact = false }: { client: Client; compact?: boolea
   )
 }
 
-export function Stage({ client, screen, plan, thinking, said, onUse, inCall, recording, lines, pending, note, hints, lead, actions, chat, busy, detail, chatSuggestions, onAsk, onShowChart }: {
+export function Stage({ client, screen, plan, thinking, said, onUse, inCall, recording, lines, pending, note, hints, freshNews, lead, actions, chat, busy, detail, chatSuggestions, onAsk, onShowChart }: {
   client: Client; screen: Screen; plan: Plan; thinking: boolean; said: string[]; onUse: (s: Suggestion) => void
-  inCall: boolean; recording: boolean; lines: TranscriptLine[]; pending: string[]; note: string | null; hints: Hint[]
+  inCall: boolean; recording: boolean; lines: TranscriptLine[]; pending: string[]; note: string | null; hints: Hint[]; freshNews: Set<string>
   lead: ReactNode; actions: ReactNode
   chat: ChatEntry[]; busy: boolean; detail: Detail; chatSuggestions: string[]; onAsk: (text: string) => void; onShowChart: (id: string) => void
 }) {
@@ -198,13 +205,14 @@ export function Stage({ client, screen, plan, thinking, said, onUse, inCall, rec
                 <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-muted">
                   {t.severity && <SeverityIcon severity={t.severity} size={11} />}
                   <span>{t.group}</span>
+                  {t.news && <span className="flex items-center gap-1 rounded-full bg-risk/10 px-1.5 text-[10px] uppercase tracking-wide text-risk"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-risk" /> Live</span>}
                   {flash === t.id && <span className="flex items-center gap-1 text-brand"><Sparkles size={11} /> Im Gespräch</span>}
                   <button onClick={(e) => { e.stopPropagation(); togglePin(`tile:${t.id}`) }} aria-label={pinnedTile(t.id) ? 'Lösen' : 'Anheften'} title={pinnedTile(t.id) ? 'Lösen' : 'Rechts anheften'}
                     className={`ml-auto flex h-6 w-6 items-center justify-center rounded-full transition-opacity hover:bg-pill hover:text-ink focus-visible:opacity-100 ${pinnedTile(t.id) ? 'text-brand opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                     <Pin size={12} className={pinnedTile(t.id) ? 'fill-current' : ''} />
                   </button>
                 </div>
-                <TileBody tile={t} text={plan.texts[t.id]} clientRef={client.ref} chart={t.chart ? chartById.get(t.chart) : undefined} />
+                <TileBody tile={t} text={plan.texts[t.id]} clientRef={client.ref} chart={t.chart ? chartById.get(t.chart) : undefined} fresh={freshNews} />
                 {t.item && <p className="mt-1.5 text-[10px] text-muted">{t.item.source}</p>}
               </article>
             ))}

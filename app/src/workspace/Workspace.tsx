@@ -1,6 +1,7 @@
 import { Mic, MicOff, PanelLeftClose, Phone, PhoneCall, PhoneOff, Settings as SettingsIcon, Users } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useBriefing } from '../data/useBriefing'
+import { useNews } from '../data/useNews'
 import * as deskLine from '../phone/deskLine'
 import { usePhoneAudio } from '../phone/usePhoneAudio'
 import { demoCalls, lineDelay } from '../data/demoCalls'
@@ -46,6 +47,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
   const [chat, setChat] = useState<ChatEntry[]>([])
   const [busy, setBusy] = useState(false)
   const [demoMenu, setDemoMenu] = useState(false)
+  const [identifying, setIdentifying] = useState(!!initialCall && !initialRef)
 
   // The client, enriched with the engine's briefing once the server answered.
   const listed = clients.find((c) => c.ref === ref) ?? clients[0]
@@ -54,7 +56,9 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
     ? { ...listed, briefing: engine.cards.length ? engine.cards : listed.briefing, findings: engine.findings.length ? engine.findings : undefined }
     : listed), [listed, engine.cards, engine.findings])
   // The elements the agent can show for this client, and its current plan.
-  const screen = useMemo(() => screenFor(client), [client])
+  // Live news on the client's holdings (polled); the tiles and the agent see it.
+  const news = useNews(identifying ? null : client.ref)
+  const screen = useMemo(() => screenFor(client, news.items), [client, news.items])
   const [plan, setPlan] = useState<Plan>(() => localPlan(screen.tiles, []))
   const [said, setSaid] = useState<string[]>([])
   const [thinking, setThinking] = useState(false)
@@ -121,7 +125,6 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
   }
 
   // Who is calling: until a name is heard, an unknown caller; then the client opens and the call goes on.
-  const [identifying, setIdentifying] = useState(!!initialCall && !initialRef)
   const keepCall = useRef(false)
   const hear = (segments: Segment[]) => {
     const known = segments.filter((s) => s.speaker === 'Kunde' || s.speaker === 'Berater')
@@ -280,7 +283,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
             </div>
           ) : (
           <Stage client={client} screen={screen} plan={plan} thinking={thinking} said={said} onUse={use} inCall={inCall} recording={settings.record}
-            lines={lines} pending={pending} note={note} hints={hints}
+            lines={lines} pending={pending} note={note} freshNews={news.fresh} hints={hints}
             lead={
               <div className="flex min-w-0 shrink-0 items-baseline gap-2">
                 <span className="truncate text-[15px]">{client.name}</span>

@@ -1,4 +1,4 @@
-import { AlertTriangle, Plus, Search, XCircle } from 'lucide-react'
+import { AlertTriangle, Phone, Plus, Search, XCircle } from 'lucide-react'
 import { useState } from 'react'
 import type { Client } from '../types'
 import { SeverityIcon } from '../cards/ui'
@@ -13,7 +13,8 @@ export function Dashboard({ clients, onUploaded }: { clients: Client[]; onUpload
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(0)
   const q = query.trim().toLowerCase()
-  const found = q ? clients.filter((c) => c.name.toLowerCase().includes(q) || c.ref.toLowerCase().includes(q)) : clients
+  // Nothing pre-loaded: like an inbound call, the advisor only sees a client once they search for the name.
+  const found = q ? clients.filter((c) => c.name.toLowerCase().includes(q) || c.ref.toLowerCase().includes(q)) : []
   const pages = Math.max(1, Math.ceil(found.length / PAGE_SIZE))
   const current = Math.min(page, pages - 1)
   const rows = found.slice(current * PAGE_SIZE, (current + 1) * PAGE_SIZE)
@@ -43,9 +44,9 @@ export function Dashboard({ clients, onUploaded }: { clients: Client[]; onUpload
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <ClientUpload variant="box" onLoaded={() => { setQuery(''); setPage(0); onUploaded() }} />
-              <label className="flex shrink-0 items-center border border-line text-xs">
+              <label className="flex shrink-0 items-center border border-line text-xs focus-within:border-brand">
                 <span className="border-r border-line p-1.5"><Search size={12} /></span>
-                <input value={query} onChange={(e) => { setQuery(e.target.value); setPage(0) }} placeholder="Suche" aria-label="Kunden suchen" className="w-28 px-2 outline-none" />
+                <input autoFocus value={query} onChange={(e) => { setQuery(e.target.value); setPage(0) }} placeholder="Name oder KundenNr. …" aria-label="Kunden suchen" className="w-48 px-2 py-1 outline-none" />
               </label>
             </div>
           </div>
@@ -72,18 +73,31 @@ export function Dashboard({ clients, onUploaded }: { clients: Client[]; onUpload
                   <td className="pr-3 text-right">{c.lastConsultation}</td>
                 </tr>
               ))}
-              {rows.length === 0 && <tr><td colSpan={9} className="py-6 text-center text-muted">Keine Kunden gefunden für «{query.trim()}».</td></tr>}
+              {rows.length === 0 && (
+                <tr><td colSpan={9} className="py-10 text-center text-muted">
+                  {q ? (
+                    <>Keine Kunden gefunden für «{query.trim()}».</>
+                  ) : (
+                    <div className="flex flex-col items-center gap-2">
+                      <Phone size={18} className="text-muted/60" />
+                      <span>Kunde am Telefon? Namen oder KundenNr. oben eingeben, um die Akte zu öffnen.</span>
+                    </div>
+                  )}
+                </td></tr>
+              )}
             </tbody>
           </table>
 
-          <div className="mt-5 flex items-center justify-center gap-3 text-xs text-muted">
-            <button type="button" disabled={current === 0} onClick={() => setPage(current - 1)} className="enabled:hover:text-brand disabled:cursor-default disabled:opacity-50">« Vorherige</button>
-            {Array.from({ length: pages }, (_, i) => (
-              <button type="button" key={i} onClick={() => setPage(i)} aria-current={i === current ? 'page' : undefined} className={`rounded-sm px-2 py-0.5 ${i === current ? 'bg-brand text-white' : 'hover:bg-pill'}`}>{i + 1}</button>
-            ))}
-            <button type="button" disabled={current >= pages - 1} onClick={() => setPage(current + 1)} className="enabled:hover:text-brand disabled:cursor-default disabled:opacity-50">Nächste »</button>
-            <span className="ml-2 tabular-nums">{found.length} {found.length === 1 ? 'Kunde' : 'Kunden'}</span>
-          </div>
+          {q && (
+            <div className="mt-5 flex items-center justify-center gap-3 text-xs text-muted">
+              <button type="button" disabled={current === 0} onClick={() => setPage(current - 1)} className="enabled:hover:text-brand disabled:cursor-default disabled:opacity-50">« Vorherige</button>
+              {Array.from({ length: pages }, (_, i) => (
+                <button type="button" key={i} onClick={() => setPage(i)} aria-current={i === current ? 'page' : undefined} className={`rounded-sm px-2 py-0.5 ${i === current ? 'bg-brand text-white' : 'hover:bg-pill'}`}>{i + 1}</button>
+              ))}
+              <button type="button" disabled={current >= pages - 1} onClick={() => setPage(current + 1)} className="enabled:hover:text-brand disabled:cursor-default disabled:opacity-50">Nächste »</button>
+              <span className="ml-2 tabular-nums">{found.length} {found.length === 1 ? 'Kunde' : 'Kunden'}</span>
+            </div>
+          )}
         </section>
       </main>
     </>

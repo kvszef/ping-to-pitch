@@ -11,10 +11,19 @@ type State = { ref: string | null; items: NewsAgentItem[]; fetchedAt: string | n
 // What makes two refreshes "the same" for consumers: ids in order plus the model's annotations.
 const signature = (items: NewsAgentItem[]) => items.map((i) => `${i.id}|${i.tone ?? ''}|${i.why ?? ''}`).join('\n')
 
+// Two sources, one list: the news agent (Yahoo Finance, Bing) and the engine's matched news (N1,
+// /api/news/:ref). Same headline twice is kept once; newest first.
+const key = (title: string) => title.toLowerCase().replace(/[^a-z0-9äöü]+/g, ' ').trim().slice(0, 48)
 async function loadNews(ref: string, signal: AbortSignal): Promise<NewsAgentResult> {
-  const r = await fetch(`/api/news-agent?ref=${encodeURIComponent(ref)}`, { signal })
-  if (!r.ok && r.status !== 400) throw new Error(`news-agent ${r.status}`)
-  return r.json() as Promise<NewsAgentResult>
+  const get = async (url: string) => {
+    try { const r = await fetch(url, { signal }); return r.ok ? (await r.json()) as Partial<NewsAgentResult> : {} } catch { return {} }
+  }
+  const [agent, engine] = await Promise.all([get(`/api/news-agent?ref=${encodeURIComponent(ref)}`), get(`/api/news/${encodeURIComponent(ref)}`)])
+  const seen = new Set<string>()
+  const items = [...(engine.items ?? []), ...(agent.items ?? [])].filter((i) => i?.affects?.[ref] && !seen.has(key(i.title)) && seen.add(key(i.title)))
+    .sort((a, b) => (b.published ?? '').localeCompare(a.published ?? ''))
+  if (!items.length && !agent.items && !engine.items) throw new Error('news: no source answered')
+  return { items, fetchedAt: agent.fetchedAt ?? engine.fetchedAt ?? new Date().toISOString() }
 }
 
 /**

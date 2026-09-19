@@ -33,6 +33,9 @@ export const CATALOGUE = {
   antwort: 'Nur wenn der Kunde in NEUE ABSCHNITTE ein Anliegen äussert: {"heard": seine Aussage, "text": Stichpunkt für die Antwort, höchstens 12 Wörter}.',
 }
 
+const severityRank: Record<Severity, number> = { risk: 0, warn: 1, ok: 2, info: 3 }
+const rankOf = (n: NewsItem, ref: string) => severityRank[n.affects[ref].severity]
+
 const tokens = (text: string) => text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 3).map((w) => w.slice(0, 6))
 const pct = (v: number) => Math.round(v * 1000) / 10
 
@@ -63,8 +66,18 @@ export function chartsFor(client: Client, topicCharts: { id: string; spec: Modul
 
 // ---- tiles: the brief items, today's news and the proposal ----
 
-export function tilesFor(client: Client, charts: Chart[]): Tile[] {
+export function tilesFor(client: Client, charts: Chart[], news: NewsItem[] = []): Tile[] {
   const tiles: Tile[] = briefFor(client).map((item) => ({ id: item.id, group: item.group, topics: item.topics ?? [], words: `${item.figure ?? ''} ${item.text}`, seconds: readSeconds(item), severity: item.severity, item }))
+  // Live news on this client's holdings: one tile, the three most important, right after the reason for the call.
+  // One item per holding first, so the tile covers the portfolio rather than one story three times.
+  const sorted = news.filter((n) => n.affects[client.ref]).sort((a, b) => rankOf(a, client.ref) - rankOf(b, client.ref))
+  const holding = (n: NewsItem) => n.affects[client.ref].tag.replace(/\s*[\d.,]+%$/, '')
+  const firsts = sorted.filter((n, i) => sorted.findIndex((m) => holding(m) === holding(n)) === i)
+  const relevant = [...firsts, ...sorted.filter((n) => !firsts.includes(n))].slice(0, 3)
+  if (relevant.length) {
+    const at = tiles.findIndex((t) => t.group !== 'Anlass')
+    tiles.splice(at < 0 ? tiles.length : at, 0, { id: 'news', group: 'Markt heute', topics: ['news', 'markt'], words: relevant.map((n) => `${n.title} ${n.affects[client.ref].meaning} ${n.affects[client.ref].tag}`).join(' '), seconds: relevant.length * 3, severity: relevant[0].affects[client.ref].severity, news: relevant })
+  }
   const proposal = client.briefing.find((c) => c.type === 'proposal')
   if (proposal?.type === 'proposal') tiles.push({ id: 'proposal', group: 'Anlagevorschlag', topics: [], words: `${proposal.summary} ${proposal.trades.map((t) => t.name).join(' ')}`, seconds: 6, card: proposal })
   for (const t of tiles) {
@@ -75,7 +88,7 @@ export function tilesFor(client: Client, charts: Chart[]): Tile[] {
 }
 
 // What the agent sees of the elements: ids, labels and the text with its figures.
-export const describeTiles = (tiles: Tile[]) => tiles.map((t) => ({ id: t.id, gruppe: t.group, kennzahl: t.item?.figure, text: t.item?.text ?? (t.news ? t.news.map((n) => n.title).join(' / ') : t.card?.type === 'proposal' ? t.card.summary : t.group), quelle: t.item?.source }))
+export const describeTiles = (tiles: Tile[]) => tiles.map((t) => ({ id: t.id, gruppe: t.group, kennzahl: t.item?.figure, text: t.item?.text ?? (t.news ? t.news.map((n) => `${n.title} (${Object.values(n.affects)[0]?.tag ?? ''}: ${Object.values(n.affects)[0]?.meaning ?? ''})`).join(' / ') : t.card?.type === 'proposal' ? t.card.summary : t.group), quelle: t.item?.source ?? (t.news ? t.news.map((n) => n.source).join(', ') : undefined) }))
 export const describeCharts = (charts: Chart[]) => charts.map((c) => ({ id: c.id, titel: c.title, zeigt: c.spec.type === 'balken' ? c.spec.bars.map((b) => `${b.label} ${b.value}${c.spec.type === 'balken' ? c.spec.unit : ''}`).join(', ') : c.note }))
 
 // ---- matching and the local plan (no model, or the model failed) ----
