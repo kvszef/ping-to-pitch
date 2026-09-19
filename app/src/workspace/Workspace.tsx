@@ -315,7 +315,11 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
   // calls. A call going out or coming in picks the view; outside a call, clients on today's list open
   // with the plan. The advisor's own switch wins until the next call goes out.
   const today = useMemo(() => new Set(ranking.slice(0, TODAY).filter((r) => r.reasons.length).map((r) => r.ref)), [ranking])
-  const mode: CallMode = picked?.ref === client.ref ? picked.mode : inCall && direction ? (direction === 'out' ? 'prep' : 'inbound') : today.has(client.ref) ? 'prep' : 'inbound'
+  // The view is decided once, when the client is opened: a ranking that arrives late or refreshes
+  // (every two minutes) must not swap the whole panel under the advisor's eyes. The switch still works.
+  const openedAs = useRef<{ ref: string; mode: CallMode }>({ ref: '', mode: 'inbound' })
+  if (openedAs.current.ref !== client.ref) openedAs.current = { ref: client.ref, mode: today.has(client.ref) ? 'prep' : 'inbound' }
+  const mode: CallMode = picked?.ref === client.ref ? picked.mode : inCall && direction ? (direction === 'out' ? 'prep' : 'inbound') : openedAs.current.mode
   const reasonsToCall = rankOf.get(client.ref)?.reasons ?? NO_REASONS
   const callPlan = useCallPlan(mode === 'prep' && !identifying ? client.ref : null, reasonsToCall, activeProvider(settings, status), settings.language)
   const callStatus = settings.language === 'en' ? ['Connecting …', 'Ringing …', 'On call'] : ['Verbindet …', 'Klingelt …', 'Gespräch']
@@ -435,6 +439,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
           ) : (
           <Stage client={client} screen={screen} plan={plan} brought={brought} thinking={thinking} inCall={inCall} recording={settings.record}
             lines={lines} pending={pending} note={note} freshNews={news.fresh} hints={hints}
+            loading={engine.pending.length > 0 || (mode === 'prep' && callPlan.writing)}
             prep={mode === 'prep' ? <CallPrep plan={callPlan.plan} writing={callPlan.writing} language={settings.language} /> : undefined}
             lead={
               <div className="flex min-w-0 shrink-0 items-baseline gap-2">

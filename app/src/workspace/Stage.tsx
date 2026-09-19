@@ -83,7 +83,7 @@ function TileBody({ tile, text, clientRef, chart, fresh, language, onReady }: { 
 
 // Who the client is, in a few facts: the first card of the scrolling brief, set apart from the tiles (the assets
 // as a big figure, never dimmed), but not fixed, so the advisor can scroll past it to the brief.
-function Profile({ client, compact = false, language }: { client: Client; compact?: boolean; language: Language }) {
+function Profile({ client, compact = false, language, loading = false }: { client: Client; compact?: boolean; language: Language; loading?: boolean }) {
   const context = client.briefing.find((c) => c.type === 'context')
   const persona = client.briefing.find((c) => c.type === 'profile')
   const fact = (label: string) => context?.type === 'context' ? context.facts.find((f) => f.label === label)?.value : undefined
@@ -106,14 +106,16 @@ function Profile({ client, compact = false, language }: { client: Client; compac
             <div className={`${compact ? 'text-[20px]' : 'text-[28px]'} leading-tight tabular-nums text-brand-dark`}>{client.aum}</div>
           </div>
         )}
-        <dl className={`min-w-0 flex-1 ${compact ? 'flex flex-wrap gap-x-4 gap-y-0.5' : 'grid grid-cols-2 gap-x-5 gap-y-2 sm:grid-cols-4'}`}>
+        {/* Room for two rows of facts from the start: the later tiers add facts, and the brief below must not be pushed down. */}
+        <dl className={`min-w-0 flex-1 ${compact ? 'flex flex-wrap gap-x-4 gap-y-0.5' : 'grid min-h-[5rem] grid-cols-2 content-start gap-x-5 gap-y-2 sm:grid-cols-4'}`}>
           {facts.map(([label, value], i) => (
             <div key={label} className={compact ? 'flex min-w-0 items-baseline gap-1' : 'min-w-0'}><dt className="text-[10px] uppercase tracking-wide text-muted">{labels[i]}</dt><dd className="truncate text-[14px] text-ink" title={value}>{value}</dd></div>
           ))}
         </dl>
       </div>
-      {summary.text && (
-        <p className={`mt-3 border-t border-brand/15 pt-2 text-[14px] leading-snug ${summary.loading ? 'text-wait' : ''}`} title={[persona?.type === 'profile' ? persona.persona : '', reasons.join(' · '), ...notes.map((n) => n.text)].filter(Boolean).join(' — ')}>
+      {/* The summary has its three lines of room while the data is still arriving, so it never pushes the brief down when it comes. */}
+      {(summary.text || loading) && (
+        <p className={`mt-3 border-t border-brand/15 pt-2 line-clamp-3 min-h-[4.2rem] text-[14px] leading-snug ${summary.loading || !summary.text ? 'text-wait' : ''}`} title={[persona?.type === 'profile' ? persona.persona : '', reasons.join(' · '), ...notes.map((n) => n.text)].filter(Boolean).join(' — ')}>
           {summary.text}
         </p>
       )}
@@ -121,11 +123,12 @@ function Profile({ client, compact = false, language }: { client: Client; compac
   )
 }
 
-export function Stage({ client, screen, plan, brought, thinking, inCall, recording, lines, pending, note, hints, freshNews, lead, prep, actions, chat, busy, detail, chatSuggestions, onAsk, onShowChart, graphsOpen, onGraphs, graphWidth, onGraphWidth, language }: {
+export function Stage({ client, screen, plan, brought, thinking, inCall, recording, lines, pending, note, hints, freshNews, lead, prep, loading, actions, chat, busy, detail, chatSuggestions, onAsk, onShowChart, graphsOpen, onGraphs, graphWidth, onGraphWidth, language }: {
   client: Client; screen: Screen; plan: Plan; brought: Brought[]; thinking: boolean
   inCall: boolean; recording: boolean; lines: TranscriptLine[]; pending: string[]; note: string | null; hints: Hint[]; freshNews: Set<string>
   lead: ReactNode; actions: ReactNode
   prep?: ReactNode // outbound mode: the call plan (CallPrep.tsx), shown above the brief
+  loading?: boolean // the client's briefing tiers (and the call plan) are still arriving
   chat: ChatEntry[]; busy: boolean; detail: Detail; chatSuggestions: string[]; onAsk: (text: string) => void; onShowChart: (id: string) => void
   graphsOpen: boolean; onGraphs: (open: boolean) => void; graphWidth?: number; onGraphWidth: (width: number) => void; language: Language
 }) {
@@ -166,7 +169,18 @@ export function Stage({ client, screen, plan, brought, thinking, inCall, recordi
   // How far the advisor has scrolled through the brief, 0–1: drives the reading bar in the header.
   const [readShare, setReadShare] = useState(0)
   const feedKey = tiles.map((t) => t.id).join('|')
-  const reveal = useReveal(client.ref, tiles.map((t) => t.id))
+  // Preparing an outgoing call there is time: wait once until everything is there (tiers, call plan,
+  // the agent's first plan, translations), then show the whole brief at once. On an incoming call
+  // every second counts: tiles come in one below the other as soon as they are there (reveal.ts).
+  const together = !!prep
+  const reveal = useReveal(client.ref, tiles.map((t) => t.id), { together, hold: !!loading || (thinking && plan.by !== 'agent') })
+  const waitAll = together && !reveal.opened && !asText
+  // A tile keeps the text it was shown with: a later rewording would change its height and push
+  // everything below it around.
+  const shownText = useRef<{ ref: string; texts: Record<string, string | undefined> }>({ ref: '', texts: {} })
+  if (shownText.current.ref !== client.ref) shownText.current = { ref: client.ref, texts: {} }
+  tiles.forEach((t, i) => { if (i < reveal.shown && !(t.id in shownText.current.texts)) shownText.current.texts[t.id] = plan.texts[t.id] })
+  const textOf = (t: Tile, i: number) => (i < reveal.shown ? shownText.current.texts[t.id] : plan.texts[t.id])
   useFlip(box, feedKey)
   const paint = useCallback(() => {
     const el = box.current
@@ -195,9 +209,8 @@ export function Stage({ client, screen, plan, brought, thinking, inCall, recordi
     else el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     if (glow) { setFlash(id); setTimeout(() => setFlash((f) => (f === id ? null : f)), 2400) }
   }, [])
-  // The agent's focus, and a chat answer's topic, bring their tile to the middle. Not during a call:
-  // then the brief holds still and the tile shows up in the graph column instead.
-  useEffect(() => { if (plan.focus && !inCall) { const id = plan.focus; const t = setTimeout(() => focus(id, plan.by === 'agent'), 80); return () => clearTimeout(t) } }, [plan.focus, plan, inCall]) // eslint-disable-line react-hooks/exhaustive-deps
+  // The brief never scrolls on its own: not when the agent's plan names a focus, not while things
+  // load. Only the advisor moves it (scrolling, arrow keys, a click) or their own chat question below.
   const chatHint = hints.find((h) => h.origin === 'chat')
   useEffect(() => { if (chatHint) { const t = bestTile(screen.tiles, `${chatHint.label} ${chatHint.text}`, chatHint.topicId); if (t) focus(t.id, true) } }, [chatHint?.id]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -333,9 +346,12 @@ export function Stage({ client, screen, plan, brought, thinking, inCall, recordi
               className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${asText ? 'bg-brand text-white' : 'bg-pill hover:bg-track'}`}>{asText ? <LayoutList size={13} /> : <FileText size={13} />}</button>
             {actions}
           </div>
-          <div ref={box} onScroll={onScroll} className={`relative min-h-0 flex-1 overflow-y-auto px-3 [scrollbar-width:none] ${GLASS}`}>
+          <div ref={box} onScroll={onScroll} className={`relative min-h-0 flex-1 overflow-y-auto px-3 [overflow-anchor:none] [scrollbar-width:none] ${GLASS}`}>
             <div className="h-2" aria-hidden />
-            {!asText && <Profile client={client} compact={inCall || !!prep} language={language} />}
+            {waitAll && <PanelWait />}
+            {/* While waiting, the real content is mounted (so its texts load) but takes no room. */}
+            <div className={waitAll ? 'pointer-events-none invisible h-0 overflow-hidden' : together ? 'panel-in' : undefined}>
+            {!asText && <Profile client={client} compact={inCall || !!prep} language={language} loading={!!loading} />}
             {!asText && prep}
             {asText && <TextView digest={digest} asOf={client.facts?.asOf} language={language} />}
             {!asText && tiles.map((t, i) => (
@@ -352,10 +368,11 @@ export function Stage({ client, screen, plan, brought, thinking, inCall, recordi
                     <Pin size={12} className={pinnedTile(t.id) ? 'fill-current' : ''} />
                   </button>
                 </div>
-                <TileBody tile={t} text={plan.texts[t.id]} clientRef={client.ref} chart={t.chart ? chartById.get(t.chart) : undefined} fresh={freshNews} language={language} onReady={() => reveal.markReady(t.id)} />
+                <TileBody tile={t} text={textOf(t, i)} clientRef={client.ref} chart={t.chart ? chartById.get(t.chart) : undefined} fresh={freshNews} language={language} onReady={() => reveal.markReady(t.id)} />
                 {t.item && <p className="mt-1.5 text-[10px] text-muted">{sourceLabels[i] || t.item.source}</p>}
               </article>
             ))}
+            </div>
             <div className="h-[40%]" aria-hidden />
           </div>
           <Smooth className="shrink-0">
@@ -405,6 +422,11 @@ export function Stage({ client, screen, plan, brought, thinking, inCall, recordi
       </div>
     </div>
   )
+}
+
+// The whole brief as placeholders, while an outgoing call's preparation is still loading.
+function PanelWait() {
+  return <div aria-busy="true">{[128, 96, 84, 84, 84].map((h, i) => <div key={i} className="tile-wait mb-3 rounded-xl bg-white/85 shadow-card ring-1 ring-black/5" style={{ height: h }} />)}</div>
 }
 
 // The call card, live calls only: who is on the line, the answer to the client's last concern and,
