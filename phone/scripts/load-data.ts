@@ -28,11 +28,16 @@ const show = (p: string): string => {
 const DB_PATH = abs(process.env.UNRISK_DB || './data/unrisk.db')
 const SCHEMA_PATH = path.join(ROOT, 'toolbox', 'schema.sql')
 // Kommagetrennt, weil zum Fallbeispiel weitere Kundendateien gleicher Form nachgereicht werden.
-const CLIENTS_PATHS = (process.env.CLIENTS_JSON || '../core-case/portfolio-data/clients.json')
-  .split(',')
-  .map((p) => p.trim())
-  .filter(Boolean)
-  .map(abs)
+// Without CLIENTS_JSON: the case file plus every file dropped into new-clients/, in name order.
+// app/server/database.ts reads the same folder when the database is down.
+const NEW_CLIENTS_DIR = abs('../core-case/portfolio-data/new-clients')
+const newClientFiles = (): string[] =>
+  fs.existsSync(NEW_CLIENTS_DIR)
+    ? fs.readdirSync(NEW_CLIENTS_DIR).filter((f) => f.toLowerCase().endsWith('.json')).sort().map((f) => path.join(NEW_CLIENTS_DIR, f))
+    : []
+const CLIENTS_PATHS = process.env.CLIENTS_JSON
+  ? process.env.CLIENTS_JSON.split(',').map((p) => p.trim()).filter(Boolean).map(abs)
+  : [abs('../core-case/portfolio-data/clients.json'), ...newClientFiles()]
 const REFERENCE_PATH = abs(process.env.REFERENCE_JSON || '../core-case/portfolio-data/reference.json')
 const CALLERS_PATH = abs(process.env.CALLERS_JSON || './data/callers.json')
 
@@ -149,17 +154,28 @@ const clients: Client[] = []
 const seenRefs = new Map<string, string>()
 for (const file of CLIENTS_PATHS) {
   const parsed = readJson(file, 'Kundendatei (CLIENTS_JSON)')
-  if (!Array.isArray(parsed)) {
-    fail(`${file} enthält kein Array von Kunden.`, 'Erwartet wird dieselbe Form wie core-case/portfolio-data/clients.json.')
+  // A handed-over file may hold one client instead of an array of them.
+  const single = parsed && typeof parsed === 'object' && !Array.isArray(parsed) && typeof (parsed as Client).ClientRef === 'string'
+  if (!Array.isArray(parsed) && !single) {
+    fail(`${file} enthält weder ein Array von Kunden noch einen einzelnen Kunden.`, 'Erwartet wird dieselbe Form wie core-case/portfolio-data/clients.json.')
   }
-  for (const entry of parsed as Client[]) {
-    const ref = typeof entry?.ClientRef === 'string' ? entry.ClientRef.trim() : ''
+  for (let entry of (single ? [parsed] : parsed) as Client[]) {
+    let ref = typeof entry?.ClientRef === 'string' ? entry.ClientRef.trim() : ''
     if (!ref) {
       warnings.push(`Kunde ohne ClientRef übersprungen (${path.basename(file)}).`)
       continue
     }
     const previous = seenRefs.get(ref)
-    if (previous) {
+    const holder = previous ? clients.find((c) => c.ClientRef === ref) : undefined
+    if (holder && holder.ClientId !== entry.ClientId) {
+      // Same ref, different ClientId: another person, not an update. Both stay, the newcomer gets a
+      // suffix. Same rule as newRef() in app/server/database.ts.
+      let n = 2
+      while (seenRefs.has(`${ref}-${n}`)) n++
+      warnings.push(`${ref} ist in ${previous} schon ein anderer Kunde (ClientId ${String(holder.ClientId)}); ${path.basename(file)} wird als ${ref}-${n} geladen.`)
+      ref = `${ref}-${n}`
+      entry = { ...entry, ClientRef: ref }
+    } else if (previous) {
       // Nachgereichte Dateien dürfen einen Kunden ersetzen; die spätere Datei gewinnt.
       warnings.push(`${ref} kommt in ${previous} und ${path.basename(file)} vor, die spätere Datei gewinnt.`)
       clients.splice(clients.findIndex((c) => c.ClientRef === ref), 1)

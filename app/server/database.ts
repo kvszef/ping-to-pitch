@@ -19,7 +19,7 @@
 // Fällt die Toolbox aus, werden die Case-Dateien gelesen. Ein Demo darf nicht an einem nicht
 // gestarteten Dienst sterben. Welche Quelle gerade trägt, steht in `source` und in /api/status.
 
-import { readFile } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { invoke, toolboxReady, ToolboxError, type ToolRow } from './toolbox.ts'
 
@@ -165,12 +165,50 @@ const forcedSource = (): Source | null => {
   return v === 'dateien' || v === 'files' ? 'dateien' : v === 'toolbox' ? 'toolbox' : null
 }
 
-/** Rückfallebene: die Case-Dateien, wie sie übergeben wurden. */
+/**
+ * Adds handed-over clients to the case clients. Same rules as phone/scripts/load-data.ts, so the
+ * database and the file fallback show the same people: same ref and same ClientId is an update and
+ * replaces; same ref with another ClientId is another person and is kept as `<ref>-2`.
+ */
+export function mergeNewClients(base: Raw[], added: Raw[]): Raw[] {
+  const out = [...base]
+  for (const entry of added) {
+    const ref = str(entry?.ClientRef)
+    if (!ref) continue
+    const at = out.findIndex((c) => c.ClientRef === ref)
+    if (at < 0) out.push(entry)
+    else if (out[at].ClientId === entry.ClientId) out[at] = entry
+    else {
+      let n = 2
+      while (out.some((c) => c.ClientRef === `${ref}-${n}`)) n++
+      out.push({ ...entry, ClientRef: `${ref}-${n}` })
+    }
+  }
+  return out
+}
+
+/** Every client in new-clients/, in file name order. A file holds one client or an array. Never throws. */
+async function newClients(): Promise<Raw[]> {
+  const dir = resolve(DATA, 'new-clients')
+  const names = await readdir(dir).catch(() => [] as string[])
+  const out: Raw[] = []
+  for (const name of names.filter((n) => n.toLowerCase().endsWith('.json')).sort()) {
+    try {
+      const parsed = JSON.parse(await readFile(resolve(dir, name), 'utf8')) as unknown
+      out.push(...(Array.isArray(parsed) ? parsed as Raw[] : parsed && typeof parsed === 'object' ? [parsed as Raw] : []))
+    } catch (e) {
+      console.warn(`[daten] new-clients/${name} übersprungen: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+  return out
+}
+
+/** Rückfallebene: die Case-Dateien, wie sie übergeben wurden, plus new-clients/. */
 async function fromFiles(): Promise<{ clients: Raw[]; reference: Raw }> {
   const [clients, reference] = await Promise.all(
     ['clients.json', 'reference.json'].map(async (f) => JSON.parse(await readFile(resolve(DATA, f), 'utf8')) as unknown),
   )
-  return { clients: Array.isArray(clients) ? clients as Raw[] : [], reference: (reference ?? {}) as Raw }
+  return { clients: mergeNewClients(Array.isArray(clients) ? clients as Raw[] : [], await newClients()), reference: (reference ?? {}) as Raw }
 }
 
 // ------------------------------------------------------------------ Laden
