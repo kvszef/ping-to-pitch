@@ -45,16 +45,24 @@ async function post<T>(path: string, payload: unknown): Promise<T> {
   return data
 }
 
-// Aktuelle Nachrichten zu den grössten Positionen des Kunden (server-seitig 5 Minuten gecacht,
-// darum hier ohne eigenen Cache pro Chat-Anfrage abrufbar). Bricht der Abruf ab, bleibt der Chat
-// trotzdem funktionsfähig, einfach ohne diese Quelle.
+// Aktuelle Nachrichten zu den grössten Positionen des Kunden (server-seitig 5 Minuten gecacht).
+// Eigener, kurzlebiger Cache hier zusätzlich: think() und der Screen-Agent rufen bei jedem
+// Transkript-Ausschnitt neu auf, und sollen dafür nicht bei jedem Häppchen erneut abrufen.
+// Bricht der Abruf ab, bleibt die Funktion trotzdem funktionsfähig, einfach ohne diese Quelle.
+const newsCache = new Map<string, { at: number; items: NewsAgentItem[] }>()
+const NEWS_TTL = 60_000
+
 async function fetchNews(ref: string): Promise<NewsAgentItem[]> {
+  const cached = newsCache.get(ref)
+  if (cached && Date.now() - cached.at < NEWS_TTL) return cached.items
   try {
     const r = await fetch(`/api/news-agent?ref=${encodeURIComponent(ref)}`)
-    if (!r.ok) return []
+    if (!r.ok) return cached?.items ?? []
     const data = await r.json() as NewsAgentResult
-    return Array.isArray(data.items) ? data.items : []
-  } catch { return [] }
+    const items = Array.isArray(data.items) ? data.items : []
+    newsCache.set(ref, { at: Date.now(), items })
+    return items
+  } catch { return cached?.items ?? [] }
 }
 
 // Was das Modell über den Kunden erfährt: nur Fakten aus den Daten, ohne Namen und Kontonummern.
@@ -172,7 +180,8 @@ export async function think(client: Client, transcript: TranscriptLine[], segmen
   const provider = activeProvider(settings, status)
   if (!provider) return localThink(client, segments, settings)
   try {
-    const context = contextFor(client)
+    const news = await fetchNews(client.ref)
+    const context = contextFor(client, news)
     const r = await post<AnalyseResult>('/api/analyse', { provider, detail: settings.detail, context, modules: catalogue(client), transcript: transcript.slice(-8), segments })
     // Grounding guard, as in `answer`: ungrounded parts fall back to the deterministic topic or are dropped.
     const evidence = JSON.stringify(context) + segments.map((s) => s.text).join(' ')
@@ -224,7 +233,8 @@ export async function agentStep(client: Client, screen: Screen, transcript: Tran
   const provider = activeProvider(settings, status)
   if (!provider) return local()
   try {
-    const context = contextFor(client)
+    const news = await fetchNews(client.ref)
+    const context = contextFor(client, news)
     const tiles = describeTiles(screen.tiles), charts = describeCharts(screen.charts)
     const r = await post<Record<string, unknown>>('/api/agent', {
       provider, context, catalogue: CATALOGUE, tiles, charts, transcript: transcript.slice(-8), segments, said, event: event.type === 'said' ? `Berater sagte: ${event.text}` : event.type === 'start' && event.call ? `Eingehender Anruf, soeben angenommen. Vermutlicher Anlass: ${event.call}. Richte Kacheln, Fokus, Grafiken und Vorschläge auf diesen Anlass aus.` : event.type,
@@ -236,5 +246,21 @@ export async function agentStep(client: Client, screen: Screen, transcript: Tran
     return { lines, plan: checkPlan(r, screen.tiles, screen.charts, (t) => grounded(t, evidence), { ...fallback.plan, answer: null }) }
   } catch {
     return local()
+  }
+}
+
+// An outbound demo conversation, written by the model from this client's data and today's reasons to
+// call. Lines with a number that is not in the data are dropped. Without a model: no script (the
+// advisor talks through the microphone instead).
+export async function demoScript(client: Client, reasons: string[], settings: Settings, status: Status): Promise<Segment[]> {
+  const provider = activeProvider(settings, status)
+  if (!provider) return []
+  try {
+    const context = contextFor(client)
+    const r = await post<{ script?: Segment[] }>('/api/demo-script', { provider, context, reasons: reasons.map((text, i) => `GRUND ${i + 1}: ${text}`) })
+    const evidence = JSON.stringify(context) + reasons.join(' ')
+    return (r.script ?? []).filter((l) => (l.speaker === 'Kunde' || l.speaker === 'Berater') && l.text && grounded(l.text, evidence))
+  } catch {
+    return []
   }
 }
