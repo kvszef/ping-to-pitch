@@ -13,6 +13,10 @@ import { performance } from './portfolio-performance.ts'
 import { proposals } from './portfolio-proposals.ts'
 import { risk } from './portfolio-risk.ts'
 import { violations } from './portfolio-violations.ts'
+import { callReason } from './profile-call-reason.ts'
+import { persona } from './profile-persona.ts'
+import { tone } from './profile-tone.ts'
+import { traits } from './profile-traits.ts'
 
 export const checks: Record<string, Check> = {
   'portfolio.performance': performance,
@@ -28,4 +32,8 @@ export const checks: Record<string, Check> = {
   'context.peers': peers,
   'context.history': history,
   'context.peer-behaviour': peerBehaviour,
+  'profile.trait': traits,
+  'profile.persona': persona,
+  'profile.tone': tone,
+  'profile.call-reason': callReason,
 }
