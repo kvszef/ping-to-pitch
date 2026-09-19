@@ -1,10 +1,11 @@
 // portfolio.concentration — largest positions, positions that carry far more risk than weight,
 // the bank's own single-instrument cluster-risk verdicts, and a large foreign-currency share.
 // We do not set a single-position limit: the bank's rule says the limit varies by instrument type, so we use its verdict.
-import { categoryDe, pct, shortName } from '../format.ts'
+import { categoryName, pct, shortName } from '../format.ts'
 import { exposure, type Position, type Violation } from '../data.ts'
+import { pick } from '../lang.ts'
 import type { Check, Evidence, Finding } from '../types.ts'
-import { SRC, clientOf, findingId } from './common.ts'
+import { clientOf, findingId, srcOf } from './common.ts'
 
 const CHECK = 'portfolio.concentration'
 const CLUSTER_RULE = 'Cluster risk of a single financial instrument'
@@ -21,6 +22,8 @@ const HOME_CURRENCY = 'Swiss francs'
 
 export const concentration: Check = (raw, ctx) => {
   const client = clientOf(raw, ctx.ref)
+  const t = pick(ctx.lang)
+  const SRC = srcOf(ctx.lang)
   const out: Finding[] = []
   const clusterViolations = client.violations.filter((v) => v.rule === CLUSTER_RULE && v.isin)
 
@@ -36,7 +39,10 @@ export const concentration: Check = (raw, ctx) => {
       top.forEach((x, i) => { numbers[`top${i + 1}`] = x.weight })
       out.push({
         ...base, id: id('top'), kind: 'fact', severity: 'info',
-        title: `${p.nr}: Grösste Positionen ${top.map((x) => `${shortName(x.name)} ${pct(x.weight)}`).join(', ')}, zusammen ${pct(combined)}`,
+        title: t(
+          `${p.nr}: Grösste Positionen ${top.map((x) => `${shortName(x.name)} ${pct(x.weight)}`).join(', ')}, zusammen ${pct(combined)}`,
+          `${p.nr}: Largest positions ${top.map((x) => `${shortName(x.name)} ${pct(x.weight)}`).join(', ')}, together ${pct(combined)}`,
+        ),
         numbers,
         evidence: top.map((x) => SRC.position(x.name, p.nr)),
       })
@@ -66,15 +72,24 @@ export const concentration: Check = (raw, ctx) => {
         out.push({
           ...base, id: id(subject), kind: 'interpretation',
           severity: hits.length ? 'risk' : 'warn',
-          title: `${p.nr}: ${name} macht ${pct(x.weight)} des Werts, aber ${pct(share, 0)} des Risikos aus`,
-          detail: `Risikobeitrag aus der Volatilitätszerlegung der Bank (Portfolio-Volatilität ${pct(vola)}).${hits.length ? ' Die Bank meldet zudem ein Klumpenrisiko in diesem Titel.' : ''}`,
+          title: t(
+            `${p.nr}: ${name} macht ${pct(x.weight)} des Werts, aber ${pct(share, 0)} des Risikos aus`,
+            `${p.nr}: ${name} is ${pct(x.weight)} of the value but ${pct(share, 0)} of the risk`,
+          ),
+          detail: t(
+            `Risikobeitrag aus der Volatilitätszerlegung der Bank (Portfolio-Volatilität ${pct(vola)}).${hits.length ? ' Die Bank meldet zudem ein Klumpenrisiko in diesem Titel.' : ''}`,
+            `Risk contribution from the bank's volatility breakdown (portfolio volatility ${pct(vola)}).${hits.length ? ' The bank also reports a cluster risk in this security.' : ''}`,
+          ),
           numbers, evidence,
         })
       } else {
         out.push({
           ...base, id: id(subject), kind: 'fact', severity: 'risk',
-          title: `${p.nr}: Klumpenrisiko ${name}, ${pct(x.weight)} des Portfolios`,
-          detail: `Von der Bank als Klumpenrisiko eines Einzeltitels gemeldet. Die Grenze hängt von der Art des Instruments ab.${share !== undefined ? ` Anteil am Risiko: ${pct(share)}.` : ''}`,
+          title: t(`${p.nr}: Klumpenrisiko ${name}, ${pct(x.weight)} des Portfolios`, `${p.nr}: Cluster risk ${name}, ${pct(x.weight)} of the portfolio`),
+          detail: t(
+            `Von der Bank als Klumpenrisiko eines Einzeltitels gemeldet. Die Grenze hängt von der Art des Instruments ab.${share !== undefined ? ` Anteil am Risiko: ${pct(share)}.` : ''}`,
+            `Reported by the bank as a cluster risk of a single security. The limit depends on the type of instrument.${share !== undefined ? ` Share of the risk: ${pct(share)}.` : ''}`,
+          ),
           numbers, evidence,
         })
       }
@@ -86,8 +101,8 @@ export const concentration: Check = (raw, ctx) => {
     if (foreign && foreign[1] >= CURRENCY_MENTION) {
       out.push({
         ...base, id: id('currency'), kind: 'fact', severity: 'info',
-        title: `${p.nr}: ${pct(foreign[1])} in ${categoryDe(foreign[0])}`,
-        detail: 'Währungsanteil mit Durchschau auf Fonds, wo die Bank eine Aufschlüsselung liefert.',
+        title: `${p.nr}: ${pct(foreign[1])} in ${categoryName(foreign[0], ctx.lang)}`,
+        detail: t('Währungsanteil mit Durchschau auf Fonds, wo die Bank eine Aufschlüsselung liefert.', 'Currency share with fund look-through, where the bank provides a breakdown.'),
         numbers: { share: foreign[1] },
         evidence: [SRC.portfolio(p.nr)],
       })

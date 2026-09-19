@@ -1,6 +1,7 @@
 // Engine contracts (PLAN.md, "Contracts v0"). Change them here, in one place, and say so in the commit.
 import type { ReferenceIndex } from './data.ts'
 import type { HouseView } from './houseview.ts'
+import type { Lang } from './lang.ts'
 import type { PeerStats } from './peers.ts'
 import type { Wish } from './wishes.ts'
 
@@ -21,7 +22,7 @@ export type Finding = {
   check: string // 'portfolio.allocation'
   kind: Kind
   severity: Severity
-  title: string // German (Swiss spelling), one line, written for the advisor
+  title: string // one line, written for the advisor, in ctx.lang (German with Swiss spelling when absent)
   detail?: string
   numbers?: Record<string, number> // raw, fractions 0–1, never pre-formatted
   evidence: Evidence[]
@@ -43,5 +44,6 @@ export type RawClient = Record<string, unknown>
 // Absent without a model; the engine then reports such notes as "not checked" instead of guessing.
 // peers: aggregate returns of clients with the same risk profile (engine/peers.ts). Absent: no peer comparison.
 // houseView: the bank's investment view (engine/houseview.ts). Absent: no house-view comparison.
-export type CheckContext = { ref: ReferenceIndex; now: Date; memory?: CallNote[]; wishes?: Record<string, Wish | 'unknown'>; peers?: PeerStats; houseView?: HouseView }
+// lang: the language findings are phrased in (engine/lang.ts). Absent: German. Ids, numbers and quotes never depend on it.
+export type CheckContext = { ref: ReferenceIndex; now: Date; memory?: CallNote[]; wishes?: Record<string, Wish | 'unknown'>; peers?: PeerStats; houseView?: HouseView; lang?: Lang }
 export type Check = (client: RawClient, ctx: CheckContext) => Finding[]
