@@ -49,9 +49,26 @@ Before you push, in `app/`: `npm run check` (lint, typecheck, tests).
 
 ## How it works
 
+### The short version
+
+```mermaid
+flowchart LR
+  A["📂 Client data<br/>portfolio, wishes, notes"] --> C["🧮 Engine checks everything<br/>what is wrong, what fits,<br/>what changed"]
+  B["📰 Today's news<br/>about what the client holds"] --> C
+  C --> D["✍️ AI writes it up<br/>a 60-second briefing<br/>in plain words"]
+  D --> E["🖥️ Advisor's screen<br/>ready when the phone rings"]
+  E --> F["📞 The call<br/>AI listens and helps"]
+  F --> G["📝 Call note<br/>advisor confirms with one tap"]
+  G -->|"remembered for next time"| C
+```
+
+The engine does the maths, the AI only puts it into words. If the data does not say it, the screen does not show it.
+
+### The detailed version
+
 Five diagrams, from the big picture down to a single call. Solid arrows carry data; dotted arrows are optional model steps. Every model step has a fallback that works without a key, so the app never goes blank.
 
-### 1 · The big picture
+#### 1 · The big picture
 
 ```mermaid
 flowchart LR
@@ -79,7 +96,7 @@ flowchart LR
 
 **The engine computes, the model phrases.** No number reaches the screen unless deterministic code produced it. Every statement is a `fact`, an `interpretation` or an `action` and names its source. If the data does not support an answer, the tool says so. No client names, IBANs or account numbers go to a model, a log or a commit.
 
-### 2 · The briefing: from data to the 60-second talk track
+#### 2 · The briefing: from data to the 60-second talk track
 
 ```mermaid
 flowchart LR
@@ -146,7 +163,7 @@ flowchart LR
   class CJ,REF store
 ```
 
-### 3 · News: inbound call reason and the outbound "call today" list
+#### 3 · News: inbound call reason and the outbound "call today" list
 
 ```mermaid
 flowchart LR
@@ -184,7 +201,7 @@ flowchart LR
   class SNAP store
 ```
 
-### 4 · The chat: ask the data, pin the answer, ask for more
+#### 4 · The chat: ask the data, pin the answer, ask for more
 
 ```mermaid
 flowchart LR
@@ -214,7 +231,7 @@ flowchart LR
   class FC,PHRASE model
 ```
 
-### 5 · One call, from ring to memory
+#### 5 · One call, from ring to memory
 
 ```mermaid
 sequenceDiagram
