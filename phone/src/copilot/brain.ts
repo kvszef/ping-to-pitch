@@ -500,7 +500,7 @@ export function alsBriefing(roh: unknown, quellen: string[]): Briefing {
       }
       case 'flags': {
         const f = items.filter((i) => alsText(i.text))
-          .map((i) => ({ severity: alsSeverity(i.severity, 'warn'), text: String(i.text), source: istQuelle(i.source) ? String(i.source) : (quellen[0] ?? '') }))
+          .map((i) => ({ severity: alsSeverity(i.severity, 'warn'), text: String(i.text), source: istQuelle(i.source) ? String(i.source) : (quellen[0] ?? AUS_BRIEFING(null)) }))
         if (f.length) raus.push({ type: 'flags', title: alsText(c.title) ?? 'Risiken und Chancen', items: f })
         break
       }
@@ -536,11 +536,10 @@ export function alsSuggestions(roh: unknown, input: HintInput, quellen: string[]
       kind: (arten.includes(s.kind as (typeof arten)[number]) ? s.kind : 'fact') as Suggestion['kind'],
       text: String(s.text).trim(),
       why: alsText(s.why) ?? '',
-      sources: quellenPruefen(s.sources, quellen),
+      sources: quellenPruefen(s.sources, quellen, input.clientRef),
       trigger: input.trigger,
       severity: alsSeverity(s.severity),
     }))
-    .filter((s) => s.sources.length > 0)
 }
 
 export function alsAnswer(roh: unknown, input: AskInput, quellen: string[]): Answer {
@@ -553,7 +552,7 @@ export function alsAnswer(roh: unknown, input: AskInput, quellen: string[]): Ans
     question: input.question,
     text: alsText(a.text) ?? 'Dazu liegen mir keine Daten vor.',
     supported,
-    sources: supported ? quellenPruefen(a.sources, quellen) : [],
+    sources: supported ? quellenPruefen(a.sources, quellen, input.clientRef) : [],
   }
 }
 

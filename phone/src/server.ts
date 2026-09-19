@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { page } from './page.ts'
 import { push, reset, status, subscribe } from './live.ts'
 import { subscribe as copilotSubscribe, unsubscribe as copilotUnsubscribe } from './copilot/bus.ts'
-import { ask, callEnded, callStarted, pruefeDienste, transcript } from './copilot/session.ts'
+import { ask, callEnded, callStarted, pruefeDienste } from './copilot/session.ts'
 import { copilotPage } from './ui/copilot.ts'
 
 // Die Routen:
@@ -42,10 +42,10 @@ function handleVapi(message: VapiMessage) {
     const speaker = message.role === 'assistant' ? 'assistant' : 'user'
     const text = message.transcript ?? ''
     const final = message.transcriptType === 'final'
-    // Zwei Empfänger: live.ts bedient die schlichte Prüfstand-Seite mit der rohen Zeile,
-    // der Copilot ordnet sie erst einer Rolle zu und reagiert dann darauf.
+    // Nur in live.ts schreiben: von dort holt sich der Copilot die Zeile selbst ab.
+    // Vapi kennt keine Sprechertrennung, beide sprechen in dasselbe Handy – die Rolle
+    // bestimmt der Copilot deshalb nachträglich aus dem Inhalt.
     push(speaker, text, final)
-    transcript(text, final)
     if (final) console.log(`  Gehört │ ${text}`)
     return
   }

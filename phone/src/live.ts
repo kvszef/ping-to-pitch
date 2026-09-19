@@ -11,6 +11,17 @@ const open = new Map<string, Line>()
 let lines: Line[] = []
 let counter = 0
 
+// Hier laufen alle Transkriptzeilen zusammen, egal über welchen Weg sie hereinkommen:
+// über Vapi in server.ts oder über die Sprechbrücke in bridge.ts. Deshalb ist das die
+// richtige Stelle, um den Copiloten anzuhängen – er bekommt jede Zeile, ohne dass ein
+// neuer Telefonieweg etwas davon wissen muss.
+type Beobachter = (speaker: string, text: string, final: boolean) => void
+const beobachter: Beobachter[] = []
+
+export function beobachte(handler: Beobachter): void {
+  beobachter.push(handler)
+}
+
 const send = (res: ServerResponse, event: string, data: unknown) => {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
 }
@@ -49,6 +60,10 @@ export function push(speaker: string, text: string, final: boolean) {
   }
   if (final) open.delete(speaker)
   broadcast('line', line)
+  // Ein Beobachter darf die Telefonie nie aufhalten oder umwerfen.
+  for (const b of beobachter) {
+    try { b(speaker, trimmed, final) } catch (e) { console.error('Beobachter-Fehler:', e) }
+  }
 }
 
 /** Beginnt ein neues Gespräch: der Browser leert die Anzeige. */

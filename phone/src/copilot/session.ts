@@ -2,11 +2,12 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as bus from './bus.ts'
+import { beobachte } from '../live.ts'
 import { createBrain } from './brain.ts'
 import { identifyByName, identifyByPhone, maskPhone } from './identify.ts'
 import { assignRoles } from './roles.ts'
 import { toolbox } from './toolbox.ts'
-import type { Briefing } from './events.ts'
+import type { Briefing, Speaker } from './events.ts'
 import type { Brain, Line } from './types.ts'
 import { LIMITS } from './types.ts'
 
@@ -89,27 +90,40 @@ async function briefingHolen(clientRef: string, name: string | undefined, confid
 // ------------------------------------------------------------------ Waehrend des Gespraechs
 
 /**
- * Eine Zeile aus dem Vapi-Webhook. Vapi liefert alles mit derselben Rolle, weil beide Personen in
- * dasselbe Handy sprechen; deshalb geht die Zeile zunaechst als `unknown` auf den Bus und bekommt
- * ihre Rolle erst, wenn sie abgeschlossen ist.
+ * Uebersetzt den Sprechernamen des Telefonieweges in eine Rolle.
+ *
+ * Die Sprechbruecke trennt die Spuren und weiss deshalb wirklich, wer spricht -- da wird nichts
+ * geraten. Vapi dagegen liefert alles als `user`, weil beide Personen in dasselbe Handy sprechen;
+ * dort bleibt die Rolle offen und wird nachtraeglich aus dem Inhalt bestimmt.
  */
-export function transcript(text: string, final: boolean): void {
-  const line = bus.pushLine('unknown', text, final)
-  if (!line || !final) return
-  void zuordnenUndReagieren(line)
+function spurRolle(name: string): Speaker {
+  const n = name.trim().toLowerCase()
+  if (n === 'kunde' || n === 'anrufer' || n === 'caller' || n === 'inbound') return 'caller'
+  if (n === 'berater' || n === 'advisor' || n === 'outbound') return 'advisor'
+  return 'unknown'
 }
 
-async function zuordnenUndReagieren(line: Line): Promise<void> {
-  const bisher = bus.recentLines(LIMITS.transcriptWindow).filter((l) => l.lineId !== line.lineId)
+/** Eine Transkriptzeile, gleich von welchem Telefonieweg. Wird ueber live.ts angemeldet. */
+export function transcript(speakerName: string, text: string, final: boolean): void {
+  const rolle = spurRolle(speakerName)
+  const line = bus.pushLine(rolle, text, final)
+  if (!line || !final) return
+  void zuordnenUndReagieren(line, rolle !== 'unknown')
+}
+
+async function zuordnenUndReagieren(line: Line, rolleSteht: boolean): Promise<void> {
   let sprecher = line.speaker
-  try {
-    const [zuordnung] = await assignRoles([line], bisher)
-    if (zuordnung) {
-      sprecher = zuordnung.speaker
-      bus.updateLine(line.lineId, zuordnung.speaker, zuordnung.text)
+  if (!rolleSteht) {
+    const bisher = bus.recentLines(LIMITS.transcriptWindow).filter((l) => l.lineId !== line.lineId)
+    try {
+      const [zuordnung] = await assignRoles([line], bisher)
+      if (zuordnung) {
+        sprecher = zuordnung.speaker
+        bus.updateLine(line.lineId, zuordnung.speaker, zuordnung.text)
+      }
+    } catch (e) {
+      console.error(`  Rollenzuordnung fehlgeschlagen: ${e instanceof Error ? e.message : e}`)
     }
-  } catch (e) {
-    console.error(`  Rollenzuordnung fehlgeschlagen: ${e instanceof Error ? e.message : e}`)
   }
 
   const call = bus.activeCall()
@@ -251,6 +265,10 @@ function mitschnittSchreiben(callId: string): void {
     console.error(`  Mitschnitt konnte nicht geschrieben werden: ${e instanceof Error ? e.message : e}`)
   }
 }
+
+// Einmal beim Laden: jede Transkriptzeile aus live.ts erreicht den Copiloten, gleich ob sie
+// ueber Vapi oder ueber die Sprechbruecke hereinkam. Ein neuer Telefonieweg muss dafuer nichts tun.
+beobachte((speaker, text, final) => transcript(speaker, text, final))
 
 /** Einmalig beim Start: meldet der Oberflaeche, ob Toolbox und Modell bereitstehen. */
 export async function pruefeDienste(): Promise<void> {

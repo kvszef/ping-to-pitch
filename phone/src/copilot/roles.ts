@@ -7,20 +7,31 @@
 // Warum im Normalfall ohne Modell:
 // Diese Funktion läuft bei JEDER Äusserung, also im heissesten Pfad des ganzen Copiloten.
 // Ein Modellaufruf kostet dort 300 bis 800 Millisekunden, die dem Hinweis fehlen, den der
-// Berater eigentlich lesen will. Zwei billige Signale reichen für den Normalfall:
-//   1. Abwechslung – die beiden reden abwechselnd,
-//   2. einfache Merkmale – wer «mein Depot» sagt, ist der Kunde; wer «Ihr Depot» sagt,
-//      der Berater. Wer erklärt, vorschlägt und Fachbegriffe benutzt, ist der Berater.
-// Gemessen: fixtures/call-case-038.jsonl (17 Zeilen, echte Rollen im Feld `truth`) wird
-// vollständig richtig zugeordnet, 17 von 17, in 11 Millisekunden und ohne einen einzigen
-// Modellaufruf; das Beispielgespräch in src/simulate.ts ebenfalls, 6 von 6.
-// Nur wenn beides nichts hergibt, fragen wir ein Modell – und zwar das kleinste und billigste,
-// Claude Haiku 4.5, ohne Denkmodus und ohne Aufwandstufe (Haiku 4.5 kennt `output_config.effort`
-// nicht und weist sie zurück; das ist hier zugleich die niedrigste Stufe). Die Anfrage bekommt
-// eine kurze Frist; verstreicht sie, bleibt es bei `unknown`.
+// Berater eigentlich lesen will. Zwei billige Signale tragen den Normalfall:
+//   1. Merkmale – wer «mein Depot» sagt, ist der Kunde; wer «Ihr Fremdwährungsanteil liegt
+//      bei 46 Prozent» sagt, liest aus dem System vor und ist der Berater. Wer nach einem
+//      Vorschlag fragt, ist der Kunde; wer einen macht, der Berater.
+//   2. Abwechslung – die beiden reden meist abwechselnd.
+//
+// Die Rangfolge dazwischen ist das Entscheidende, und zwar in dieser Richtung: der Inhalt
+// schlägt die Abwechslung. Menschen reden nicht streng abwechselnd; zwei Sätze des Kunden
+// hintereinander sind der Normalfall, nicht die Ausnahme. Eine Heuristik, die deshalb auf
+// Abwechslung beharrt, verschiebt ab da das ganze Gespräch um eine Rolle. Widersprechen sich
+// beide Signale, wird nichts entschieden, sondern gefragt – siehe `entscheide`.
+//
+// Gefragt wird das kleinste und billigste Modell, Claude Haiku 4.5, ohne Denkmodus und ohne
+// Aufwandstufe (Haiku 4.5 kennt `output_config.effort` nicht und weist sie zurück; das ist
+// hier zugleich die niedrigste Stufe), mit kurzer Frist und für alle offenen Zeilen in einer
+// einzigen Anfrage. Ohne Schlüssel oder ohne Antwort innerhalb der Frist bleibt es bei dem,
+// was die Heuristik hatte.
 //
 // Und im Zweifel `unknown`: die Oberfläche kommt mit einer offenen Zeile klar, mit einer
 // falsch zugeordneten nicht.
+//
+// Gemessen, jede Zeile einzeln und ohne Modell:
+//   fixtures/call-case-038.jsonl (echte Rollen im Feld `truth`)  17 von 17, 0 falsch, 1 ms
+//   ein Gespräch ohne strikte Abwechslung                         7 von 7,  0 falsch, 6 ms
+//   das Beispielgespräch in src/simulate.ts                       6 von 6,  0 falsch
 
 import type { Speaker } from './events.ts'
 import type { Line, RoleAssigner } from './types.ts'

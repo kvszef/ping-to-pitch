@@ -7,6 +7,9 @@ import { push, reset, status, subscribe } from './live.ts'
 import { mulawZuPcm16 } from './bridge/mulaw.ts'
 import { oeffneScribe, type Scribe } from './bridge/scribe.ts'
 import { antwortXml } from './bridge/cxml.ts'
+import { subscribe as copilotSubscribe, unsubscribe as copilotUnsubscribe } from './copilot/bus.ts'
+import { ask, callEnded, callStarted, pruefeDienste } from './copilot/session.ts'
+import { copilotPage } from './ui/copilot.ts'
 
 // Die Brücke sitzt zwischen Kunde und Berater:
 //
@@ -100,7 +103,7 @@ function medien(ws: WebSocket) {
       beende()
     }
   })
-  ws.on('close', () => { console.log('✓ Audiostrom getrennt'); beende(); status('Gespräch beendet') })
+  ws.on('close', () => { console.log('✓ Audiostrom getrennt'); beende(); status('Gespräch beendet'); callEnded('Audiostrom getrennt') })
 }
 
 const server = createServer(async (req, res) => {
@@ -108,9 +111,28 @@ const server = createServer(async (req, res) => {
   try {
     if (req.method === 'GET' && url === '/') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+      return res.end(copilotPage)
+    }
+    if (req.method === 'GET' && url === '/pruefstand') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
       return res.end(page)
     }
-    if (req.method === 'GET' && url === '/events') return subscribe(res)
+    // Beide Ereignisarten in einem Strom: rohe Zeilen für den Prüfstand, Copilot-Ereignisse
+    // unter eigenen Namen. Wer einen Namen nicht kennt, überliest ihn.
+    if (req.method === 'GET' && url === '/events') {
+      subscribe(res)
+      copilotSubscribe(res)
+      res.on('close', () => copilotUnsubscribe(res))
+      return
+    }
+    if (req.method === 'POST' && url === '/api/ask') {
+      const payload = felder(await koerper(req), req.headers['content-type'] ?? '')
+      const frage = (payload.question ?? '').trim()
+      res.writeHead(frage ? 202 : 400, { 'Content-Type': 'application/json' })
+      // Die Antwort kommt über /events zurück, nicht hier: der Berater soll nicht warten.
+      if (frage) void ask(frage)
+      return res.end(JSON.stringify(frage ? { angenommen: true } : { error: 'Feld question fehlt' }))
+    }
     if (req.method === 'GET' && url === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       return res.end(JSON.stringify({ ok: true, bereit: !fehlend.length }))
@@ -121,6 +143,8 @@ const server = createServer(async (req, res) => {
       const von = f.From ?? '', an = f.To ?? ''
       console.log(`\n☎ Anruf von ${von} auf ${an} – verbinde mit ${BERATER_NUMMER}`)
       reset(`Anruf von ${von}`)
+      // Der Copilot schlägt die Nummer nach und baut das Briefing, während es noch klingelt.
+      callStarted(von)
       res.writeHead(200, { 'Content-Type': 'text/xml; charset=utf-8' })
       res.end(antwortXml({
         beraterNummer: BERATER_NUMMER,
