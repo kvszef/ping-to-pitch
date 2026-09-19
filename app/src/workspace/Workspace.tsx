@@ -317,7 +317,8 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
   const today = useMemo(() => new Set(ranking.slice(0, TODAY).filter((r) => r.reasons.length).map((r) => r.ref)), [ranking])
   const mode: CallMode = picked?.ref === client.ref ? picked.mode : inCall && direction ? (direction === 'out' ? 'prep' : 'inbound') : today.has(client.ref) ? 'prep' : 'inbound'
   const reasonsToCall = rankOf.get(client.ref)?.reasons ?? NO_REASONS
-  const callPlan = useCallPlan(mode === 'prep' && !identifying ? client.ref : null, reasonsToCall, activeProvider(settings, status))
+  const callPlan = useCallPlan(mode === 'prep' && !identifying ? client.ref : null, reasonsToCall, activeProvider(settings, status), settings.language)
+  const callStatus = settings.language === 'en' ? ['Connecting …', 'Ringing …', 'On call'] : ['Verbindet …', 'Klingelt …', 'Gespräch']
   // The screen agent is told which way the call goes: on a call we make, the reasons are ours.
   latest.current.outbound = inCall && direction === 'out' ? reasonsToCall.slice(0, 3).map((r) => r.title).join('; ') || 'Kontaktpflege' : undefined
 
@@ -438,7 +439,7 @@ export function Workspace({ clients, signals, initialRef, initialCall, initialDe
             lead={
               <div className="flex min-w-0 shrink-0 items-baseline gap-2">
                 <span className="truncate text-[15px]">{client.name}</span>
-                <span className="flex items-center gap-1 text-[11px] text-muted"><span className={`h-1.5 w-1.5 rounded-full ${inCall ? 'animate-pulse bg-risk' : 'bg-track'}`} />{dialling ? 'Verbindet …' : phone && line.state === 'dialling' ? 'Klingelt …' : inCall ? 'Gespräch' : 'Vorbereitung'}</span>
+                {inCall && <span className="flex items-center gap-1 text-[11px] text-muted"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-risk" />{dialling ? callStatus[0] : phone && line.state === 'dialling' ? callStatus[1] : callStatus[2]}</span>}
                 <span className="self-center"><ModeSwitch mode={mode} onMode={(m) => setPicked({ ref: client.ref, mode: m })} language={settings.language} /></span>
               </div>
             }

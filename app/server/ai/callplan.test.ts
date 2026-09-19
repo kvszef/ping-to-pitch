@@ -48,6 +48,17 @@ describe('composeCallPlan', () => {
     expect(plan.open.text).toMatch(/Markteinschätzung/)
   })
 
+  it('phrases its own sentences in English on request and still reads German finding titles (CASE-004)', () => {
+    const findings = findingsOf('CASE-004')
+    const wish = findings.find((f) => f.check === 'contradiction.fossil-fuel')!
+    const plan = composeCallPlan('CASE-004', findings, [{ kind: 'risk', severity: 'risk', title: wish.title, findingId: wish.id }], 'en')
+    expect(plan.open.text).toMatch(/^Hello, I am calling about your wish «Kein Engagement in fossilen Energien»/)
+    const own = plan.arguments.find((a) => a.label === 'Own wish')!
+    expect(own.text).toMatch(/^The client asked for it \(note of 05\.03\.2025\)/)
+    expect(own.text).not.toMatch(/Widerspruch: |Contradiction: /)
+    expect(plan.arguments.find((a) => a.label === 'Small step')!.text).toMatch(/^One sale is enough: .*share 3\.3% → 1\.0%/)
+  })
+
   it('says so when the data holds no reason to call (no findings)', () => {
     const plan = composeCallPlan('CASE-XXX', [])
     expect(plan.reasons).toEqual([])
@@ -59,9 +70,8 @@ describe('composeCallPlan', () => {
     for (const c of clients) {
       const ref = c.ClientRef as string
       const findings = findingsOf(ref)
-      const plan = composeCallPlan(ref, findings)
       const byId = new Map(findings.map((f) => [f.id, f]))
-      for (const l of allLines(plan)) {
+      for (const l of [...allLines(composeCallPlan(ref, findings)), ...allLines(composeCallPlan(ref, findings, [], 'en'))]) {
         const evidence = l.findings.map((id) => { const f = byId.get(id)!; return `${f.title} ${f.detail ?? ''} ${f.evidence.map((e) => `${e.quote ?? ''} ${e.date ?? ''}`).join(' ')}` }).join(' ')
         // Dates are written as 05.03.2025 from an ISO date in the evidence.
         const iso = evidence.replace(/(\d{4})-(\d{2})-(\d{2})/g, '$3.$2.$1')
@@ -94,6 +104,15 @@ describe('writeCallPlan', () => {
     const plan = await writeCallPlan(withBoth, findings, async () => ({ goals: [{ text: 'Regelverletzung im Sektor Energie besprechen', findings: [other.id] }] }), 'openai')
     expect(plan.goals[0]).toEqual(withBoth.goals[0])
     expect(plan.goals[1].text).toBe('Regelverletzung im Sektor Energie besprechen')
+  })
+
+  it('asks the model for English only when the advisor reads English', async () => {
+    const seen: string[] = []
+    const model = async (m: { role: string; content: string }[]) => { seen.push(m[0].content); return {} }
+    await writeCallPlan(template, findings, model, 'openai')
+    await writeCallPlan(template, findings, model, 'openai', 'en')
+    expect(seen[0]).not.toMatch(/LANGUAGE/)
+    expect(seen[1]).toMatch(/LANGUAGE \(this rule overrides/)
   })
 
   it('drops a line with an invented number or without a source and keeps the template', async () => {

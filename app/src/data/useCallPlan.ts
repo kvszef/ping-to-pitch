@@ -18,21 +18,22 @@ const offline = (ref: string, reasons: CallReason[]): CallPlan => ({
   open: { id: 'open', text: '', kind: 'action', source: '', findings: [] },
 })
 
-export function useCallPlan(ref: string | null, reasons: CallReason[], provider: 'openai' | 'apertus' | null) {
-  const [state, setState] = useState<{ ref: string | null; plan: CallPlan | null; writing: boolean }>({ ref: null, plan: null, writing: false })
+export function useCallPlan(ref: string | null, reasons: CallReason[], provider: 'openai' | 'apertus' | null, language: 'de' | 'en') {
+  const [state, setState] = useState<{ ref: string | null; language?: string; plan: CallPlan | null; writing: boolean }>({ ref: null, plan: null, writing: false })
   // The ranking is polled and re-created; only a change of its content asks again.
-  const key = `${ref}|${provider}|${reasons.map((r) => r.findingId ?? r.newsId ?? r.title).join('|')}`
+  const key = `${ref}|${provider}|${language}|${reasons.map((r) => r.findingId ?? r.newsId ?? r.title).join('|')}`
 
   useEffect(() => {
     if (!ref) return
     let stale = false
-    setState((s) => (s.ref === ref ? { ...s, writing: !!provider } : { ref, plan: null, writing: !!provider }))
-    post({ ref, reasons })
+    // Another language is another text: the old plan goes, so German never lingers under an English switch.
+    setState((s) => (s.ref === ref && s.language === language ? { ...s, writing: !!provider } : { ref, language, plan: null, writing: !!provider }))
+    post({ ref, reasons, language })
       .then((plan) => { if (!stale) setState((s) => (s.plan?.phrasedBy !== 'vorlage' && s.ref === ref && s.plan ? s : { ...s, ref, plan })) })
       .catch(() => { if (!stale) setState((s) => ({ ...s, ref, plan: s.plan ?? offline(ref, reasons) })) })
     if (provider) {
-      post({ ref, reasons, phrase: provider })
-        .then((plan) => { if (!stale) setState({ ref, plan, writing: false }) })
+      post({ ref, reasons, language, phrase: provider })
+        .then((plan) => { if (!stale) setState({ ref, language, plan, writing: false }) })
         .catch(() => { if (!stale) setState((s) => ({ ...s, writing: false })) })
     }
     return () => { stale = true }

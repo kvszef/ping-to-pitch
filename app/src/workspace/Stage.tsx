@@ -336,7 +336,7 @@ export function Stage({ client, screen, plan, brought, thinking, inCall, recordi
           <div ref={box} onScroll={onScroll} className={`relative min-h-0 flex-1 overflow-y-auto px-3 [scrollbar-width:none] ${GLASS}`}>
             <div className="h-2" aria-hidden />
             {!asText && <Profile client={client} compact={inCall || !!prep} language={language} />}
-            {prep}
+            {!asText && prep}
             {asText && <TextView digest={digest} asOf={client.facts?.asOf} language={language} />}
             {!asText && tiles.map((t, i) => (
               // Tiles are revealed strictly top to bottom; one that is not ready yet stays blurred in place (reveal.ts).

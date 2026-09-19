@@ -12,7 +12,9 @@ import { useTranslated, type Language } from '../data/useTranslate'
 export type CallMode = 'prep' | 'inbound'
 
 export function ModeSwitch({ mode, onMode, language }: { mode: CallMode; onMode: (m: CallMode) => void; language: Language }) {
-  const [out, inn, outTitle, innTitle] = useTranslated(['Ausgehend', 'Eingehend', 'Anruf vorbereiten: Anlass, Ziel und Argumente', 'Kunde ruft an: das Wichtigste auf einen Blick'], language)
+  const [out, inn, outTitle, innTitle] = language === 'en'
+    ? ['Outgoing', 'Incoming', 'Prepare the call: reason, goal and arguments', 'The client calls: the key facts at a glance']
+    : ['Ausgehend', 'Eingehend', 'Anruf vorbereiten: Anlass, Ziel und Argumente', 'Kunde ruft an: das Wichtigste auf einen Blick']
   const options = [['prep', out, outTitle, PhoneOutgoing], ['inbound', inn, innTitle, PhoneIncoming]] as const
   return (
     <div role="tablist" aria-label="Ansicht" className="flex shrink-0 rounded-full bg-pill/70 p-0.5 text-[11px]">
@@ -26,7 +28,12 @@ export function ModeSwitch({ mode, onMode, language }: { mode: CallMode; onMode:
   )
 }
 
-const KIND = { fact: 'Fakt', interpretation: 'Einschätzung', action: 'Massnahme' } as const
+// Fixed labels as a static pair: they show at once, with no trip to the translation model.
+const KIND = { de: { fact: 'Fakt', interpretation: 'Einschätzung', action: 'Massnahme' }, en: { fact: 'Fact', interpretation: 'Assessment', action: 'Action' } } as const
+const LABELS = {
+  de: { title: 'Anrufplan', why: 'Warum wir anrufen', goal: 'Ziel des Gesprächs', convince: 'So überzeugen Sie diesen Kunden', opener: 'Einstieg', avoid: 'Nicht ansprechen', questions: 'Wahrscheinliche Rückfragen', tone: 'Ton', also: 'ausserdem', none: 'Kein dringender Anlass in den Daten. Ein Anruf dient der Kontaktpflege.', loading: 'Anrufplan wird berechnet …', written: 'KI-formuliert, Zahlen geprüft', writing: 'KI formuliert …', article: 'Artikel öffnen' },
+  en: { title: 'Call plan', why: 'Why we are calling', goal: 'Goal of the call', convince: 'How to convince this client', opener: 'Opening line', avoid: 'Do not bring up', questions: 'Questions the client will probably ask', tone: 'Tone', also: 'also', none: 'No pressing reason in the data. A call keeps the relationship warm.', loading: 'Working out the call plan …', written: 'Worded by AI, numbers checked', writing: 'AI is wording it …', article: 'Open article' },
+} as const
 const dot = (l: PlanLine) => (l.severity === 'risk' ? 'bg-risk' : l.severity === 'warn' ? 'bg-warn' : l.severity === 'ok' ? 'bg-ok' : 'bg-brand')
 
 function Block({ title, icon, aside, children }: { title: string; icon?: ReactNode; aside?: ReactNode; children: ReactNode }) {
@@ -40,18 +47,17 @@ function Block({ title, icon, aside, children }: { title: string; icon?: ReactNo
 
 export function CallPrep({ plan, writing, language }: { plan: CallPlan | null; writing: boolean; language: Language }) {
   const lines = plan ? [...plan.reasons, ...plan.goals, ...plan.arguments, plan.open, ...plan.avoid] : []
-  // One batch for everything the card shows: [text, source, label] per line, then tone, questions, chrome.
+  // One batch for the plan's own text: [text, source, label] per line, then tone and questions. What the
+  // server already phrased in the advisor's language passes through untouched; the rest is the safety net.
   const texts = useTranslated([
-    ...lines.flatMap((l) => [l.text, l.source, l.label ?? '', KIND[l.kind]]),
+    ...lines.flatMap((l) => [l.text, l.source, l.label ?? '']),
     ...(plan?.tone ?? []), ...(plan?.questions ?? []).flatMap((q) => [q.q, q.a]),
-    'Anrufplan', 'Warum wir anrufen', 'Ziel des Gesprächs', 'So überzeugen Sie diesen Kunden', 'Einstieg', 'Nicht ansprechen', 'Wahrscheinliche Rückfragen',
-    'Ton', 'ausserdem', 'Kein dringender Anlass in den Daten. Ein Anruf dient der Kontaktpflege.', 'Anrufplan wird berechnet …', 'KI-formuliert, Zahlen geprüft', 'KI formuliert …', 'Artikel öffnen',
   ], language)
-  const at = new Map(lines.map((l, i) => [l, i * 4]))
-  const t = (l: PlanLine) => ({ text: texts[at.get(l)!] || l.text, source: texts[at.get(l)! + 1] || l.source, label: texts[at.get(l)! + 2] || l.label, kind: texts[at.get(l)! + 3] || KIND[l.kind] })
-  const toneAt = lines.length * 4
+  const at = new Map(lines.map((l, i) => [l, i * 3]))
+  const t = (l: PlanLine) => ({ text: texts[at.get(l)!] || l.text, source: texts[at.get(l)! + 1] || l.source, label: texts[at.get(l)! + 2] || l.label, kind: KIND[language][l.kind] })
+  const toneAt = lines.length * 3
   const questionsAt = toneAt + (plan?.tone.length ?? 0)
-  const [title, why, goal, convince, opener, avoid, questions, tone, also, none, loading, written, isWriting, openArticle] = texts.slice(questionsAt + (plan?.questions.length ?? 0) * 2)
+  const { title, why, goal, convince, opener, avoid, questions, tone, also, none, loading, written, writing: isWriting, article: openArticle } = LABELS[language]
 
   const source = (l: PlanLine) => (
     <p className="mt-0.5 text-[10px] text-muted">{t(l).kind} · {t(l).source}{l.date ? `, ${l.date}` : ''}</p>
