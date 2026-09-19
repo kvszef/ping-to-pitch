@@ -47,7 +47,7 @@ async function post<T>(path: string, payload: unknown): Promise<T> {
 // Was das Modell über den Kunden erfährt: nur Fakten aus den Daten, ohne Namen und Kontonummern.
 function contextFor(client: Client) {
   return {
-    kunde: { kennung: client.ref, kundenprofil: client.profile, strategie: client.strategy, anlagedienstleistung: client.service, vermoegen: client.aum, anlass: client.context, letzteBeratung: client.lastConsultation },
+    kunde: { kennung: client.ref, kundenprofil: client.profile, strategie: client.strategy, anlagedienstleistung: client.service, vermoegen: client.aum, anlass: client.context, letzteBeratung: client.lastConsultation, geburtsdatum: client.birthday, letzteProfilierung: client.lastProfiling },
     briefing: client.briefing,
     befunde: client.findings?.map((f) => ({ titel: f.title, art: f.kind, schwere: f.severity, quelle: f.evidence.map((e) => [e.source, e.date].filter(Boolean).join(', ')).join('; ') })),
     kennzahlen: client.facts ? { ...client.facts, performance: client.facts.performance && { ...client.facts.performance, series: undefined } } : undefined,
