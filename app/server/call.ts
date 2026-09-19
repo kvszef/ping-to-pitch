@@ -19,11 +19,15 @@ let pendingRing: unknown = null
 // dial from minutes ago never rings on a phone page that is opened later.
 const PHONE_TTL_MS = 20_000
 let phoneQueue: { at: number; msg: unknown }[] = []
+// The same for a desk that is opened through the tunnel link (the pitch on a second laptop): it polls with
+// ?role=desk. A desk on localhost keeps the event stream.
+let deskQueue: { at: number; msg: unknown }[] = []
 // When the phone page last polled: tells the desk whether a phone is there to be dialled at all.
 let phoneSeen = 0
 
 function push(to: Role, msg: unknown) {
   if (to === 'phone') phoneQueue = [...phoneQueue.slice(-49), { at: Date.now(), msg }]
+  else deskQueue = [...deskQueue.slice(-49), { at: Date.now(), msg }]
   const line = `data: ${JSON.stringify(msg)}\n\n`
   for (const res of listeners[to]) res.write(line)
 }
@@ -48,10 +52,13 @@ export async function callRoute(req: IncomingMessage, res: ServerResponse): Prom
     return true
   }
   if (url.pathname === '/api/call/poll' && req.method === 'GET') {
-    phoneSeen = Date.now()
+    const desk = url.searchParams.get('role') === 'desk'
+    if (!desk) phoneSeen = Date.now()
     const fresh = Date.now() - PHONE_TTL_MS
-    const out = phoneQueue.filter((q) => q.at >= fresh).map((q) => q.msg)
-    phoneQueue = []
+    const out = (desk ? deskQueue : phoneQueue).filter((q) => q.at >= fresh).map((q) => q.msg)
+    if (desk) deskQueue = []; else phoneQueue = []
+    // A desk page opened while it already rings gets the ring with its first poll, like the event stream does.
+    if (desk && url.searchParams.has('first') && pendingRing && !out.includes(pendingRing)) out.push(pendingRing)
     res.setHeader('Content-Type', 'application/json; charset=utf-8')
     res.setHeader('Cache-Control', 'no-store')
     res.end(JSON.stringify(out))

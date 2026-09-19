@@ -16,14 +16,18 @@ export function sendCall(to: Role, msg: CallMessage) {
   return fetch('/api/call/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to, msg }) })
 }
 
+const isLocal = () => ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)
+
 export function listenCall(role: Role, on: (msg: CallMessage) => void): () => void {
-  // The phone polls: it reaches the server through a tunnel that buffers event streams.
-  if (role === 'phone') {
-    let stopped = false
+  // The phone polls: it reaches the server through a tunnel that buffers event streams. So does a desk that
+  // is opened through the tunnel link (a second laptop); only a desk on localhost uses the event stream.
+  if (role === 'phone' || !isLocal()) {
+    let stopped = false, first = true
     const poll = async () => {
       while (!stopped) {
         try {
-          const r = await fetch('/api/call/poll', { cache: 'no-store' })
+          const r = await fetch(`/api/call/poll?role=${role}${first ? '&first' : ''}`, { cache: 'no-store' })
+          first = false
           const list = (await r.json()) as CallMessage[]
           if (!stopped) list.forEach(on)
         } catch { /* network hiccup: try again */ }
