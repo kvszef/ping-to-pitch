@@ -28,6 +28,16 @@ The phone rings. Before the advisor says hello, the screen shows a 60-second bri
 
 We do not "maximise revenue per client", we **never miss a suitable opportunity**: every suggestion passes the client's mandate, risk profile, ESG preference and stated wishes before it is shown.
 
+> **Status.** This is a hackathon prototype built over two days (18 to 19 September 2026). It runs end to end on the real case data, but it is not production software: see [Mock vs production](#mock-vs-production) for what is real and what is stand-in.
+
+## Demo
+
+<!-- Drop the demo video here: drag the .mp4 into this file in the GitHub editor and it uploads and inserts a link, or paste a YouTube URL. -->
+
+_Video coming soon._
+
+What you see in the video, in order: the phone rings and the instant briefing is on screen before the advisor picks up; the 60-second talk track streams in; the advisor asks the data a question in the chat and pins the answer; the call ends and the AI drafts the call note; the next briefing for the same client remembers the promise.
+
 ## Docs
 
 | | |
@@ -38,15 +48,24 @@ We do not "maximise revenue per client", we **never miss a suitable opportunity*
 | [task.md](task.md) | The official challenge brief and judging criteria. |
 | [core-case/portfolio-data/DATA.md](core-case/portfolio-data/DATA.md) | Full data reference: every field and join key. |
 
-## Run
+## Quickstart
+
+You need Node 22 or newer. No API keys are needed to try it.
 
 ```
-cd app && npm ci && npm run dev
+git clone https://github.com/kvszef/from-ping-to-pitch.git
+cd from-ping-to-pitch/app
+npm ci
+npm run dev
 ```
 
-API keys are optional: copy `app/.env.example` to `app/.env.local`. Without keys the app runs in example mode. Keys stay in the Vite server and never reach the browser.
+Open the URL Vite prints (normally `http://localhost:5173`), pick a client from the list, and the briefing builds in front of you. Use the **Demo-Anruf** menu in the workspace to simulate an inbound or outbound call.
 
-Before you push, in `app/`: `npm run check` (lint, typecheck, tests).
+**With AI models.** Copy `app/.env.example` to `app/.env.local` and fill in an OpenAI key, or an Apertus endpoint for the Swiss model. Add an ElevenLabs key for live transcription during the call. Without keys the app runs in example mode: the engine still computes everything, the wording comes from templates and the call is scripted. Keys stay in the Vite server and never reach the browser.
+
+**Checks.** In `app/`, `npm run check` runs lint, typecheck and the tests (400+ tests, among them every engine check on all 47 clients in both languages). CI runs the same on every push.
+
+**Phone bridge (optional).** [phone/](phone/) connects a real phone number via SignalWire, Twilio or Vapi so a client can actually call the demo. See [phone/README.md](phone/README.md).
 
 ## How it works
 
@@ -323,3 +342,11 @@ Verified against the real files; the full list is in [CLAUDE.md](CLAUDE.md#data-
 - **Dates are shifted.** Engine logic never reads the wall clock; the date arrives as `ctx.now`.
 - **Account `Currency` can be a crypto ticker** (`BTC`, `ETH`), not an ISO code.
 - **IBANs in the data are real.** No names, IBANs or account numbers go to an LLM, a log or a commit.
+
+## Team
+
+Built at START Hack 2026 in St. Gallen by Arash Bayat (engine, briefing, news), Ahmet Emre Savaseri (live call copilot, memory, phone bridge), Kaushik Vempati (ask-the-data chat) and Arthur Van Petegem. We used Claude Code as a pair programmer throughout; [CLAUDE.md](CLAUDE.md) is the working agreement we gave it.
+
+## License
+
+The code and our documentation are released under the [MIT License](LICENSE). The challenge material from UNRISKOMEGA AG (case data, reference screenshots, quarterly reports, logos) is not ours and is not covered by it; see the note at the end of the LICENSE file.
