@@ -345,7 +345,7 @@ Verified against the real files; the full list is in [CLAUDE.md](CLAUDE.md#data-
 
 ## Team
 
-Built at START Hack 2026 in St. Gallen by Arash Bayat (engine, briefing, news), Ahmet Emre Savaseri (live call copilot, memory, phone bridge), Kaushik Vempati (ask-the-data chat) and Arthur Van Petegem. We used Claude Code as a pair programmer throughout; [CLAUDE.md](CLAUDE.md) is the working agreement we gave it.
+Built at START Hack 2026 in St. Gallen by Kaushik Vempati (live call copilot, the whole frontend and UX, news fetching), Arash Bayat (engine and briefing) and Ahmet Emre Savaseri (database and pitch). We used Claude Code as a pair programmer throughout; [CLAUDE.md](CLAUDE.md) is the working agreement we gave it.
 
 ## License
 
