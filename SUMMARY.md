@@ -1,6 +1,6 @@
 # SUMMARY
 
-What we built, how it works, and what every piece of information on the screen means. Written for someone who is not a finance person. Deeper material: [README.md](README.md) (diagrams, mock vs production), [PLAN.md](PLAN.md) (architecture, finance words in section 8), [PROGRESS.md](PROGRESS.md) (status), [AUDIT.md](AUDIT.md) (content audit of the numbers).
+What we built, how it works, and what every piece of information on the screen means. Written for someone who is not a finance person. Deeper material: [README.md](README.md) (setup, mock vs production), [docs/architecture.md](docs/architecture.md) (diagrams), [PLAN.md](PLAN.md) (architecture, finance words in section 8), [PROGRESS.md](PROGRESS.md) (status), [AUDIT.md](AUDIT.md) (content audit of the numbers).
 
 ## 1. In one paragraph
 
@@ -134,6 +134,10 @@ Found and fixed in the rehearsal: uploaded clients never reached the phone page;
 - Uploaded files and call notes live in the running server only; a restart forgets them.
 - German news headlines stay German in English mode.
 
-## 10. Still open before the demo
+## 10. Where to start
 
-Demo script on three hero clients (CASE-004 fossil fuels inside funds, CASE-007 expired property note, CASE-012 twelve rejected proposals); a rehearsal of every fallback (no key, no network, no microphone); a run from a fresh clone.
+Three clients show the most in the first minute:
+
+- **CASE-004**: wish «No exposure to fossil fuels», yet 3.3% energy, all of it through 6 funds. The briefing shows the contradiction and the smallest sale that fixes it.
+- **CASE-007**: a property purchase note whose time window ended on 10.10.2025. The briefing asks about it instead of stating it.
+- **CASE-012**: 12 of 18 proposals rejected. They land in "don't bring up".

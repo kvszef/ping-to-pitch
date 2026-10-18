@@ -1,0 +1,210 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 500" width="1040" height="500" role="img" aria-labelledby="t d">
+<title id="t">From Ping to Pitch architecture</title>
+<desc id="d">Four lanes. Inputs: the case data, uploaded client files, statements from other banks and web news. The pure engine reads the data, runs 26 checks and emits findings with their evidence. The model layer only phrases: the talk track cites finding ids and a number check drops any line with a figure that is not in them; the chat, the news judge, the call agent and the call note draft follow the same rule. Surfaces: the client card is on screen before any model runs, then the 60-second briefing, the chat panel, the call today list, the live call and the call note. A confirmed call note goes into memory and the next briefing uses it.</desc>
+
+<style>
+  .card { fill: #FBFBF9; stroke: #ECEBE7 }
+  .lane-in { fill: #F1F4F7 } .lane-en { fill: #EAF5F2 } .lane-mo { fill: #FDF6EA } .lane-su { fill: #EDF2FD }
+  .lab { font: 600 10px ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; letter-spacing: 1.1px }
+  .lab-in { fill: #5B6B7C } .lab-en { fill: #0E7A63 } .lab-mo { fill: #A26A11 } .lab-su { fill: #2456C7 }
+  .sub { font: 10px ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; fill: #6B7280 }
+  .box { fill: #FFFFFF; stroke-width: 1 }
+  .box-in { stroke: #C9D3DE } .box-en { stroke: #A9D8C9 } .box-mo { stroke: #E9CF9E } .box-su { stroke: #BFD0F2 }
+  .box-store { fill: #F3FAF7 }
+  .t { font: 600 12px ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; fill: #16181D }
+  .tm { font: 600 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #16181D }
+  .s { font: 10px ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; fill: #5E636C }
+  .note { font: italic 9.5px ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; fill: #8A8F98 }
+  .note-loop { font: italic 9.5px ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; fill: #0E7A63 }
+  .ln { stroke: #9AA3AE; stroke-width: 1.3; fill: none; stroke-linecap: round }
+  .loop { stroke: #0E7A63; stroke-width: 1.6; fill: none; stroke-linecap: round }
+  .ah-g { fill: #9AA3AE } .ah-t { fill: #0E7A63 }
+  @media (prefers-color-scheme: dark) {
+    .card { fill: #0D1117; stroke: #30363D }
+    .lane-in { fill: #161B22 } .lane-en { fill: #0F231D } .lane-mo { fill: #241D10 } .lane-su { fill: #121B2E }
+    .lab-in { fill: #9AA9B8 } .lab-en { fill: #3FB68F } .lab-mo { fill: #E0A84A } .lab-su { fill: #79A1F7 }
+    .sub { fill: #8B949E }
+    .box { fill: #0D1117 }
+    .box-in { stroke: #3D4651 } .box-en { stroke: #22604D } .box-mo { stroke: #6B5223 } .box-su { stroke: #2C4475 }
+    .box-store { fill: #0F1F1A }
+    .t, .tm { fill: #E6EDF3 }
+    .s { fill: #9DA7B3 }
+    .note { fill: #7D8590 }
+    .note-loop { fill: #3FB68F }
+    .ln { stroke: #6E7681 }
+    .loop { stroke: #3FB68F }
+    .ah-g { fill: #6E7681 } .ah-t { fill: #3FB68F }
+  }
+</style>
+
+<defs>
+  <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path class="ah-g" d="M0,1 L10,5 L0,9 z"/>
+  </marker>
+  <marker id="at" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path class="ah-t" d="M0,1 L10,5 L0,9 z"/>
+  </marker>
+</defs>
+
+<rect class="card" x="0" y="0" width="1040" height="500" rx="12"/>
+
+<!-- lanes -->
+<rect class="lane-in" x="12"  y="44" width="232" height="410" rx="10"/>
+<rect class="lane-en" x="268" y="44" width="232" height="410" rx="10"/>
+<rect class="lane-mo" x="524" y="44" width="232" height="410" rx="10"/>
+<rect class="lane-su" x="780" y="44" width="248" height="410" rx="10"/>
+
+<text class="lab lab-in" x="20"  y="22">INPUTS</text>
+<text class="lab lab-en" x="276" y="22">ENGINE · PURE</text>
+<text class="lab lab-mo" x="532" y="22">MODEL · PHRASES ONLY</text>
+<text class="lab lab-su" x="788" y="22">SURFACES</text>
+<text class="sub" x="20"  y="36">case data, uploads, the web</text>
+<text class="sub" x="276" y="36">no clock, no network, under 15 ms</text>
+<text class="sub" x="532" y="36">OpenAI or Apertus; no key: templates</text>
+<text class="sub" x="788" y="36">advisor desk and the client's phone</text>
+
+<!-- ============================ connectors ============================ -->
+<g class="ln">
+  <!-- inputs bus into the reader -->
+  <path d="M230,96 H292" marker-end="url(#ag)"/>
+  <path d="M230,160 H256"/>
+  <path d="M230,224 H256"/>
+  <path d="M256,96 V224"/>
+  <!-- reader -> checks -> findings -->
+  <path d="M392,122 V130" marker-end="url(#ag)"/>
+  <path d="M392,186 V194" marker-end="url(#ag)"/>
+  <!-- findings -> talk track and chat; instant path straight to the screen -->
+  <path d="M488,224 H512"/>
+  <path d="M512,224 V58"/>
+  <path d="M512,96 H534" marker-end="url(#ag)"/>
+  <path d="M512,224 H534" marker-end="url(#ag)"/>
+  <path d="M512,58 H768 V96 H790" stroke-dasharray="4 3" marker-end="url(#ag)"/>
+  <!-- talk track -> number check -> briefing -->
+  <path d="M640,122 V130" marker-end="url(#ag)"/>
+  <path d="M742,160 H790" marker-end="url(#ag)"/>
+  <!-- chat both ways -->
+  <path d="M742,224 H790" marker-start="url(#ag)" marker-end="url(#ag)"/>
+  <!-- news: web -> judge -> call today -->
+  <path d="M230,288 H534" marker-end="url(#ag)"/>
+  <path d="M742,288 H790" marker-end="url(#ag)"/>
+  <!-- the call: agent both ways, then the note draft -->
+  <path d="M742,352 H790" marker-start="url(#ag)" marker-end="url(#ag)"/>
+  <path d="M640,378 V386" marker-end="url(#ag)"/>
+  <path d="M742,416 H790" marker-end="url(#ag)"/>
+</g>
+
+<text class="note" x="540" y="54">instant tier: facts and flags, no model writes them</text>
+
+<!-- the memory loop: confirmed note -> memory -> next run of the checks -->
+<g class="loop">
+  <path d="M904,442 V470 H392 V446" marker-end="url(#at)"/>
+  <path d="M296,416 H278 V294 A6,6 0 0 0 278,282 V160 H292" marker-end="url(#at)"/>
+</g>
+<text class="note-loop" x="414" y="488">a confirmed note goes into memory, and the next briefing uses it</text>
+
+<!-- ============================== boxes ============================== -->
+
+<!-- INPUTS -->
+<rect class="box box-in" x="26" y="70"  width="204" height="52" rx="7"/>
+<text class="tm" x="38" y="89">clients.json</text>
+<text class="s"  x="38" y="103">47 clients · 57 portfolios, plus</text>
+<text class="s"  x="38" y="115">files uploaded at the desk</text>
+
+<rect class="box box-in" x="26" y="134" width="204" height="52" rx="7"/>
+<text class="tm" x="38" y="153">reference.json</text>
+<text class="s"  x="38" y="167">securities · fund breakdowns ·</text>
+<text class="s"  x="38" y="179">rules · profiles · SAA bands</text>
+
+<rect class="box box-in" x="26" y="198" width="204" height="52" rx="7"/>
+<text class="t"  x="38" y="217">Statement PDF</text>
+<text class="s"  x="38" y="231">from another bank, read into</text>
+<text class="s"  x="38" y="243">a virtual ex-custody portfolio</text>
+
+<rect class="box box-in" x="26" y="262" width="204" height="52" rx="7"/>
+<text class="t"  x="38" y="281">Web news</text>
+<text class="s"  x="38" y="295">searched per holding; only</text>
+<text class="s"  x="38" y="307">security names leave the server</text>
+
+<!-- ENGINE -->
+<rect class="box box-en" x="296" y="70"  width="192" height="52" rx="7"/>
+<text class="t" x="308" y="89">Reader</text>
+<text class="s" x="308" y="103">null-safe · joins on SecurityId ·</text>
+<text class="s" x="308" y="115">looks through every fund</text>
+
+<rect class="box box-en" x="296" y="134" width="192" height="52" rx="7"/>
+<text class="t" x="308" y="153">26 checks</text>
+<text class="s" x="308" y="167">portfolio · wishes · contradictions</text>
+<text class="s" x="308" y="179">context · profile · memory</text>
+
+<rect class="box box-en" x="296" y="198" width="192" height="52" rx="7"/>
+<text class="tm" x="308" y="217">Finding[]</text>
+<text class="s" x="308" y="231">fact · interpretation · action,</text>
+<text class="s" x="308" y="243">with raw numbers and evidence</text>
+
+<rect class="box box-en box-store" x="296" y="390" width="192" height="52" rx="7"/>
+<text class="t" x="308" y="409">Memory</text>
+<text class="s" x="308" y="423">confirmed call notes: open</text>
+<text class="s" x="308" y="435">promises, rejected ideas</text>
+
+<!-- MODEL -->
+<rect class="box box-mo" x="538" y="70"  width="204" height="52" rx="7"/>
+<text class="t" x="550" y="89">Talk track</text>
+<text class="s" x="550" y="103">60 seconds in the client's tone;</text>
+<text class="s" x="550" y="115">every line cites finding ids</text>
+
+<rect class="box box-mo" x="538" y="134" width="204" height="52" rx="7"/>
+<text class="t" x="550" y="153">Number check</text>
+<text class="s" x="550" y="167">a figure that is not in the cited</text>
+<text class="s" x="550" y="179">findings drops the line</text>
+
+<rect class="box box-mo" x="538" y="198" width="204" height="52" rx="7"/>
+<text class="t" x="550" y="217">Chat</text>
+<text class="s" x="550" y="231">lookup tools compute, the model</text>
+<text class="s" x="550" y="243">phrases the result with sources</text>
+
+<rect class="box box-mo" x="538" y="262" width="204" height="52" rx="7"/>
+<text class="t" x="550" y="281">News judge</text>
+<text class="s" x="550" y="295">relevant? how important?</text>
+<text class="s" x="550" y="307">a risk or an opportunity?</text>
+
+<rect class="box box-mo" x="538" y="326" width="204" height="52" rx="7"/>
+<text class="t" x="550" y="345">Call agent</text>
+<text class="s" x="550" y="359">follows the transcript: a hint,</text>
+<text class="s" x="550" y="371">the next step, the graph to show</text>
+
+<rect class="box box-mo" x="538" y="390" width="204" height="52" rx="7"/>
+<text class="t" x="550" y="409">Note draft</text>
+<text class="s" x="550" y="423">what was proposed, the reaction,</text>
+<text class="s" x="550" y="435">what was promised</text>
+
+<!-- SURFACES -->
+<rect class="box box-su" x="794" y="70"  width="220" height="52" rx="7"/>
+<text class="t" x="806" y="89">Client card and flags</text>
+<text class="s" x="806" y="103">on screen before the advisor</text>
+<text class="s" x="806" y="115">says hello</text>
+
+<rect class="box box-su" x="794" y="134" width="220" height="52" rx="7"/>
+<text class="t" x="806" y="153">60-second briefing</text>
+<text class="s" x="806" y="167">open with · must mention ·</text>
+<text class="s" x="806" y="179">ask · don't bring up</text>
+
+<rect class="box box-su" x="794" y="198" width="220" height="52" rx="7"/>
+<text class="t" x="806" y="217">Chat panel</text>
+<text class="s" x="806" y="231">ask the data, pin the answer</text>
+<text class="s" x="806" y="243">to the graph column</text>
+
+<rect class="box box-su" x="794" y="262" width="220" height="52" rx="7"/>
+<text class="t" x="806" y="281">Call today</text>
+<text class="s" x="806" y="295">who to call and why: a risk</text>
+<text class="s" x="806" y="307">or an opportunity</text>
+
+<rect class="box box-su" x="794" y="326" width="220" height="52" rx="7"/>
+<text class="t" x="806" y="345">The call</text>
+<text class="s" x="806" y="359">desk and phone page, with a</text>
+<text class="s" x="806" y="371">live transcript</text>
+
+<rect class="box box-su" x="794" y="390" width="220" height="52" rx="7"/>
+<text class="t" x="806" y="409">Call note</text>
+<text class="s" x="806" y="423">the advisor edits it and</text>
+<text class="s" x="806" y="435">confirms with one tap</text>
+</svg>
