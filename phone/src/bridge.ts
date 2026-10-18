@@ -42,7 +42,7 @@ const koerper = (req: IncomingMessage) => new Promise<string>((resolve, reject) 
   req.on('data', (c: Buffer) => teile.push(c)).on('end', () => resolve(Buffer.concat(teile).toString('utf8'))).on('error', reject)
 })
 
-// Plivo schickt die Anruf-Ereignisse als Formulardaten, nicht als JSON.
+// SignalWire und Twilio schicken die Anruf-Ereignisse als Formulardaten, nicht als JSON.
 function felder(roh: string, contentType: string): Record<string, string> {
   if (contentType.includes('json')) {
     try { return JSON.parse(roh || '{}') } catch { return {} }
@@ -79,7 +79,7 @@ function beende() {
 }
 
 function medien(ws: WebSocket) {
-  console.log('\n♪ Plivo hat den Audiostrom geöffnet')
+  console.log('\n♪ Der Anbieter hat den Audiostrom geöffnet')
   ws.on('message', (roh) => {
     let m: Record<string, any>
     try { m = JSON.parse(roh.toString()) } catch { return }

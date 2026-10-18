@@ -5,7 +5,7 @@ import WebSocket from 'ws'
 
 const URL = 'wss://api.elevenlabs.io/v1/speech-to-text/realtime'
 const SAMPLE_RATE = 8000
-// Plivo schickt alle 20 ms einen Rahmen. Gebündelt alle 200 ms senden statt 50-mal pro Sekunde.
+// SignalWire und Twilio schicken alle 20 ms einen Rahmen. Gebündelt alle 200 ms senden statt 50-mal pro Sekunde.
 const BUENDEL_MS = 200
 
 export type Scribe = { sende: (pcm: Buffer) => void; schliesse: () => void }
