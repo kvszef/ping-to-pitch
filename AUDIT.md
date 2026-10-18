@@ -1,5 +1,7 @@
 # Content audit, 19.09.2026
 
+> **Snapshot.** The content audit from the hackathon (18 to 19 September 2026), kept as written. Statuses and open items describe that weekend, not the code today; the [README](README.md) describes what the app does now.
+
 Five read-only audits of what the app says, not how it looks: the call-today list, the predicted call reason, the numbers in the main panel, new client files, the chatbots. Clients by ref only. "Ran" = verified by running the engine or the API on the real data; "read" = from the code.
 
 Done means pushed. Everything else is open, ranked by demo impact within each part.

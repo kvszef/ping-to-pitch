@@ -1,5 +1,7 @@
 # PLAN
 
+> **Snapshot.** The plan from the hackathon (18 to 19 September 2026), kept as written. Statuses and open items describe that weekend, not the code today; the [README](README.md) describes what the app does now.
+
 What we are building, how the pieces fit, and who can start on what right now.
 How we work (git, tests, code rules): [CLAUDE.md](CLAUDE.md). Official brief and judging criteria: [task.md](task.md).
 

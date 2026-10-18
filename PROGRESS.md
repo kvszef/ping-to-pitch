@@ -1,5 +1,7 @@
 # PROGRESS
 
+> **Snapshot.** The working board from the hackathon (18 to 19 September 2026), kept as written. Statuses and open items describe that weekend, not the code today; the [README](README.md) describes what the app does now.
+
 Shared "what is done, what is open" board for the 60-second client briefing. Plan and track definitions: [PLAN.md](PLAN.md).
 
 **How to update:** edit only your own track's row and the log; `git pull --rebase` before pushing. Keep each row on one line so parallel edits merge cleanly. Status words: `done`, `in progress`, `not started`, `unknown – owner to confirm`.
