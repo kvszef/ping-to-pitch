@@ -482,7 +482,7 @@ export const STATIC_EN: Record<string, string> = {
   'Wenn der Kunde fragt': 'If the client asks',
   'Nach dem Anruf': 'After the call',
 
-  // ---- example-mode chat notices (brain.ts, assistant.ts) ----
+  // ---- example-mode chat notices (brain.ts) ----
   'Dazu liegen für diesen Kunden keine Daten vor. Ich stelle keine Vermutung an.': 'There is no data on this for this client. I do not guess.',
   'Dazu liegen für diesen Kunden keine Daten vor.': 'There is no data on this for this client.',
   'Die Antwort des Modells enthielt eine Zahl, die nicht in den Kundendaten steht. Sie wurde verworfen.': "The model's answer held a number that is not in the client data. It was discarded.",
