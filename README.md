@@ -1,18 +1,8 @@
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/logos/uro-dark.svg">
-  <img src="assets/logos/uro-light.svg" alt="UNRISKOMEGA" height="34">
-</picture>
-
-<br><br>
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/logos/partners-dark.png">
-  <img src="assets/logos/partners-light.png" alt="Swiss {ai} Weeks and START Hack Tour, St. Gallen" height="77">
-</picture>
-
 # From Ping to Pitch
+
+An AI copilot for wealth managers · UNRISKOMEGA challenge · START Global x Swiss AI Weeks 2026
 
 </div>
 
@@ -20,13 +10,17 @@ The phone rings. Before the advisor says hello, the screen shows a 60-second bri
 
 The engine computes, the model phrases. No number reaches the screen unless deterministic code produced it.
 
-`47 case clients` · `26 engine checks` · `under 15 ms per client` · `429 tests` · `English and German` · `runs without an API key`
+`47 case clients` · `26 engine checks` · `under 15 ms per client` · `430+ tests` · `English and German` · `runs without an API key`
 
-<!-- Demo video: on github.com, edit this file, put the cursor on the empty line below and drag the .mp4 in. GitHub uploads it and inserts a https://github.com/user-attachments/assets/... link, which renders as a player. -->
+## Demo
 
-**The walkthrough**: the phone rings and the instant briefing is on screen before the advisor picks up; the 60-second talk track streams in; the advisor asks the data a question in the chat and pins the answer; the call ends and the AI drafts the call note; the next briefing for the same client remembers the promise.
+<!-- For a player inside this page: on github.com, edit this file, put the cursor on the empty line below and drag phonecall_demo.mp4 in. GitHub uploads it and inserts a https://github.com/user-attachments/assets/... link, which renders as a player. -->
 
-Our entry for the UNRISKOMEGA challenge at START Global x Swiss AI Weeks 2026, built over two days (18 and 19 September 2026). It runs end to end on the real case data, but it is a prototype: [Mock vs production](#mock-vs-production) says what is real and what is a stand-in. [SUMMARY.md](SUMMARY.md) explains every item on the screen in plain words, and [task.md](task.md) is the official brief.
+**[Watch the demo call](phonecall_demo.mp4)** (2 minutes, English) · [subtitles](phonecall_demo.srt)
+
+A client calls, and her briefing is on screen before the advisor picks up. While the call is transcribed, the screen brings up what she asks about: first how the portfolio has done, then her top five positions. She asks for a PDF summary by the evening. When the call ends, the AI drafts the call note with that promise in it, and one tap saves it for the next call.
+
+Our entry for the UNRISKOMEGA challenge at START Global x Swiss AI Weeks 2026, built over two days (18 and 19 September 2026). It runs end to end on the real case data, but it is a prototype: [Mock vs production](#mock-vs-production) says what is real and what is a stand-in. [SUMMARY.md](SUMMARY.md) explains every item on the screen in plain words, and [task.md](task.md) summarises the challenge.
 
 ---
 
@@ -48,7 +42,7 @@ Our entry for the UNRISKOMEGA challenge at START Global x Swiss AI Weeks 2026, b
 
 **Reads other banks' statements.** A PDF statement from another bank becomes a virtual portfolio, so the briefing covers the client's whole wealth.
 
-**Survives files it has never seen.** Three unseen client files were handed over at the live demo. Unknown securities fall back to the position's own fields and are labelled "unclassified"; the engine never throws. We rehearsed this before the demo with three made-up files full of nulls, crypto accounts and unknown securities.
+**Survives files it has never seen.** Three unseen client files were handed over at the live demo. Unknown securities fall back to the position's own fields and are labelled "unclassified"; the engine never throws. We rehearsed this before the demo with three made-up files full of nulls, crypto accounts and unknown securities. The handed-over files are not ours and are not in this repo; [demo-clients/](demo-clients/) holds three made-up clients of our own in the same format: a "no fossil fuels" wish broken through funds, a property plan whose window has passed, and a one-position portfolio with five rejected ideas.
 
 ---
 
@@ -80,6 +74,8 @@ cd from-ping-to-pitch/app
 npm ci
 cp .env.example .env.local   # optional, then fill in the keys you have
 ```
+
+**Case data.** The client and reference data belong to UNRISKOMEGA AG and the organisers, so they are not in this repo. `npm ci` (in `app/` or `phone/`) downloads them from the organisers' public repository, [START-Hack/unriskomega-2026](https://github.com/START-Hack/unriskomega-2026), at a pinned commit, checks every file against its hash and puts them in `core-case/` and `side-challenge/`. Offline it only warns; run `npm run case-data` once you are online. The app and the tests need these files.
 
 Without keys the app runs in example mode: the engine still computes everything, the wording comes from templates and the call is scripted. Keys stay in the Vite server and never reach the browser.
 
@@ -121,7 +117,7 @@ The test suite includes every engine check on all 47 clients in both languages, 
 
 | Piece | Today | Production |
 | --- | --- | --- |
-| Client data in the UI | Engine over `clients.json` (via SQLite and MCP Toolbox, case files as fallback), uploaded files and imported ex-custody PDFs; the three sample clients in `app/src/data/mock.ts` only when the API is down | Same, fed from the bank's core system |
+| Client data in the UI | Engine over `clients.json` and our demo clients (via SQLite and MCP Toolbox, case files as fallback), uploaded files and imported ex-custody PDFs; the three sample clients in `app/src/data/mock.ts` only when the API is down | Same, fed from the bank's core system |
 | Briefing wording, chat, call analysis | LLM via OpenAI or Apertus (OpenAI-compatible); example mode without keys (`app/src/workspace/brain.ts`) | Same, phrasing engine findings only |
 | Live transcription | ElevenLabs speech-to-text; scripted call as fallback | Same |
 | News | Live web news per holding (Bing News RSS, free, no key), judged by the model, refreshed every 10 min; saved snapshot offline | Licensed feed (e.g. SIX, Refinitiv) behind the same interface (`app/server/market/`) |
@@ -138,14 +134,18 @@ Before the demo we rehearsed with three made-up client files built to break thin
 
 ```
 app/              React + Vite UI (src/), the API inside the Vite server (server/), the engine (engine/)
-core-case/        the case data: clients.json, reference.json, the three handed-over clients, UI screenshots
-side-challenge/   ten quarterly client reports (Q4 2025) as PDFs
+demo-clients/     three made-up clients of our own (DEMO-01 to DEMO-03), loaded next to the case clients
 phone/            optional bridge for a real phone number, and the SQLite + MCP Toolbox data path
 docs/             the architecture diagram and the detailed walkthrough
-assets/logos/     brand logos, *-light and *-dark
+scripts/          case-data.mjs, which downloads the case data on npm ci
+
+Downloaded, not committed:
+core-case/        clients.json, reference.json and DATA.md; extra client files dropped into
+                  core-case/portfolio-data/new-clients/ are loaded too and stay local
+side-challenge/   ten quarterly client reports (Q4 2025) as PDFs, for the ex-custody import
 ```
 
-[core-case/portfolio-data/DATA.md](core-case/portfolio-data/DATA.md) documents every field and join key.
+The organisers' [DATA.md](https://github.com/START-Hack/unriskomega-2026/blob/134d6ff9343b8703a63a7279043c57c09345d45b/core-case/portfolio-data/DATA.md) documents every field and join key.
 
 ## Data traps
 
@@ -157,7 +157,7 @@ Verified against the real files; the full list is in [CLAUDE.md](CLAUDE.md#data-
 - **Use the `SAA_*` fields** to compare holdings against target allocations.
 - **Dates are shifted.** Engine logic never reads the wall clock; the date arrives as `ctx.now`.
 - **Account `Currency` can be a crypto ticker** (`BTC`, `ETH`), not an ISO code.
-- **IBANs would be real.** The source format passes them through as-is (`DATA.md`); the files in this repo hold none. No names, IBANs or account numbers go to an LLM, a log or a commit.
+- **IBANs would be real.** The source format passes them through as-is (`DATA.md`); the case files are not in this repo and our demo clients hold none. No names, IBANs or account numbers go to an LLM, a log or a commit.
 
 ## Team
 
@@ -165,4 +165,4 @@ Built at START Hack 2026 in St. Gallen by Kaushik Vempati (live call copilot, th
 
 ## License
 
-The code and our documentation are released under the [MIT License](LICENSE). The challenge material from UNRISKOMEGA AG (case data, reference screenshots, quarterly reports, logos) is not ours and is not covered by it; see the note at the end of the LICENSE file.
+The code, our documentation and the demo clients are released under the [MIT License](LICENSE). The challenge material from UNRISKOMEGA AG (case data, reference screenshots, quarterly reports, logos) is not ours, is not in this repository and is not covered by it; see the note at the end of the LICENSE file.

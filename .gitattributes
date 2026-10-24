@@ -13,4 +13,5 @@ core-case/portfolio-data/*.json -text
 *.woff2 binary
 *.wav binary
 *.webm binary
+*.mp4 binary
 *.sqlite binary
