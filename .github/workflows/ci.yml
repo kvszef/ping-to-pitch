@@ -4,9 +4,9 @@ name: ci
 # it means "fix forward soon". Runs the same steps as `npm run check` in app/, plus the build.
 on:
   push:
-    paths: ['app/**', 'core-case/portfolio-data/**', '.github/workflows/ci.yml']
+    paths: ['app/**', 'demo-clients/**', 'scripts/case-data.mjs', '.github/workflows/ci.yml']
   pull_request:
-    paths: ['app/**', 'core-case/portfolio-data/**', '.github/workflows/ci.yml']
+    paths: ['app/**', 'demo-clients/**', 'scripts/case-data.mjs', '.github/workflows/ci.yml']
   workflow_dispatch:
 
 concurrency:

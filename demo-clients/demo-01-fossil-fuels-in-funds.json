@@ -1,0 +1,202 @@
+{
+  "ClientId": 980001,
+  "ClientRef": "DEMO-01",
+  "FirstName": "Lea",
+  "LastName": "Demo",
+  "Company": null,
+  "IsClientACompany": false,
+  "IsEmployee": false,
+  "RegulatoryClientTypeId": 13,
+  "RegulatoryClientTypeName": "Private client",
+  "ReportingCurrency": "CHF",
+  "RiskProfileId": 17,
+  "RiskProfileName": "Anlageprofil 5",
+  "EsgProfileId": 1,
+  "EsgProfileName": "Yes",
+  "Birthday": "1984-02-17",
+  "ProfilingDateUtc": "2025-11-04T09:00:00.000Z",
+  "AssetsUnderManagementInDefaultCurrency": 650000,
+  "LiquidityInDefaultCurrency": 32500,
+  "Description": "Demo client written by the From Ping to Pitch team. Every figure is made up; securities, strategies and profiles are referenced by id from the public START Hack case data so the checks can run.",
+  "Tags": [
+    {
+      "TagName": "Sustainability",
+      "TagTypeName": "Theme"
+    }
+  ],
+  "Portfolios": [
+    {
+      "PortfolioId": 980101,
+      "PortfolioNr": "DEMO-01-01",
+      "Name": "Advisory portfolio",
+      "PortfolioCurrency": "CHF",
+      "StrategicAssetAllocationId": 68,
+      "InvestmentServiceId": 10,
+      "InvestmentServiceName": "Depository Advisory",
+      "StrategyId": 5,
+      "StrategyName": "Investor profile 5",
+      "ReferenceCurrency": "CHF",
+      "AssetsUnderManagementInDefaultCurrency": 650000,
+      "LiquidityInDefaultCurrency": 32500,
+      "Volatility": 0.1012,
+      "ExpectedReturn": 0.0431,
+      "ValueAtRisk": 0.112,
+      "FactoryDateUtc": "2026-09-15T08:00:00.000Z",
+      "AccountPositions": [
+        {
+          "AccountName": "Private account CHF",
+          "Currency": "CHF",
+          "TotalAmountInPortfolioCurrency": 32500,
+          "PortfolioValuePercentage": 0.05
+        }
+      ],
+      "SecurityPositions": [
+        {
+          "SecurityId": 9093,
+          "Isin": "IE00BP3QZB59",
+          "SecurityName": "Anteile - USD ETF - iShares IV PLC - iShares Edge MSCI World Value Factor UCITS ETF",
+          "Quantity": 1170,
+          "PricePerUnit": 100,
+          "Currency": "USD",
+          "TotalAmountInPortfolioCurrency": 117000,
+          "PortfolioValuePercentage": 0.18
+        },
+        {
+          "SecurityId": 8449,
+          "Isin": "IE00B5BMR087",
+          "SecurityName": "Anteile Exchange Traded Fund USD iShares VII PLC - iShares Core S&P 500 UCITS ETF",
+          "Quantity": 975,
+          "PricePerUnit": 100,
+          "Currency": "USD",
+          "TotalAmountInPortfolioCurrency": 97500,
+          "PortfolioValuePercentage": 0.15
+        },
+        {
+          "SecurityId": 9356,
+          "Isin": "IE00BYTRR863",
+          "SecurityName": "Anteile -USD- SSgA SPDR ETFs Europe II PLC - SPDR MSCI World Energy UCITS ETF",
+          "Quantity": 260,
+          "PricePerUnit": 100,
+          "Currency": "USD",
+          "TotalAmountInPortfolioCurrency": 26000,
+          "PortfolioValuePercentage": 0.04
+        },
+        {
+          "SecurityId": 2346,
+          "Isin": "CH0237935637",
+          "SecurityName": "Anteile -A- iShares ETF (CH) - iShares Swiss Dividend ETF   (CH)",
+          "Quantity": 780,
+          "PricePerUnit": 100,
+          "Currency": "CHF",
+          "TotalAmountInPortfolioCurrency": 78000,
+          "PortfolioValuePercentage": 0.12
+        },
+        {
+          "SecurityId": 4092,
+          "Isin": "CH0342181796",
+          "SecurityName": "Anteile -D CHF- BlackRock Invest Fund Switzerland - iShares SMI(R) Equity Index Fund (CH)",
+          "Quantity": 650,
+          "PricePerUnit": 100,
+          "Currency": "CHF",
+          "TotalAmountInPortfolioCurrency": 65000,
+          "PortfolioValuePercentage": 0.1
+        },
+        {
+          "SecurityId": 6721,
+          "Isin": "IE00BF1QPK61",
+          "SecurityName": "Anteile -Hedged CHF- SSGA SPDR ETFs Europe I PLC - SPDR Bloomberg Global Aggregate Bond UCITS ETF",
+          "Quantity": 1040,
+          "PricePerUnit": 100,
+          "Currency": "CHF",
+          "TotalAmountInPortfolioCurrency": 104000,
+          "PortfolioValuePercentage": 0.16
+        },
+        {
+          "SecurityId": 1928,
+          "Isin": "CH0036282942",
+          "SecurityName": "Anteile -I-D- LO Funds (CH)- Swiss Franc Credit Bond",
+          "Quantity": 780,
+          "PricePerUnit": 100,
+          "Currency": "CHF",
+          "TotalAmountInPortfolioCurrency": 78000,
+          "PortfolioValuePercentage": 0.12
+        },
+        {
+          "SecurityId": 622,
+          "Isin": "CH0037430946",
+          "SecurityName": "Anteile -FA CHF- Swisscanto (CH) Real Estate Fund Responsible IFCA",
+          "Quantity": 325,
+          "PricePerUnit": 100,
+          "Currency": "CHF",
+          "TotalAmountInPortfolioCurrency": 32500,
+          "PortfolioValuePercentage": 0.05
+        },
+        {
+          "SecurityId": 644,
+          "Isin": "CH0038863350",
+          "SecurityName": "Namen-Aktie Nestle SA",
+          "Quantity": 197.97,
+          "PricePerUnit": 98.5,
+          "Currency": "CHF",
+          "TotalAmountInPortfolioCurrency": 19500,
+          "PortfolioValuePercentage": 0.03
+        }
+      ],
+      "PerformanceHistory": [
+        {
+          "Date": "2026-01-01",
+          "Value": 620750
+        },
+        {
+          "Date": "2026-03-01",
+          "Value": 631800
+        },
+        {
+          "Date": "2026-05-01",
+          "Value": 642200
+        },
+        {
+          "Date": "2026-07-01",
+          "Value": 657800
+        },
+        {
+          "Date": "2026-08-01",
+          "Value": 637650
+        },
+        {
+          "Date": "2026-09-01",
+          "Value": 650000
+        }
+      ]
+    }
+  ],
+  "Proposals": [
+    {
+      "ProposalId": 980701,
+      "PortfolioId": 980101,
+      "ProposalStatusName": "Final",
+      "AdvisoryTypeName": "Investment proposal",
+      "Currency": "CHF",
+      "ProposedDateUTC": "2026-02-10T10:00:00.000Z",
+      "Reason": "Annual review meeting",
+      "Notes": "Strategy confirmed, small top-up of global equities.",
+      "SecurityPositions": [
+        {
+          "SecurityName": "Anteile - USD ETF - iShares IV PLC - iShares Edge MSCI World Value Factor UCITS ETF"
+        }
+      ]
+    }
+  ],
+  "Transactions": [],
+  "SuitabilityViolations": [],
+  "ClientNotes": [
+    {
+      "Note": "Does not want to invest in fossil fuels, for ethical reasons.",
+      "CreatedByDateUTC": "2026-04-22T09:30:00.000Z"
+    },
+    {
+      "Note": "Asked for a short overview of how sustainable the portfolio is before the next meeting.",
+      "CreatedByDateUTC": "2026-08-30T15:10:00.000Z"
+    }
+  ]
+}

@@ -28,13 +28,14 @@ const show = (p: string): string => {
 const DB_PATH = abs(process.env.UNRISK_DB || './data/unrisk.db')
 const SCHEMA_PATH = path.join(ROOT, 'toolbox', 'schema.sql')
 // Kommagetrennt, weil zum Fallbeispiel weitere Kundendateien gleicher Form nachgereicht werden.
-// Without CLIENTS_JSON: the case file plus every file dropped into new-clients/, in name order.
-// app/server/database.ts reads the same folder when the database is down.
-const NEW_CLIENTS_DIR = abs('../core-case/portfolio-data/new-clients')
+// Without CLIENTS_JSON: the case file plus every file in demo-clients/ (our demo clients, in the repo)
+// and new-clients/ (kept local), folder by folder in name order.
+// app/server/database.ts reads the same folders when the database is down.
+const EXTRA_CLIENT_DIRS = [abs('../demo-clients'), abs('../core-case/portfolio-data/new-clients')]
 const newClientFiles = (): string[] =>
-  fs.existsSync(NEW_CLIENTS_DIR)
-    ? fs.readdirSync(NEW_CLIENTS_DIR).filter((f) => f.toLowerCase().endsWith('.json')).sort().map((f) => path.join(NEW_CLIENTS_DIR, f))
-    : []
+  EXTRA_CLIENT_DIRS.flatMap((dir) => fs.existsSync(dir)
+    ? fs.readdirSync(dir).filter((f) => f.toLowerCase().endsWith('.json')).sort().map((f) => path.join(dir, f))
+    : [])
 const CLIENTS_PATHS = process.env.CLIENTS_JSON
   ? process.env.CLIENTS_JSON.split(',').map((p) => p.trim()).filter(Boolean).map(abs)
   : [abs('../core-case/portfolio-data/clients.json'), ...newClientFiles()]

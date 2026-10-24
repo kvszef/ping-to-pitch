@@ -187,23 +187,28 @@ export function mergeNewClients(base: Raw[], added: Raw[]): Raw[] {
   return out
 }
 
-/** Every client in new-clients/, in file name order. A file holds one client or an array. Never throws. */
+// Extra client files next to clients.json: the demo clients we wrote (demo-clients/, in the repo) and
+// anything dropped into new-clients/ (kept local, e.g. the files handed over at the live demo).
+export const EXTRA_CLIENT_DIRS = [resolve(process.cwd(), '../demo-clients'), resolve(DATA, 'new-clients')]
+
+/** Every client in the extra folders, folder by folder, in file name order. A file holds one client or an array. Never throws. */
 async function newClients(): Promise<Raw[]> {
-  const dir = resolve(DATA, 'new-clients')
-  const names = await readdir(dir).catch(() => [] as string[])
   const out: Raw[] = []
-  for (const name of names.filter((n) => n.toLowerCase().endsWith('.json')).sort()) {
-    try {
-      const parsed = JSON.parse(await readFile(resolve(dir, name), 'utf8')) as unknown
-      out.push(...(Array.isArray(parsed) ? parsed as Raw[] : parsed && typeof parsed === 'object' ? [parsed as Raw] : []))
-    } catch (e) {
-      console.warn(`[daten] new-clients/${name} übersprungen: ${e instanceof Error ? e.message : String(e)}`)
+  for (const dir of EXTRA_CLIENT_DIRS) {
+    const names = await readdir(dir).catch(() => [] as string[])
+    for (const name of names.filter((n) => n.toLowerCase().endsWith('.json')).sort()) {
+      try {
+        const parsed = JSON.parse(await readFile(resolve(dir, name), 'utf8')) as unknown
+        out.push(...(Array.isArray(parsed) ? parsed as Raw[] : parsed && typeof parsed === 'object' ? [parsed as Raw] : []))
+      } catch (e) {
+        console.warn(`[daten] ${name} übersprungen: ${e instanceof Error ? e.message : String(e)}`)
+      }
     }
   }
   return out
 }
 
-/** Rückfallebene: die Case-Dateien, wie sie übergeben wurden, plus new-clients/. */
+/** Rückfallebene: die Case-Dateien, wie sie übergeben wurden, plus demo-clients/ und new-clients/. */
 async function fromFiles(): Promise<{ clients: Raw[]; reference: Raw }> {
   const [clients, reference] = await Promise.all(
     ['clients.json', 'reference.json'].map(async (f) => JSON.parse(await readFile(resolve(DATA, f), 'utf8')) as unknown),

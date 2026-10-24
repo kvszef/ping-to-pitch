@@ -1,0 +1,202 @@
+{
+  "ClientId": 980002,
+  "ClientRef": "DEMO-02",
+  "FirstName": "Marco",
+  "LastName": "Demo",
+  "Company": null,
+  "IsClientACompany": false,
+  "IsEmployee": false,
+  "RegulatoryClientTypeId": 13,
+  "RegulatoryClientTypeName": "Private client",
+  "ReportingCurrency": "CHF",
+  "RiskProfileId": 17,
+  "RiskProfileName": "Anlageprofil 5",
+  "EsgProfileId": 2,
+  "EsgProfileName": "No",
+  "Birthday": "1971-09-03",
+  "ProfilingDateUtc": "2025-11-04T09:00:00.000Z",
+  "AssetsUnderManagementInDefaultCurrency": 1200000,
+  "LiquidityInDefaultCurrency": 144000,
+  "Description": "Demo client written by the From Ping to Pitch team. Every figure is made up; securities, strategies and profiles are referenced by id from the public START Hack case data so the checks can run.",
+  "Tags": [
+    {
+      "TagName": "Switzerland",
+      "TagTypeName": "Region"
+    }
+  ],
+  "Portfolios": [
+    {
+      "PortfolioId": 980102,
+      "PortfolioNr": "DEMO-02-01",
+      "Name": "Advisory portfolio",
+      "PortfolioCurrency": "CHF",
+      "StrategicAssetAllocationId": 69,
+      "InvestmentServiceId": 10,
+      "InvestmentServiceName": "Depository Advisory",
+      "StrategyId": 6,
+      "StrategyName": "Investor profile 6",
+      "ReferenceCurrency": "CHF",
+      "AssetsUnderManagementInDefaultCurrency": 1200000,
+      "LiquidityInDefaultCurrency": 144000,
+      "Volatility": 0.0921,
+      "ExpectedReturn": 0.0398,
+      "ValueAtRisk": 0.098,
+      "FactoryDateUtc": "2026-09-15T08:00:00.000Z",
+      "AccountPositions": [
+        {
+          "AccountName": "Private account CHF",
+          "Currency": "CHF",
+          "TotalAmountInPortfolioCurrency": 144000,
+          "PortfolioValuePercentage": 0.12
+        }
+      ],
+      "SecurityPositions": [
+        {
+          "SecurityId": 2346,
+          "Isin": "CH0237935637",
+          "SecurityName": "Anteile -A- iShares ETF (CH) - iShares Swiss Dividend ETF   (CH)",
+          "Quantity": 1680,
+          "PricePerUnit": 100,
+          "Currency": "CHF",
+          "TotalAmountInPortfolioCurrency": 168000,
+          "PortfolioValuePercentage": 0.14
+        },
+        {
+          "SecurityId": 4421,
+          "Isin": "CH0389550945",
+          "SecurityName": "Anteile -W- UBS (CH) Investment Fund - Equities Switzerland Passive Leader",
+          "Quantity": 1440,
+          "PricePerUnit": 100,
+          "Currency": "CHF",
+          "TotalAmountInPortfolioCurrency": 144000,
+          "PortfolioValuePercentage": 0.12
+        },
+        {
+          "SecurityId": 1672,
+          "Isin": "IE00B8BVCK12",
+          "SecurityName": "Anteile Hedged CHF ETF iShares VI PLC  - iShares MSCI World CHF Hedged UCITS ETF (Acc)",
+          "Quantity": 1680,
+          "PricePerUnit": 100,
+          "Currency": "CHF",
+          "TotalAmountInPortfolioCurrency": 168000,
+          "PortfolioValuePercentage": 0.14
+        },
+        {
+          "SecurityId": 13138,
+          "Isin": "IE00BFMNHK08",
+          "SecurityName": "Anteile -1C- EUR Xtrackers (IE) PLC  - Xtrackers ESG MSCI Europe UCITS ETF",
+          "Quantity": 960,
+          "PricePerUnit": 100,
+          "Currency": "EUR",
+          "TotalAmountInPortfolioCurrency": 96000,
+          "PortfolioValuePercentage": 0.08
+        },
+        {
+          "SecurityId": 2258,
+          "Isin": "CH0226976816",
+          "SecurityName": "Anteile -A- iShares ETF (CH) - iShares Core CHF Corporate   Bond ETF (CH)",
+          "Quantity": 1440,
+          "PricePerUnit": 100,
+          "Currency": "CHF",
+          "TotalAmountInPortfolioCurrency": 144000,
+          "PortfolioValuePercentage": 0.12
+        },
+        {
+          "SecurityId": 3718,
+          "Isin": "CH0101754346",
+          "SecurityName": "Anteile -FB- Credit Suisse Index Fd (CH) Umbrella - CSIF (CH) Bond Switzerland AAA-AA Blue",
+          "Quantity": 1200,
+          "PricePerUnit": 100,
+          "Currency": "CHF",
+          "TotalAmountInPortfolioCurrency": 120000,
+          "PortfolioValuePercentage": 0.1
+        },
+        {
+          "SecurityId": 2420,
+          "Isin": "IE0033051115",
+          "SecurityName": "Anteile - PIMCO Funds: Global Investors Series PLC - Global Bond Fund",
+          "Quantity": 960,
+          "PricePerUnit": 100,
+          "Currency": "CHF",
+          "TotalAmountInPortfolioCurrency": 96000,
+          "PortfolioValuePercentage": 0.08
+        },
+        {
+          "SecurityId": 1211,
+          "Isin": "IE00B4YLF345",
+          "SecurityName": "Anteile CHF (Hedged) PIMCO Funds Glob.Inv.Series - Global Investment Grade Credit Fund",
+          "Quantity": 720,
+          "PricePerUnit": 100,
+          "Currency": "CHF",
+          "TotalAmountInPortfolioCurrency": 72000,
+          "PortfolioValuePercentage": 0.06
+        },
+        {
+          "SecurityId": 189,
+          "Isin": "CH0010570767",
+          "SecurityName": "Partizipationsschein Chocoladefabriken Lindt & Spruengli AG",
+          "Quantity": 480,
+          "PricePerUnit": 100,
+          "Currency": "CHF",
+          "TotalAmountInPortfolioCurrency": 48000,
+          "PortfolioValuePercentage": 0.04
+        }
+      ],
+      "PerformanceHistory": [
+        {
+          "Date": "2026-01-01",
+          "Value": 1146000
+        },
+        {
+          "Date": "2026-03-01",
+          "Value": 1166400
+        },
+        {
+          "Date": "2026-05-01",
+          "Value": 1185600
+        },
+        {
+          "Date": "2026-07-01",
+          "Value": 1214400
+        },
+        {
+          "Date": "2026-08-01",
+          "Value": 1177200
+        },
+        {
+          "Date": "2026-09-01",
+          "Value": 1200000
+        }
+      ]
+    }
+  ],
+  "Proposals": [
+    {
+      "ProposalId": 980702,
+      "PortfolioId": 980102,
+      "ProposalStatusName": "Final",
+      "AdvisoryTypeName": "Investment proposal",
+      "Currency": "CHF",
+      "ProposedDateUTC": "2025-06-02T10:00:00.000Z",
+      "Reason": "Liquidity reserve for the planned flat purchase",
+      "Notes": "Cash raised from the Swiss equity funds.",
+      "SecurityPositions": [
+        {
+          "SecurityName": "Anteile -W- UBS (CH) Investment Fund - Equities Switzerland Passive Leader"
+        }
+      ]
+    }
+  ],
+  "Transactions": [],
+  "SuitabilityViolations": null,
+  "ClientNotes": [
+    {
+      "Note": "Wants to buy a holiday flat in the mountains within the next 12 months and will need about CHF 300'000 for it.",
+      "CreatedByDateUTC": "2025-05-15T10:20:00.000Z"
+    },
+    {
+      "Note": "Prefers to be called in the morning.",
+      "CreatedByDateUTC": "2026-02-03T08:45:00.000Z"
+    }
+  ]
+}

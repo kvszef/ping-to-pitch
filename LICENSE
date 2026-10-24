@@ -22,9 +22,12 @@ SOFTWARE.
 
 ---
 
-The licence above covers the code and documentation written by the team.
-It does not cover the challenge material provided by UNRISKOMEGA AG for the
-START Hack 2026 case: the client and reference data in core-case/portfolio-data/,
-the screenshots in core-case/GUI-screenshots/, the quarterly reports in
-side-challenge/ and the logos in assets/logos/. That material remains the
-property of its owners and is included here as published for the challenge.
+The licence above covers the code and documentation written by the team,
+including the demo clients in demo-clients/, whose figures are made up.
+
+This repository does not contain the challenge material provided by UNRISKOMEGA
+AG for the START Hack 2026 case (client and reference data, screenshots,
+quarterly reports, logos). That material remains the property of its owners.
+scripts/case-data.mjs downloads the parts the app needs from the organisers'
+public repository, github.com/START-Hack/unriskomega-2026, into core-case/ and
+side-challenge/, which are not committed.

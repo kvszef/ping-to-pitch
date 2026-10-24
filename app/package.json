@@ -13,7 +13,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check": "npm run lint && npm run typecheck && npm run test",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "case-data": "node ../scripts/case-data.mjs",
+    "postinstall": "node ../scripts/case-data.mjs"
   },
   "dependencies": {
     "@fontsource/fira-sans": "^5.3.0",

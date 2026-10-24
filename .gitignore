@@ -1,3 +1,10 @@
+# START Hack case material (UNRISKOMEGA AG): not ours, so never committed. scripts/case-data.mjs downloads
+# it from github.com/START-Hack/unriskomega-2026 at a pinned commit on `npm ci`. Our demo clients live in
+# demo-clients/; files dropped into core-case/portfolio-data/new-clients/ stay local.
+/core-case/
+/side-challenge/
+/assets/
+
 # Secrets and machine-local config. API keys live in app/.env.local and never get committed.
 .env
 .env.*

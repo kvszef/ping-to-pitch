@@ -15,7 +15,9 @@
     "signalwire": "node --env-file-if-exists=.env src/signalwire.ts",
     "toolbox:get": "node scripts/get-toolbox.ts",
     "toolbox": "node --env-file-if-exists=.env scripts/run-toolbox.ts",
-    "load-data": "node --env-file-if-exists=.env --no-warnings=ExperimentalWarning scripts/load-data.ts"
+    "load-data": "node --env-file-if-exists=.env --no-warnings=ExperimentalWarning scripts/load-data.ts",
+    "case-data": "node ../scripts/case-data.mjs",
+    "postinstall": "node ../scripts/case-data.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",
