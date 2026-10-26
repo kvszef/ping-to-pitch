@@ -16,7 +16,7 @@ The engine computes, the model phrases. No number reaches the screen unless dete
 
 <!-- For a player inside this page: on github.com, edit this file, put the cursor on the empty line below and drag phonecall_demo.mp4 in. GitHub uploads it and inserts a https://github.com/user-attachments/assets/... link, which renders as a player. -->
 
-**[Watch the demo call](phonecall_demo.mp4)** (2 minutes, English) · [subtitles](phonecall_demo.srt)
+**[Watch the demo call](phonecall_demo.mp4)** (2 minutes, English, with captions) · [transcript](phonecall_demo.srt)
 
 A client calls, and her briefing is on screen before the advisor picks up. While the call is transcribed, the screen brings up what she asks about: first how the portfolio has done, then her top five positions. She asks for a PDF summary by the evening. When the call ends, the AI drafts the call note with that promise in it, and one tap saves it for the next call.
 
