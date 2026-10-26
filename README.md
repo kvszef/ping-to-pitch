@@ -69,8 +69,8 @@ Five rules hold everywhere:
 Requires Node 22 or newer. No API key is needed to try it.
 
 ```bash
-git clone https://github.com/kvszef/from-ping-to-pitch.git
-cd from-ping-to-pitch/app
+git clone https://github.com/kvszef/ping-to-pitch.git
+cd ping-to-pitch/app
 npm ci
 cp .env.example .env.local   # optional, then fill in the keys you have
 ```
